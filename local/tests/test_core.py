@@ -73,3 +73,10 @@ def test_opportunities_rank_small_capital():
     from nexus.core.opportunities import DEFAULTS, rank
     top = rank(DEFAULTS, 100)
     assert top[0][1] < 5          # con 100 EUR, ninguna estrategia pasa de unos pocos EUR/año
+
+
+def test_scanner_discards_outlier():
+    from nexus.core.ars_scanner import scan
+    q = {"A": {"totalAsk": 1640, "totalBid": 1636}, "B": {"totalAsk": 1642, "totalBid": 1638},
+         "C": {"totalAsk": 1641, "totalBid": 1637}, "X": {"totalAsk": 1650, "totalBid": 1800}}
+    assert all(o.sell_at != "X" and o.buy_at != "X" for o in scan(q, 160000, 1.0))

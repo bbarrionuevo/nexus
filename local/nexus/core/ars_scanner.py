@@ -17,8 +17,13 @@ class CrossOpp:
     executable: bool
 
 
+def _median(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2]
+
+
 def scan(quotes: dict, capital_ars, transfer_fee_coin, min_net_pct=0.3, max_age_s=120,
-         now=None, allowed=None):
+         now=None, allowed=None, outlier_pct=1.5):
     """Devuelve oportunidades ordenadas por ROI neto desc.
 
     transfer_fee_coin: costo fijo de mover la moneda entre plataformas (en unidades de la moneda).
@@ -35,6 +40,11 @@ def scan(quotes: dict, capital_ars, transfer_fee_coin, min_net_pct=0.3, max_age_
         if now and q.get("time") and now - q["time"] > max_age_s:
             continue  # cotización vieja
         clean[ex] = (ask, bid)
+    if len(clean) >= 3:  # descarta cotizaciones atípicas (P2P ilíquido o erróneo)
+        ma, mb = _median([v[0] for v in clean.values()]), _median([v[1] for v in clean.values()])
+        tol = D(str(outlier_pct)) / 100
+        clean = {k: v for k, v in clean.items()
+                 if abs(v[0] / ma - 1) <= tol and abs(v[1] / mb - 1) <= tol}
     for a, (ask_a, _) in clean.items():
         for b, (_, bid_b) in clean.items():
             if a == b:
