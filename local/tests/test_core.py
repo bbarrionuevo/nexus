@@ -121,3 +121,15 @@ def test_peg_ignores_depegged_and_maker_scan():
     assert scan_peg(book) == []
     m = scan_maker([("X/EUR", 100, 101, 50000), ("Y/EUR", 100, 100.1, 50000)], 0.25)
     assert [r["pair"] for r in m] == ["X/EUR"]
+
+
+def test_live_maker_queue_model():
+    from nexus.live_paper_maker import Book
+    b = Book("X", notional=100, maker=0.0)
+    b.on_book(10.0, 50, 10.1, 50)             # nos unimos al bid con 50 delante
+    b.on_trade(10.0, 30, True)                # se consumen 30: aún no llenados
+    assert b.state == "flat"
+    b.on_trade(10.0, 25, True)                # se agota la cola: llenado
+    assert b.state == "long" and b.entry == 10.0
+    b.on_trade(10.1, 60, False)               # cola del ask (50) consumida: vendemos
+    assert b.state == "flat" and b.rt == 1 and b.mark()["pnl_eur"] > 0
