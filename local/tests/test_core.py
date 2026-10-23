@@ -67,3 +67,9 @@ def test_ars_scanner_finds_and_rejects():
     ops = scan(q, 160000, 1.0, 0.3)
     assert ops[0].buy_at == "A" and ops[0].sell_at == "B" and ops[0].executable
     assert not scan(q, 160000, 5.0, 0.3)[0].executable   # fee fijo alto la anula
+
+
+def test_opportunities_rank_small_capital():
+    from nexus.core.opportunities import DEFAULTS, rank
+    top = rank(DEFAULTS, 100)
+    assert top[0][1] < 5          # con 100 EUR, ninguna estrategia pasa de unos pocos EUR/año

@@ -1,0 +1,26 @@
+name: Recolectar cotizaciones (paper)
+on:
+  schedule: [{cron: "*/15 * * * *"}]
+  workflow_dispatch:
+permissions: {contents: write}
+concurrency: collect
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rama de datos
+        run: |
+          git fetch origin data || true
+          git checkout data 2>/dev/null || git checkout --orphan data
+          git checkout ${{ github.sha }} -- local
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r local/requirements.txt
+      - run: cd local && python -m nexus.collect ../data/quotes.jsonl
+      - name: Guardar datos
+        run: |
+          git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
+          git add data/quotes.jsonl
+          git commit -m "datos $(date -u +%FT%TZ)" || exit 0
+          git push origin data
