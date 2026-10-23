@@ -9,7 +9,7 @@ from .exchanges.criptoya import CriptoYa
 from .exchanges.kraken import KrakenReadOnly
 
 
-def main(out="data/quotes.jsonl", capital_ars=160000):
+def sample(out, capital_ars=160000):
     cya, now, rec = CriptoYa(), time.time(), {"ts": time.time()}
     for coin in ("USDT", "USDC"):
         try:
@@ -32,5 +32,12 @@ def main(out="data/quotes.jsonl", capital_ars=160000):
     print("ok", sorted(rec))
 
 
+def main(out="data/quotes.jsonl", samples=1, interval=0):
+    for i in range(int(samples)):
+        sample(out)
+        if i < int(samples) - 1:
+            time.sleep(float(interval))
+
+
 if __name__ == "__main__":
-    main(*sys.argv[1:2])
+    main(*sys.argv[1:4])

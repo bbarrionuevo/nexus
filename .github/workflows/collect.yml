@@ -2,6 +2,9 @@ name: Recolectar cotizaciones (paper)
 on:
   schedule: [{cron: "*/15 * * * *"}]
   workflow_dispatch:
+    inputs:
+      samples: {default: "1"}
+      interval: {default: "30"}
 permissions: {contents: write}
 concurrency: collect
 jobs:
@@ -14,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r local/requirements.txt
-      - run: cd local && python -m nexus.collect ../datawt/data/quotes.jsonl
+      - run: cd local && python -m nexus.collect ../datawt/data/quotes.jsonl ${{ inputs.samples || 1 }} ${{ inputs.interval || 30 }}
       - name: Guardar datos
         run: |
           cd datawt
