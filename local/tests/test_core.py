@@ -108,9 +108,9 @@ def test_backtester_runs_on_synthetic():
 def test_peg_scanner_finds_premium_bid():
     from nexus.discovery.peg import scan_peg
     book = {"EUR/USD": ("EUR", "USD", 1.12, 1.12, 0.2, 1e6, 1e6, 1e9),
-            "EURR/USD": ("EURR", "USD", 1.155, 1.16, 0.2, 50, 50, 1000)}
+            "EURQ/USD": ("EURQ", "USD", 1.155, 1.16, 0.2, 50, 50, 1000)}
     top = scan_peg(book)[0]
-    assert top["pair"] == "EURR/USD" and top["side"] == "sell" and top["net_pct"] > 2.5
+    assert top["pair"] == "EURQ/USD" and top["side"] == "sell" and top["net_pct"] > 2.5
 
 
 def test_peg_ignores_depegged_and_maker_scan():
