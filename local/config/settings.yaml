@@ -3,6 +3,7 @@ paper_trading: true
 capital_eur: 100.0
 
 # Umbral mínimo de ROI neto para ejecutar (tras TODAS las comisiones)
+poll_seconds: 60
 min_net_roi_pct: 0.30
 
 # Comisiones (en %). VERIFICAR contra la tabla oficial vigente de cada exchange antes de operar real.

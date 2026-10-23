@@ -37,3 +37,25 @@ def test_eu_hourly_frequency(tmp_path):
 def test_readonly_blocks_orders():
     with pytest.raises(ReadOnlyViolation):
         BinanceReadOnly("k", "s")._get("/api/v3/order")
+
+
+def test_roundtrip_no_edge_loses():
+    from nexus.core.strategy import roundtrip
+    o = roundtrip(100, 0.92, 0.91, 1400, 1410, COST)
+    assert not o.executable and o.net_roi_pct < 0
+
+
+def test_roundtrip_with_edge_profits():
+    from nexus.core.strategy import roundtrip
+    o = roundtrip(100, 0.92, 0.92, 1500, 1400, COST)
+    assert o.executable
+
+
+def test_paper_wallet_and_backtest(tmp_path):
+    from nexus.core.strategy import roundtrip
+    from nexus.core.paper import PaperWallet
+    from nexus.backtest import summarize
+    w = PaperWallet(100, tmp_path / "w.json", tmp_path / "j.jsonl")
+    w.execute(roundtrip(100, 0.92, 0.92, 1500, 1400, COST))
+    assert w.eur > 100
+    assert summarize(tmp_path / "j.jsonl")["executed"] == 1
