@@ -29,6 +29,15 @@ def sample():
                            if v[0] == "EURC" and "(conv)" not in p}
     except Exception as e:
         errs["kraken"], kraken_eur = str(e)[:200], {}
+    try:
+        bb = sources.binance_book()
+        rec["binance_pairs"] = len(bb)
+        for start in ("USDT", "BTC", "ARS", "EUR"):
+            cs = cycles(bb, start)
+            rec[f"bin_tri_{start}"] = cs[:5]
+            rec[f"bin_tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
+    except Exception as e:
+        errs["binance"] = str(e)[:200]
     books = {"kraken": kraken_eur}
     for name, fn in (("bitstamp", sources.bitstamp_book), ("coinbase", sources.coinbase_book)):
         try:

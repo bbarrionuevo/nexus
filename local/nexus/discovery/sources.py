@@ -55,3 +55,28 @@ def coinbase_book(pairs=("BTC-EUR", "ETH-EUR", "USDC-EUR", "SOL-EUR", "XRP-EUR")
 
 def criptoya(coin, fiat="ARS", vol=100):
     return _get(f"https://criptoya.com/api/{coin}/{fiat}/{vol}")
+
+
+BINANCE_DATA = "https://data-api.binance.vision"
+
+
+def binance_book(quotes=("USDT", "USDC", "BTC", "ETH", "BNB", "FDUSD", "EUR", "ARS", "TRY", "BRL"),
+                 fee=0.075):
+    """Top-of-book de todos los pares spot de Binance (endpoint público de datos de mercado)."""
+    info = _get(f"{BINANCE_DATA}/api/v3/exchangeInfo?permissions=SPOT")["symbols"]
+    meta = {s["symbol"]: (s["baseAsset"], s["quoteAsset"]) for s in info
+            if s["status"] == "TRADING" and s["quoteAsset"] in quotes}
+    book = {}
+    for t in _get(f"{BINANCE_DATA}/api/v3/ticker/bookTicker"):
+        m = meta.get(t["symbol"])
+        if m and float(t["bidPrice"]) > 0 and float(t["askPrice"]) > 0:
+            book[f"{m[0]}/{m[1]}"] = (m[0], m[1], float(t["bidPrice"]), float(t["askPrice"]), fee,
+                                     float(t["bidQty"]), float(t["askQty"]))
+    return book
+
+
+def binance_klines(symbol="BTCUSDT", interval="1h", limit=1000, end=None):
+    q = f"{BINANCE_DATA}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    if end:
+        q += f"&endTime={int(end)}"
+    return [(k[0], float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])) for k in _get(q)]

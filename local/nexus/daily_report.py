@@ -15,7 +15,7 @@ def best(rec, key):
 def main(path, hours=24, capital_eur=100):
     since = time.time() - hours * 3600
     rows = [r for r in map(json.loads, open(path)) if r["ts"] >= since]
-    keys = ["tri_EUR", "tri_USDC", "cross_eur", "eurc_arb", "ars_USDT", "ars_USDC", "ars_BTC", "ars_ETH"]
+    keys = ["bin_tri_USDT", "bin_tri_BTC", "bin_tri_ARS", "bin_tri_EUR", "tri_EUR", "tri_USDC", "cross_eur", "eurc_arb", "ars_USDT", "ars_USDC", "ars_BTC", "ars_ETH"]
     print(f"# Informe nexus — últimas {hours} h, {len(rows)} muestras\n")
     print("| clase | muestras | con neto>0 | mejor neto % | € estimado si se ejecutara cada positivo |")
     print("|---|---|---|---|---|")

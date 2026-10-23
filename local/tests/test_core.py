@@ -94,3 +94,12 @@ def test_cross_exchange():
     from nexus.discovery.cross import cross
     r = cross({"a": {"X/EUR": (99, 100)}, "b": {"X/EUR": (102, 103)}}, {"a": 0.4, "b": 0.4})[0]
     assert r["buy"] == "a" and r["sell"] == "b" and 1 < r["net_pct"] < 2
+
+
+def test_backtester_runs_on_synthetic():
+    import math
+    from nexus.backtest_trading import evaluate
+    k = [(i, 0, 100 + 10 * math.sin(i / 20) + 1, 100 + 10 * math.sin(i / 20) - 1,
+          100 + 10 * math.sin(i / 20), 1) for i in range(600)]
+    res, bh = evaluate(k)
+    assert len(res) == 3 and all("oos_pct" in r for r in res)
