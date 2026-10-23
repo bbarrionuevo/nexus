@@ -5,10 +5,20 @@ Recorre ciclos A->B->C->A empezando en `start` y devuelve el rendimiento neto de
 """
 
 
-def _edges(book):
-    """Arista (desde, hacia) -> (tasa, fee, par). Vender base da bid; comprar base cuesta ask."""
+def _edges(book, max_spread_pct=None, min_vol_quote=None):
+    """Arista (desde, hacia) -> (tasa, fee, par). Vender base da bid; comprar base cuesta ask.
+
+    Descarta pares con spread excesivo o volumen 24h bajo (libros vacíos o precios viejos).
+    """
     e = {}
-    for pair, (base, quote, bid, ask, fee, *_) in book.items():
+    for pair, (base, quote, bid, ask, fee, *extra) in book.items():
+        if bid <= 0 or ask <= 0:
+            continue
+        if max_spread_pct is not None and (ask / bid - 1) * 100 > max_spread_pct:
+            continue
+        vol = extra[2] if len(extra) > 2 else None
+        if min_vol_quote is not None and vol is not None and vol < min_vol_quote:
+            continue
         if bid > 0:
             e[(base, quote)] = (bid, fee, pair)
         if ask > 0:
@@ -16,8 +26,13 @@ def _edges(book):
     return e
 
 
-def cycles(book, start="EUR", fee_override=None):
-    e = _edges(book)
+def depth(book, pair):
+    v = book[pair]
+    return (v[5], v[6]) if len(v) > 6 else (None, None)
+
+
+def cycles(book, start="EUR", fee_override=None, max_spread_pct=None, min_vol_quote=None):
+    e = _edges(book, max_spread_pct, min_vol_quote)
     adj = {}
     for a, b in e:
         adj.setdefault(a, set()).add(b)
@@ -34,5 +49,6 @@ def cycles(book, start="EUR", fee_override=None):
                 gross *= rate
                 net *= rate * (1 - fee / 100)
             out.append({"path": f"{start}>{b}>{c}>{start}", "gross_pct": (gross - 1) * 100,
-                        "net_pct": (net - 1) * 100, "pairs": [e[l][2] for l in legs]})
+                        "net_pct": (net - 1) * 100, "pairs": [e[l][2] for l in legs],
+                        "depth": [depth(book, e[l][2]) for l in legs]})
     return sorted(out, key=lambda x: x["net_pct"], reverse=True)

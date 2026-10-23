@@ -25,9 +25,12 @@ def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH", "EURC")):
         quote = {"XBT": "BTC"}.get(quote, quote)
         t = tick[k]
         fee = float(p["fees"][0][1]) if p.get("fees") else 0.4
-        book[f"{base}/{quote}"] = (base, quote, float(t["b"][0]), float(t["a"][0]), fee)
+        bid, ask = float(t["b"][0]), float(t["a"][0])
+        vol_quote = float(t["v"][1]) * float(t["p"][1])       # volumen 24h en moneda cotizada
+        book[f"{base}/{quote}"] = (base, quote, bid, ask, fee, float(t["b"][2]) * bid,
+                                   float(t["a"][2]) * ask, vol_quote)
     # Conversión oficial EUR<->EURC 1:1 sin comisión ni spread (límite 25k EUR/día por dirección)
-    book["EURC/EUR(conv)"] = ("EURC", "EUR", 1.0, 1.0, 0.0)
+    book["EURC/EUR(conv)"] = ("EURC", "EUR", 1.0, 1.0, 0.0, 25000.0, 25000.0, 1e9)
     return book
 
 
@@ -70,8 +73,9 @@ def binance_book(quotes=("USDT", "USDC", "BTC", "ETH", "BNB", "FDUSD", "EUR", "A
     for t in _get(f"{BINANCE_DATA}/api/v3/ticker/bookTicker"):
         m = meta.get(t["symbol"])
         if m and float(t["bidPrice"]) > 0 and float(t["askPrice"]) > 0:
-            book[f"{m[0]}/{m[1]}"] = (m[0], m[1], float(t["bidPrice"]), float(t["askPrice"]), fee,
-                                     float(t["bidQty"]), float(t["askQty"]))
+            bid, ask = float(t["bidPrice"]), float(t["askPrice"])
+            book[f"{m[0]}/{m[1]}"] = (m[0], m[1], bid, ask, fee, float(t["bidQty"]) * bid,
+                                     float(t["askQty"]) * ask, None)
     return book
 
 

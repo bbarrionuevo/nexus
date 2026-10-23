@@ -25,7 +25,9 @@ def sample():
         kb = sources.kraken_book()
         rec["kraken_pairs"] = len(kb)
         for start in ("EUR", "USDC"):
-            cs = cycles(kb, start)
+            raw = cycles(kb, start)
+            rec[f"tri_{start}_raw_top"] = raw[:3]                       # sin filtro (diagnóstico)
+            cs = cycles(kb, start, max_spread_pct=1.0, min_vol_quote=5000)
             rec[f"tri_{start}"] = cs[:5]
             rec[f"tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
         _t(f"kraken ({len(kb)} pares)", t0)
@@ -38,7 +40,7 @@ def sample():
         bb = sources.binance_book()
         rec["binance_pairs"] = len(bb)
         for start in ("USDT", "BTC", "ARS", "EUR"):
-            cs = cycles(bb, start)
+            cs = cycles(bb, start, max_spread_pct=1.0)
             rec[f"bin_tri_{start}"] = cs[:5]
             rec[f"bin_tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
     except Exception as e:
