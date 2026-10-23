@@ -1,0 +1,14 @@
+# Agente de market making. live: false = paper trading (no envía órdenes).
+live: false
+exchange: mexc
+symbols: [AIUSDT, BONKUSDT]   # lo actualiza el informe diario según la evidencia
+notional_eur: 100
+maker_fee_pct: 0.0             # MEXC spot API: 0% maker (verificar al operar)
+taker_fee_pct: 0.05
+stop_pct: 1.0
+poll_seconds: 0.5
+risk:
+  max_notional_eur: 100
+  daily_loss_limit_eur: 3      # 3% del capital: corta el día
+  max_consecutive_stops: 4
+  max_orders_per_minute: 30

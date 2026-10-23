@@ -133,3 +133,20 @@ def test_live_maker_queue_model():
     assert b.state == "long" and b.entry == 10.0
     b.on_trade(10.1, 60, False)               # cola del ask (50) consumida: vendemos
     assert b.state == "flat" and b.rt == 1 and b.mark()["pnl_eur"] > 0
+
+
+def test_risk_manager_halts(tmp_path):
+    from nexus.agent.risk import RiskManager, RiskHalt
+    r = RiskManager({"max_notional_eur": 100, "daily_loss_limit_eur": 3, "max_consecutive_stops": 2,
+                     "max_orders_per_minute": 100}, tmp_path / "KILL")
+    r.check(100)
+    with pytest.raises(RiskHalt):
+        r.check(150)
+    r.on_close(-1, True); r.on_close(-1, True)
+    with pytest.raises(RiskHalt):
+        r.check(50)
+    (tmp_path / "KILL").touch()
+    r2 = RiskManager({"max_notional_eur": 100, "daily_loss_limit_eur": 3, "max_consecutive_stops": 9,
+                      "max_orders_per_minute": 100}, tmp_path / "KILL")
+    with pytest.raises(RiskHalt):
+        r2.check(10)
