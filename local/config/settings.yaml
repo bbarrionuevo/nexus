@@ -1,0 +1,26 @@
+# Interruptor maestro: true = simulación (paper trading). No cambiar a false hasta validar logs.
+paper_trading: true
+capital_eur: 100.0
+
+# Umbral mínimo de ROI neto para ejecutar (tras TODAS las comisiones)
+min_net_roi_pct: 0.30
+
+# Comisiones (en %). VERIFICAR contra la tabla oficial vigente de cada exchange antes de operar real.
+fees:
+  binance: {maker_pct: 0.10, taker_pct: 0.10}
+  kraken:  {maker_pct: 0.25, taker_pct: 0.40}   # tier más bajo (Kraken Pro)
+  # Costos fijos en EUR (ajustar a valores reales)
+  sepa_transfer_eur: 0.0
+  withdrawal_fixed_eur: {USDT_TRC20: 1.0, USDC_ERC20: 3.0}
+  p2p_spread_pct_default: 0.50
+
+# Límites duros anti-bloqueo (con margen de seguridad sobre el límite real)
+limits:
+  safety_margin: 0.60          # se usa como máximo el 60% de cada límite
+  eu:
+    cumulative_eur_cap: 10000.0
+    max_tx_per_day: 10
+    max_tx_per_hour: 3
+  ar:
+    monthly_ars_cap: 50000000.0
+    per_tx_ars_cap: 2500000.0
