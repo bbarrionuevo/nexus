@@ -1,0 +1,28 @@
+name: Investigación market making
+on:
+  schedule: [{cron: "41 */6 * * *"}]
+  workflow_dispatch:
+    inputs:
+      symbols: {default: "SOPHUSDT,AIUSDT,BONKUSDC,GNSUSDT,BTTCUSDT,IDUSDT,HYPERUSDT,BONKUSDT,RADUSDT,BTCUSDT"}
+permissions: {contents: write}
+concurrency: research-maker
+jobs:
+  maker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: {ref: data, path: datawt}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r local/requirements.txt
+      - name: Velas de 1 minuto (3 días)
+        run: cd local && python -m nexus.research_maker ../datawt/data/maker_1m.md "${{ inputs.symbols || 'SOPHUSDT,AIUSDT,BONKUSDC,GNSUSDT,BTTCUSDT,IDUSDT,HYPERUSDT,BONKUSDT,RADUSDT,BTCUSDT' }}" 1m 4320 && cat ../datawt/data/maker_1m.md >> $GITHUB_STEP_SUMMARY
+      - name: Velas de 1 segundo (~3 horas)
+        run: cd local && python -m nexus.research_maker ../datawt/data/maker_1s.md "${{ inputs.symbols || 'SOPHUSDT,AIUSDT,BONKUSDC,GNSUSDT,BTTCUSDT,IDUSDT,HYPERUSDT,BONKUSDT,RADUSDT,BTCUSDT' }}" 1s 10000 && cat ../datawt/data/maker_1s.md >> $GITHUB_STEP_SUMMARY
+      - run: |
+          cd datawt
+          git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
+          git add data/; git commit -m "maker $(date -u +%FT%TZ)" || exit 0
+          git pull -q --rebase origin data && git push origin HEAD:data
