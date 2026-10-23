@@ -5,12 +5,13 @@ on:
     inputs:
       symbols: {default: "BONKUSDT,IDUSDT,AIUSDT,BTCFDUSD,ETHFDUSD"}
       minutes: {default: "40"}
+      mexc_symbols: {default: "AIUSDT,BONKUSDT,IDUSDT,BTCUSDT,ETHUSDT"}
 permissions: {contents: write}
 concurrency: live-paper
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -19,6 +20,9 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -r local/requirements.txt
       - run: cd local && python -m nexus.live_paper_maker ../datawt/data/live_paper_maker.jsonl "${{ inputs.symbols || 'BONKUSDT,IDUSDT,AIUSDT,BTCFDUSD,ETHFDUSD' }}" ${{ inputs.minutes || 40 }}
+      - name: MEXC (maker 0%) en paralelo
+        if: always()
+        run: cd local && python -m nexus.live_paper_mexc ../datawt/data/live_paper_mexc.jsonl "${{ inputs.mexc_symbols || 'AIUSDT,BONKUSDT,IDUSDT,BTCUSDT,ETHUSDT' }}" ${{ inputs.minutes || 40 }}
       - run: |
           cd datawt
           git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
