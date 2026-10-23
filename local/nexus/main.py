@@ -11,7 +11,8 @@ from .core.compliance import ComplianceError, ComplianceGuard
 from .core.fees import CostModel
 from .core.paper import PaperWallet
 from .core.strategy import roundtrip
-from .exchanges.binance import BinanceReadOnly
+from .core.ars_scanner import scan
+from .exchanges.kraken import KrakenReadOnly
 from .exchanges.criptoya import CriptoYa
 
 
@@ -24,10 +25,10 @@ def load_config():
 
 
 def step(cfg, binance, cya, guard, wallet):
-    cost = CostModel.from_config(cfg, "binance")
-    bt = binance.book_ticker("EURUSDT")  # USDT por EUR
-    eu_ask, eu_bid = 1 / float(bt["bidPrice"]), 1 / float(bt["askPrice"])  # EUR por USDT
-    q = cya.quote("binancep2p", "USDT", "ARS", 100)
+    cost = CostModel.from_config(cfg, "kraken", withdrawal="USDC_SOL")
+    t = next(iter(binance.ticker(cfg["eu_pair"])["result"].values()))  # Kraken: a=ask, b=bid (EUR/USDC)
+    eu_ask, eu_bid = float(t["a"][0]), float(t["b"][0])
+    q = cya.quote(cfg["ar_exchange"], "USDC", "ARS", 100)
     cap = wallet.eur
     opp = roundtrip(cap, eu_ask, eu_bid, q["bid"], q["ask"], cost, cfg["min_net_roi_pct"])
     meta = {"eu_ask": eu_ask, "eu_bid": eu_bid, "ar_bid": q["bid"], "ar_ask": q["ask"]}
@@ -46,6 +47,16 @@ def step(cfg, binance, cya, guard, wallet):
     return opp
 
 
+def scan_ars(cfg, cya):
+    """Escáner solo-ARS entre plataformas argentinas; registra las mejores rutas."""
+    c = cfg["ars_scanner"]
+    ops = scan(cya.all_quotes(c["coin"], "ARS", c["volume"]), c["capital_ars"],
+               c["transfer_fee_coin"], c["min_net_pct"], now=time.time())
+    for o in ops[:3]:
+        logging.info("ARS-scan %s->%s bruto=%.2f%% neto=%.2f%% %s", o.buy_at, o.sell_at,
+                     o.gross_pct, o.net_pct, "EJECUTABLE" if o.executable else "")
+
+
 def main():
     cfg = load_config()
     Path("logs").mkdir(exist_ok=True)
@@ -53,10 +64,11 @@ def main():
                         format="%(asctime)s %(message)s")
     if not cfg["paper_trading"]:
         raise SystemExit("Trading real deshabilitado: no implementado.")
-    binance, cya = BinanceReadOnly(), CriptoYa()
+    binance, cya = KrakenReadOnly(), CriptoYa()
     guard, wallet = ComplianceGuard(cfg["limits"]), PaperWallet(cfg["capital_eur"])
     while True:
         try:
+            scan_ars(cfg, cya)
             opp = step(cfg, binance, cya, guard, wallet)
             logging.info("roi=%.3f%% %s wallet=%s", opp.net_roi_pct, opp.reason, wallet.eur)
         except Exception:

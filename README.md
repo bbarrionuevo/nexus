@@ -19,3 +19,8 @@ Localmente: copiar `.env.example` a `.env`.
 pip install -r local/requirements.txt
 cd local && python -m nexus.main && pytest
 ```
+
+## Hallazgos de investigación (oct-2026)
+- MiCA: ningún exchange con licencia en el EEE ofrece USDT; Binance suspendió depósitos/órdenes spot del EEE desde 1-jul-2026. La pata europea usa **Kraken + USDC**.
+- Con 100 EUR, el ciclo EUR→ARS→EUR necesita un spread bruto ≥ ~1.3–1.8% solo para empatar (comisiones 0.4%×2 + red 0.5–1 EUR). Mucho más realista: **arbitraje solo-ARS entre plataformas argentinas** (`core/ars_scanner.py`), sin rieles europeos.
+- Verificar siempre fees reales en la pantalla de Kraken antes de operar.

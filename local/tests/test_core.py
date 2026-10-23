@@ -59,3 +59,11 @@ def test_paper_wallet_and_backtest(tmp_path):
     w.execute(roundtrip(100, 0.92, 0.92, 1500, 1400, COST))
     assert w.eur > 100
     assert summarize(tmp_path / "j.jsonl")["executed"] == 1
+
+
+def test_ars_scanner_finds_and_rejects():
+    from nexus.core.ars_scanner import scan
+    q = {"A": {"totalAsk": 1600, "totalBid": 1590}, "B": {"totalAsk": 1650, "totalBid": 1640}}
+    ops = scan(q, 160000, 1.0, 0.3)
+    assert ops[0].buy_at == "A" and ops[0].sell_at == "B" and ops[0].executable
+    assert not scan(q, 160000, 5.0, 0.3)[0].executable   # fee fijo alto la anula

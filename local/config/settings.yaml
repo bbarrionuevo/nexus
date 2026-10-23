@@ -9,10 +9,10 @@ min_net_roi_pct: 0.30
 # Comisiones (en %). VERIFICAR contra la tabla oficial vigente de cada exchange antes de operar real.
 fees:
   binance: {maker_pct: 0.10, taker_pct: 0.10}
-  kraken:  {maker_pct: 0.25, taker_pct: 0.40}   # tier más bajo (Kraken Pro)
+  kraken:  {maker_pct: 0.25, taker_pct: 0.40}   # conservador; Pro puede ser menor (fuentes discrepan)
   # Costos fijos en EUR (ajustar a valores reales)
   sepa_transfer_eur: 0.0
-  withdrawal_fixed_eur: {USDT_TRC20: 1.0, USDC_ERC20: 3.0}
+  withdrawal_fixed_eur: {USDT_TRC20: 1.0, USDC_ERC20: 3.0, USDC_SOL: 0.5}  # estimados, verificar en Kraken
   p2p_spread_pct_default: 0.50
 
 # Límites duros anti-bloqueo (con margen de seguridad sobre el límite real)
@@ -25,3 +25,13 @@ limits:
   ar:
     monthly_ars_cap: 50000000.0
     per_tx_ars_cap: 2500000.0
+
+# MiCA: USDT no operable en EEE y Binance cerró servicios EEE (jul-2026). Pata europea: Kraken + USDC.
+eu_pair: USDCEUR
+ar_exchange: binancep2p      # ajustar a una plataforma AR que acepte USDC
+ars_scanner:
+  coin: USDC
+  volume: 100
+  capital_ars: 160000          # ~100 EUR
+  transfer_fee_coin: 1.0       # costo fijo de mover USDC entre plataformas
+  min_net_pct: 0.3
