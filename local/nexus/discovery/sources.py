@@ -10,7 +10,7 @@ def _get(url, **kw):
     return r.json()
 
 
-def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH")):
+def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH", "EURC")):
     """Todos los pares spot de Kraken cuyas dos monedas estén en un universo líquido."""
     pairs = _get("https://api.kraken.com/0/public/AssetPairs")["result"]
     tick = _get("https://api.kraken.com/0/public/Ticker")["result"]
@@ -26,6 +26,8 @@ def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH")):
         t = tick[k]
         fee = float(p["fees"][0][1]) if p.get("fees") else 0.4
         book[f"{base}/{quote}"] = (base, quote, float(t["b"][0]), float(t["a"][0]), fee)
+    # Conversión oficial EUR<->EURC 1:1 sin comisión ni spread (límite 25k EUR/día por dirección)
+    book["EURC/EUR(conv)"] = ("EURC", "EUR", 1.0, 1.0, 0.0)
     return book
 
 

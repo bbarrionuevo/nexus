@@ -24,7 +24,9 @@ def sample():
             cs = cycles(kb, start)
             rec[f"tri_{start}"] = cs[:5]
             rec[f"tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
-        kraken_eur = {p: (v[2], v[3]) for p, v in kb.items() if v[1] == "EUR"}
+        kraken_eur = {p: (v[2], v[3]) for p, v in kb.items() if v[1] == "EUR" and "(conv)" not in p}
+        rec["eurc_peg"] = {p: {"bid": v[2], "ask": v[3], "fee": v[4]} for p, v in kb.items()
+                           if v[0] == "EURC" and "(conv)" not in p}
     except Exception as e:
         errs["kraken"], kraken_eur = str(e)[:200], {}
     books = {"kraken": kraken_eur}
@@ -34,6 +36,15 @@ def sample():
         except Exception as e:
             errs[name] = str(e)[:200]
     books = {k: v for k, v in books.items() if v}
+    # Paridad EURC: vender EURC por encima de 1 (o comprar debajo) y convertir 1:1 gratis en Kraken
+    peg = []
+    for ex, b in books.items():
+        if "EURC/EUR" in b:
+            bid, ask = b["EURC/EUR"]
+            f = TAKER[ex] / 100
+            peg.append({"venue": ex, "sell_net_pct": (bid * (1 - f) - 1) * 100,
+                        "buy_net_pct": (1 / (ask * (1 + f)) - 1) * 100})
+    rec["eurc_arb"] = [{"net_pct": max(x["sell_net_pct"], x["buy_net_pct"]), **x} for x in peg]
     if len(books) > 1:
         rec["cross_eur"] = cross(books, TAKER)[:5]
     for coin in ("USDT", "USDC", "BTC", "ETH"):
