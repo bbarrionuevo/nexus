@@ -103,3 +103,11 @@ def test_backtester_runs_on_synthetic():
           100 + 10 * math.sin(i / 20), 1) for i in range(600)]
     res, bh = evaluate(k, folds=3)
     assert len(res) == 3 and all("oos_pct" in r for r in res)
+
+
+def test_peg_scanner_finds_premium_bid():
+    from nexus.discovery.peg import scan_peg
+    book = {"EUR/USD": ("EUR", "USD", 1.12, 1.12, 0.2, 1e6, 1e6, 1e9),
+            "EURR/USD": ("EURR", "USD", 1.155, 1.16, 0.2, 50, 50, 1000)}
+    top = scan_peg(book)[0]
+    assert top["pair"] == "EURR/USD" and top["side"] == "sell" and top["net_pct"] > 2.5

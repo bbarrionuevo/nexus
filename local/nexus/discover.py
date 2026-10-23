@@ -10,6 +10,7 @@ from pathlib import Path
 from .core.ars_scanner import scan
 from .discovery import sources
 from .discovery.cross import cross
+from .discovery.peg import scan_peg
 from .discovery.triangular import cycles
 
 TAKER = {"kraken": 0.40, "bitstamp": 0.40, "coinbase": 0.60}
@@ -31,6 +32,8 @@ def sample():
             rec[f"tri_{start}"] = cs[:5]
             rec[f"tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
         _t(f"kraken ({len(kb)} pares)", t0)
+        peg = scan_peg(kb)
+        rec["peg_kraken"] = [p for p in peg if p["net_pct"] > -0.5][:10]
         kraken_eur = {p: (v[2], v[3]) for p, v in kb.items() if v[1] == "EUR" and "(conv)" not in p}
         rec["eurc_peg"] = {p: {"bid": v[2], "ask": v[3], "fee": v[4]} for p, v in kb.items()
                            if v[0] == "EURC" and "(conv)" not in p}
@@ -39,6 +42,7 @@ def sample():
     try:
         bb = sources.binance_book()
         rec["binance_pairs"] = len(bb)
+        rec["peg_binance"] = [p for p in scan_peg(bb, 0.075) if p["net_pct"] > -0.3][:10]
         for start in ("USDT", "BTC", "ARS", "EUR"):
             cs = cycles(bb, start, max_spread_pct=1.0)
             rec[f"bin_tri_{start}"] = cs[:5]

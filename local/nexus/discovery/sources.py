@@ -10,7 +10,7 @@ def _get(url, **kw):
     return r.json()
 
 
-def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH", "EURC")):
+def kraken_book(quotes=("EUR", "USDC", "USD", "BTC", "ETH", "EURC", "USDT", "EURR", "EURQ", "USDQ", "USDG", "RLUSD")):
     """Todos los pares spot de Kraken cuyas dos monedas estén en un universo líquido."""
     pairs = _get("https://api.kraken.com/0/public/AssetPairs")["result"]
     tick = _get("https://api.kraken.com/0/public/Ticker")["result"]
