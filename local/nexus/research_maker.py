@@ -53,8 +53,8 @@ def main(out, syms, interval="1m", candles=4320, spreads=None):
         sec = {"1s": 1, "1m": 60, "5m": 300}[interval]
         days = len(k) * sec / 86400
         for hs in spreads.get(s, [0.15, 0.25, 0.4]):
-            for mk in (0.1, 0.075, 0.0):
-                r = simulate(k, hs, maker=mk, taker=max(mk, 0.075) if mk else 0.1)
+            for mk in (0.1, 0.0):
+                r = simulate(k, hs, maker=mk, taker=0.1)
                 L.append(f"| {s} | {hs} | {mk} | {r['pnl_pct']} | {r['roundtrips']} | {r['wins']} | {r['stops']} | "
                          f"{r['pnl_pct'] / days:.3f} |")
                 raw.append({"sym": s, "interval": interval, "half_spread": hs, "maker": mk, "days": days, **r})
@@ -63,5 +63,24 @@ def main(out, syms, interval="1m", candles=4320, spreads=None):
     print("\n".join(L))
 
 
+def auto_candidates(quote="FDUSD", min_vol=50000, min_spread=0.08, top=12):
+    """Elige pares del quote dado con volumen y spread suficientes (datos públicos actuales)."""
+    from .discovery.sources import _get, BINANCE_DATA
+    out = []
+    for t in _get(f"{BINANCE_DATA}/api/v3/ticker/24hr"):
+        if not t["symbol"].endswith(quote):
+            continue
+        b, a, v = float(t["bidPrice"]), float(t["askPrice"]), float(t["quoteVolume"])
+        if b > 0 and v >= min_vol and (a / b - 1) * 100 >= min_spread:
+            out.append((t["symbol"], round((a / b - 1) * 100 / 2, 3), v))
+    return sorted(out, key=lambda x: x[2], reverse=True)[:top]
+
+
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2].split(","), *sys.argv[3:5])
+    if sys.argv[2].startswith("auto:"):
+        cands = auto_candidates(sys.argv[2][5:])
+        print("candidatos:", cands)
+        spreads = {s: sorted({h, 0.1, 0.2}) for s, h, _ in cands}
+        main(sys.argv[1], [c[0] for c in cands], *sys.argv[3:5], spreads=spreads)
+    else:
+        main(sys.argv[1], sys.argv[2].split(","), *sys.argv[3:5])

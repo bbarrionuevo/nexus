@@ -21,6 +21,8 @@ jobs:
         run: cd local && python -m nexus.research_maker ../datawt/data/maker_1m.md "${{ inputs.symbols || 'SOPHUSDT,AIUSDT,BONKUSDC,GNSUSDT,BTTCUSDT,IDUSDT,HYPERUSDT,BONKUSDT,RADUSDT,BTCUSDT' }}" 1m 4320 && cat ../datawt/data/maker_1m.md >> $GITHUB_STEP_SUMMARY
       - name: Velas de 1 segundo (~3 horas)
         run: cd local && python -m nexus.research_maker ../datawt/data/maker_1s.md "${{ inputs.symbols || 'SOPHUSDT,AIUSDT,BONKUSDC,GNSUSDT,BTTCUSDT,IDUSDT,HYPERUSDT,BONKUSDT,RADUSDT,BTCUSDT' }}" 1s 10000 && cat ../datawt/data/maker_1s.md >> $GITHUB_STEP_SUMMARY
+      - name: Pares FDUSD (maker 0%) seleccionados automáticamente, 1m x 7 días
+        run: cd local && python -m nexus.research_maker ../datawt/data/maker_fdusd_1m.md auto:FDUSD 1m 10080 && cat ../datawt/data/maker_fdusd_1m.md >> $GITHUB_STEP_SUMMARY
       - run: |
           cd datawt
           git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
