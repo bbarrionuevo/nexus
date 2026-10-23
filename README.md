@@ -31,3 +31,21 @@ cd local && python -m nexus.main && pytest
 - Mejor cruce solo-ARS: +0,18% bruto (USDT) / +0,01% (USDC); negativo tras costo de red.
 - Verificado en el PDF: la pata EUR→USDT en Binance ya no existe para residentes EEE (jul-2026); la API para publicar anuncios P2P no está confirmada para cuentas retail; el endpoint de órdenes de Fiwind no está verificado.
 - No se implementan funciones cuyo fin sea evadir la detección AML (p. ej. fraccionar para no ser marcado). Los límites de `compliance.py` mantienen la operatoria dentro de los umbrales legales, y todo debe declararse.
+
+## Descubrimiento automático (23-oct-2026) — qué funciona y qué no, con datos reales
+Workflows: `discover.yml` (cada 20 min), `research-maker.yml` (cada 6 h), `trading-backtest.yml` (diario). Datos en la rama `data`.
+
+| Clase | Resultado | Veredicto |
+|---|---|---|
+| Triangular Binance (1.218 pares) | ineficiencia bruta máx 0,03% vs 0,225% de fees | ❌ mercado eficiente |
+| Triangular Kraken (con filtro de liquidez) | todo negativo | ❌ |
+| Cruce Kraken/Bitstamp/Coinbase EUR | −0,77% neto | ❌ |
+| Paridad EURC (puente 1:1 gratis de Kraken) | −0,4% | ❌ |
+| EURR/USDR "+3% / +49%" | depeg por hackeo StablR (may-2026), redención suspendida | ⚠️ trampa, excluidas |
+| ARS entre plataformas (USDT/USDC/BTC/ETH) | −1% a −3% neto | ❌ |
+| PDF: vender P2P / recomprar Fiwind | −0,63% | ❌ |
+| Trading direccional RSI/SMA/breakout (20 monedas, walk-forward) | 1h: 5/20 positivas; 4h: azar | ❌ sin ventaja robusta |
+| **Market making con maker 0%** (AI, BONK, ID; 1m, 3 días) | **+26% a +30%** con 160–209 vueltas | ✅ candidato — en validación |
+| Market making con maker 0,1% | 2/30 positivas | ❌ la comisión mata el margen |
+
+Conclusión: la única ventaja medible para "miles de operaciones de céntimos" es **proveer liquidez donde la comisión maker es 0%** (Binance: pares FDUSD, según fuentes secundarias). Requiere cuenta habilitada (p. ej., residente argentino; Binance es PSAV registrado ante la CNV).
