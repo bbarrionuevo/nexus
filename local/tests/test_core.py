@@ -111,3 +111,13 @@ def test_peg_scanner_finds_premium_bid():
             "EURR/USD": ("EURR", "USD", 1.155, 1.16, 0.2, 50, 50, 1000)}
     top = scan_peg(book)[0]
     assert top["pair"] == "EURR/USD" and top["side"] == "sell" and top["net_pct"] > 2.5
+
+
+def test_peg_ignores_depegged_and_maker_scan():
+    from nexus.discovery.peg import scan_peg
+    from nexus.discovery.maker import scan_maker
+    book = {"EUR/USD": ("EUR", "USD", 1.12, 1.12, 0.2, 1e6, 1e6, 1e9),
+            "EURR/EUR": ("EURR", "EUR", 0.6, 0.67, 0.2, 50, 50, 1000)}
+    assert scan_peg(book) == []
+    m = scan_maker([("X/EUR", 100, 101, 50000), ("Y/EUR", 100, 100.1, 50000)], 0.25)
+    assert [r["pair"] for r in m] == ["X/EUR"]

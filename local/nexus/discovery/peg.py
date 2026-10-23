@@ -10,6 +10,12 @@ USD_STABLES = {"USD", "USDC", "USDT", "USDQ", "USDG", "RLUSD", "PYUSD", "DAI", "
                "TUSD", "USD1", "USDE", "USDR", "GUSD", "USDP"}
 
 
+# Stablecoins que perdieron la paridad: no se tratan como valor justo (hackeo StablR, may-2026;
+# redención suspendida). Un descuento ahí es riesgo de crédito, no arbitraje.
+DEPEGGED = {"EURR", "USDR"}
+DEPEG_THRESHOLD_PCT = 5.0
+
+
 def usd_in_eur(book):
     for k in ("EUR/USD", "EURC/USD", "EURC/USDC"):
         if k in book:
@@ -37,7 +43,7 @@ def scan_peg(book, rebalance_fee_pct=0.2):
         if "(conv)" in pair:
             continue
         vb, vq = value_eur(base, ue), value_eur(quote, ue)
-        if not vb or not vq or {base, quote} <= {"EUR", "USD"}:
+        if not vb or not vq or {base, quote} <= {"EUR", "USD"} or {base, quote} & DEPEGGED:
             continue
         fair = vb / vq
         dq = vq  # EUR por unidad de quote
@@ -46,6 +52,8 @@ def scan_peg(book, rebalance_fee_pct=0.2):
         sell_dev = (bid / fair - 1) * 100       # alguien compra base por encima del justo
         buy_dev = (fair / ask - 1) * 100        # alguien vende base por debajo del justo
         for side, dev, depth in (("sell", sell_dev, bid_d), ("buy", buy_dev, ask_d)):
+            if abs(dev) > DEPEG_THRESHOLD_PCT:
+                continue  # desvío tan grande indica depeg o libro roto, no arbitraje
             out.append({"pair": pair, "side": side, "dev_pct": round(dev, 4),
                         "net_pct": round(dev - fee - rebalance_fee_pct, 4), "fee": fee,
                         "depth_eur": round(depth, 2) if depth else None,

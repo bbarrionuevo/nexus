@@ -84,3 +84,16 @@ def binance_klines(symbol="BTCUSDT", interval="1h", limit=1000, end=None):
     if end:
         q += f"&endTime={int(end)}"
     return [(k[0], float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])) for k in _get(q)]
+
+
+def binance_24h(quote_eur):
+    """[(par, bid, ask, vol24h_eur)] para todos los pares; quote_eur: {moneda: EUR por unidad}."""
+    out = []
+    for t in _get(f"{BINANCE_DATA}/api/v3/ticker/24hr"):
+        sym = t["symbol"]
+        for q, rate in quote_eur.items():
+            if sym.endswith(q):
+                out.append((sym[:-len(q)] + "/" + q, float(t["bidPrice"]), float(t["askPrice"]),
+                            float(t["quoteVolume"]) * rate))
+                break
+    return out

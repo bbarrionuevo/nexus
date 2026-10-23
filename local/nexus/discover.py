@@ -10,7 +10,8 @@ from pathlib import Path
 from .core.ars_scanner import scan
 from .discovery import sources
 from .discovery.cross import cross
-from .discovery.peg import scan_peg
+from .discovery.maker import scan_maker
+from .discovery.peg import scan_peg, usd_in_eur
 from .discovery.triangular import cycles
 
 TAKER = {"kraken": 0.40, "bitstamp": 0.40, "coinbase": 0.60}
@@ -32,6 +33,11 @@ def sample():
             rec[f"tri_{start}"] = cs[:5]
             rec[f"tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
         _t(f"kraken ({len(kb)} pares)", t0)
+        ue = usd_in_eur(kb)
+        q_eur = {"EUR": 1.0, "USD": ue, "USDC": ue, "USDT": ue, "EURC": 1.0}
+        rows = [(p, v[2], v[3], v[7] * q_eur[v[1]]) for p, v in kb.items()
+                if v[1] in q_eur and len(v) > 7 and v[7] is not None and "(conv)" not in p]
+        rec["maker_kraken"] = scan_maker(rows, 0.25)[:10]
         peg = scan_peg(kb)
         rec["peg_kraken"] = [p for p in peg if p["net_pct"] > -0.5][:10]
         kraken_eur = {p: (v[2], v[3]) for p, v in kb.items() if v[1] == "EUR" and "(conv)" not in p}
@@ -42,6 +48,12 @@ def sample():
     try:
         bb = sources.binance_book()
         rec["binance_pairs"] = len(bb)
+        try:
+            ue_b = usd_in_eur(kb)
+        except Exception:
+            ue_b = 0.89
+        rec["maker_binance"] = scan_maker(sources.binance_24h({"USDT": ue_b, "USDC": ue_b, "FDUSD": ue_b,
+                                                              "EUR": 1.0}), 0.075)[:10]
         rec["peg_binance"] = [p for p in scan_peg(bb, 0.075) if p["net_pct"] > -0.3][:10]
         for start in ("USDT", "BTC", "ARS", "EUR"):
             cs = cycles(bb, start, max_spread_pct=1.0)
