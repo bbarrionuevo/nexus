@@ -7,7 +7,7 @@ concurrency: backtest
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -16,6 +16,8 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -r local/requirements.txt
       - run: cd local && python -m nexus.backtest_trading ../datawt/data/trading_backtest.md && cat ../datawt/data/trading_backtest.md >> $GITHUB_STEP_SUMMARY
+      - run: cd local && python -m nexus.research_rsi ../datawt/data/research_rsi_1h.md 1h 15000 && cat ../datawt/data/research_rsi_1h.md >> $GITHUB_STEP_SUMMARY
+      - run: cd local && python -m nexus.research_rsi ../datawt/data/research_rsi_4h.md 4h 6000 && cat ../datawt/data/research_rsi_4h.md >> $GITHUB_STEP_SUMMARY
       - run: |
           cd datawt
           git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
