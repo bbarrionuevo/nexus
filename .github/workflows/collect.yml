@@ -6,7 +6,7 @@ on:
       samples: {default: "1"}
       interval: {default: "30"}
 permissions: {contents: write}
-concurrency: collect
+concurrency: data-branch
 jobs:
   collect:
     runs-on: ubuntu-latest
