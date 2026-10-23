@@ -15,8 +15,12 @@ from .discovery.triangular import cycles
 TAKER = {"kraken": 0.40, "bitstamp": 0.40, "coinbase": 0.60}
 
 
+def _t(msg, t0):
+    print(f"  {msg}: {time.time() - t0:.1f}s", flush=True)
+
+
 def sample():
-    rec, errs = {"ts": time.time()}, {}
+    rec, errs, t0 = {"ts": time.time()}, {}, time.time()
     try:
         kb = sources.kraken_book()
         rec["kraken_pairs"] = len(kb)
@@ -24,6 +28,7 @@ def sample():
             cs = cycles(kb, start)
             rec[f"tri_{start}"] = cs[:5]
             rec[f"tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
+        _t(f"kraken ({len(kb)} pares)", t0)
         kraken_eur = {p: (v[2], v[3]) for p, v in kb.items() if v[1] == "EUR" and "(conv)" not in p}
         rec["eurc_peg"] = {p: {"bid": v[2], "ask": v[3], "fee": v[4]} for p, v in kb.items()
                            if v[0] == "EURC" and "(conv)" not in p}
@@ -38,12 +43,14 @@ def sample():
             rec[f"bin_tri_{start}_maxgross"] = cs and max(c["gross_pct"] for c in cs)
     except Exception as e:
         errs["binance"] = str(e)[:200]
+    _t("binance", t0)
     books = {"kraken": kraken_eur}
     for name, fn in (("bitstamp", sources.bitstamp_book), ("coinbase", sources.coinbase_book)):
         try:
             books[name] = fn()
         except Exception as e:
             errs[name] = str(e)[:200]
+    _t("bitstamp+coinbase", t0)
     books = {k: v for k, v in books.items() if v}
     # Paridad EURC: vender EURC por encima de 1 (o comprar debajo) y convertir 1:1 gratis en Kraken
     peg = []
@@ -64,6 +71,7 @@ def sample():
                                    for k, v in vars(o).items()} for o in ops[:3]]
         except Exception as e:
             errs[f"ars_{coin}"] = str(e)[:200]
+    _t("criptoya", t0)
     rec["errors"] = errs
     return rec
 

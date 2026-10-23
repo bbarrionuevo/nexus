@@ -5,7 +5,7 @@ S = requests.Session()
 
 
 def _get(url, **kw):
-    r = S.get(url, timeout=15, **kw)
+    r = S.get(url, timeout=(5, 10), **kw)
     r.raise_for_status()
     return r.json()
 
