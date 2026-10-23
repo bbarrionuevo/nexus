@@ -84,36 +84,59 @@ def run(c, pos):
     return (eq - 1) * 100, trades
 
 
-def evaluate(k):
+def evaluate(k, folds=1):
+    """Walk-forward: en cada tramo se optimiza con todo lo anterior y se prueba en el tramo siguiente."""
     c, h, lo = [x[4] for x in k], [x[2] for x in k], [x[3] for x in k]
-    cut = int(len(c) * 0.7)
+    n = len(c)
+    bounds = [int(n * (0.7 + 0.3 * f / folds)) for f in range(folds + 1)]
     res = []
     for name, grid in GRID.items():
-        best = max(grid, key=lambda p: run(c[:cut], signals(name, c[:cut], h[:cut], lo[:cut], p))[0])
-        sig = signals(name, c, h, lo, best)          # señales con historia completa (sin mirar el futuro)
-        oos, trades = run(c[cut - 1:], sig[cut - 1:])
-        res.append({"strategy": name, "params": best, "oos_pct": round(oos, 2), "trades": trades})
-    bh = (c[-1] / c[cut - 1] - 1) * 100
+        eq, trades, wins, params = 1.0, 0, 0, []
+        for a, b in zip(bounds, bounds[1:]):
+            best = max(grid, key=lambda p: run(c[:a], signals(name, c[:a], h[:a], lo[:a], p))[0])
+            sig = signals(name, c[:b], h[:b], lo[:b], best)   # solo datos hasta b: sin mirar el futuro
+            r, t = run(c[a - 1:b], sig[a - 1:b])
+            eq *= 1 + r / 100
+            trades += t
+            wins += r > (c[b - 1] / c[a - 1] - 1) * 100
+            params.append(best)
+        res.append({"strategy": name, "params": params[-1], "oos_pct": round((eq - 1) * 100, 2),
+                    "trades": trades, "folds_won": f"{wins}/{folds}"})
+    bh = (c[-1] / c[bounds[0] - 1] - 1) * 100
     return res, round(bh, 2)
+
+
+def history(sym, iv, total):
+    out, end = [], None
+    while len(out) < total:
+        k = binance_klines(sym, iv, 1000, end)
+        if not k:
+            break
+        out = k + out
+        end = k[0][0] - 1
+        if len(k) < 1000:
+            break
+    return out[-total:]
 
 
 def main(out="data/trading_backtest.md"):
     lines = ["# Backtest trading (fuera de muestra, comisión 0.075%/lado)\n",
-             "| símbolo | intervalo | estrategia | params | OOS % | trades | buy&hold % | ¿le gana? |",
-             "|---|---|---|---|---|---|---|---|"]
+             "| símbolo | intervalo | estrategia | params | OOS % | trades | tramos ganados | buy&hold % | ¿robusta? |",
+             "|---|---|---|---|---|---|---|---|---|"]
     raw = []
     for sym in ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"):
         for iv in ("15m", "1h", "4h"):
             try:
-                k = binance_klines(sym, iv, 1000)
+                k = history(sym, iv, 5000)
             except Exception as e:
                 lines.append(f"| {sym} | {iv} | error: {str(e)[:60]} | | | | | |")
                 continue
-            res, bh = evaluate(k)
+            res, bh = evaluate(k, folds=5)
             for r in res:
-                win = r["oos_pct"] > max(bh, 0)
+                # robusta: le gana a buy&hold, gana en >=4/5 tramos y tiene >=20 operaciones
+                win = r["oos_pct"] > max(bh, 0) and int(r["folds_won"][0]) >= 4 and r["trades"] >= 20
                 lines.append(f"| {sym} | {iv} | {r['strategy']} | {r['params']} | {r['oos_pct']} | "
-                             f"{r['trades']} | {bh} | {'SÍ' if win else 'no'} |")
+                             f"{r['trades']} | {r['folds_won']} | {bh} | {'SÍ' if win else 'no'} |")
                 raw.append({"sym": sym, "iv": iv, "bh": bh, **r})
     open(out, "w").write("\n".join(lines) + "\n")
     open(out.replace(".md", ".json"), "w").write(json.dumps(raw))

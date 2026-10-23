@@ -101,5 +101,5 @@ def test_backtester_runs_on_synthetic():
     from nexus.backtest_trading import evaluate
     k = [(i, 0, 100 + 10 * math.sin(i / 20) + 1, 100 + 10 * math.sin(i / 20) - 1,
           100 + 10 * math.sin(i / 20), 1) for i in range(600)]
-    res, bh = evaluate(k)
+    res, bh = evaluate(k, folds=3)
     assert len(res) == 3 and all("oos_pct" in r for r in res)
