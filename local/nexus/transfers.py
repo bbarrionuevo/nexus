@@ -16,7 +16,11 @@ ALIASES = {"BEP20": "BSC", "BSC": "BSC", "BNB SMART CHAIN": "BSC", "ERC20": "ETH
            "ETHEREUM": "ETH", "TRC20": "TRX", "TRX": "TRX", "TRON": "TRX", "SOL": "SOL", "SOLANA": "SOL",
            "ARBITRUM": "ARB", "ARB": "ARB", "ARBITRUM ONE": "ARB", "OPTIMISM": "OP", "OP": "OP",
            "POLYGON": "MATIC", "MATIC": "MATIC", "AVAXC": "AVAXC", "AVAX C-CHAIN": "AVAXC",
-           "BASE": "BASE", "TON": "TON", "APT": "APT", "SUI": "SUI", "NEAR": "NEAR"}
+           "BASE": "BASE", "TON": "TON", "APT": "APT", "SUI": "SUI", "NEAR": "NEAR",
+           # nombres de otros exchanges (Gate, KuCoin, Bitget, HTX)
+           "ARBITRUMONE": "ARB", "ARBEVM": "ARB", "ARBONE": "ARB", "OPETH": "OP", "BASEEVM": "BASE",
+           "AVAX_C": "AVAXC", "AVAXC-CHAIN": "AVAXC", "AVAX-C": "AVAXC", "POLYGON POS": "MATIC",
+           "SPL": "SOL", "BEP20(BSC)": "BSC"}
 
 
 def norm(name):
