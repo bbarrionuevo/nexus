@@ -333,3 +333,32 @@ def test_cobertura_en_vivo_cubre_con_el_precio_siguiente():
     hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # Binance cayó antes de cubrir
     assert hp.fills == 1 and hp.adverse == 1
     assert abs(hp.pnl - 100 * (0.995 * 0.999 / 0.990 - 1)) < 1e-9 and hp.pnl > 0
+
+
+def test_transferencias_rutas_habilitadas_y_costo():
+    from nexus.transfers import check, norm
+    assert norm("BEP20(BSC)") == "BSC" and norm("Ethereum(ERC20)") == "ETH" and norm("TRC20") == "TRX"
+    mexc = [{"coin": "BMT", "networkList": [
+        {"netWork": "BEP20(BSC)", "depositEnable": True, "withdrawEnable": True, "withdrawFee": "5"},
+        {"netWork": "ERC20", "depositEnable": True, "withdrawEnable": False, "withdrawFee": "40"}]},
+        {"coin": "XYZ", "networkList": [{"netWork": "SOL", "depositEnable": False, "withdrawEnable": False,
+                                          "withdrawFee": "1"}]}]
+    binance = [{"coin": "BMT", "networkList": [
+        {"network": "BSC", "depositEnable": True, "withdrawEnable": True, "withdrawFee": "3"},
+        {"network": "ETH", "depositEnable": True, "withdrawEnable": True, "withdrawFee": "30"}]},
+        {"coin": "XYZ", "networkList": [{"network": "SOL", "depositEnable": True, "withdrawEnable": True,
+                                          "withdrawFee": "1"}]}]
+    r = check(["BMT", "XYZ"], mexc, binance, prices={"BMT": 0.1})
+    assert r["BMT"]["MEXC->Binance"]["net"] == "BSC" and r["BMT"]["MEXC->Binance"]["fee_usdt"] == 0.5
+    assert r["BMT"]["Binance->MEXC"]["net"] == "BSC" and r["BMT"]["ok_both_ways"]
+    assert r["XYZ"]["MEXC->Binance"] is None and not r["XYZ"]["ok_both_ways"]   # retiro MEXC suspendido
+
+
+def test_clientes_siguen_sin_endpoints_de_ordenes_ni_retiros():
+    from nexus.exchanges.binance import BinanceReadOnly
+    from nexus.exchanges.mexc import MexcReadOnly
+    for c, bad in ((MexcReadOnly("k", "s"), ("/api/v3/order", "/api/v3/capital/withdraw/apply")),
+                   (BinanceReadOnly("k", "s"), ("/api/v3/order", "/sapi/v1/capital/withdraw/apply"))):
+        for path in bad:
+            with pytest.raises(ReadOnlyViolation):
+                c._get(path)
