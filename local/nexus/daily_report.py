@@ -26,7 +26,7 @@ def best(rec, key):
 def main(path, hours=24):
     since = time.time() - hours * 3600
     rows = [r for r in map(json.loads, open(path)) if r["ts"] >= since]
-    keys = ["maker_kraken", "maker_binance", "peg_kraken", "peg_binance", "bin_tri_USDT", "bin_tri_BTC", "bin_tri_ARS", "bin_tri_EUR", "tri_EUR", "tri_USDC", "cross_eur", "eurc_arb", "ars_USDT", "ars_USDC", "ars_BTC", "ars_ETH"]
+    keys = ["hedge_mexc_binance", "hedge_mexc_binance_bnb", "funding", "maker_kraken", "maker_binance", "peg_kraken", "peg_binance", "bin_tri_USDT", "bin_tri_BTC", "bin_tri_ARS", "bin_tri_EUR", "tri_EUR", "tri_USDC", "cross_eur", "eurc_arb", "ars_USDT", "ars_USDC", "ars_BTC", "ars_ETH"]
     print(f"# Informe nexus — últimas {hours} h, {len(rows)} muestras\n")
     print("| clase | muestras | muestras con neto>0 | oportunidades distintas >0 | mejor neto % |")
     print("|---|---|---|---|---|")

@@ -10,6 +10,8 @@ from pathlib import Path
 from .core.ars_scanner import scan
 from .discovery import sources
 from .discovery.cross import cross
+from .discovery.funding import scan_funding
+from .discovery.hedge import scan_hedge
 from .discovery.maker import scan_maker
 from .discovery.peg import scan_peg, usd_in_eur
 from .discovery.triangular import cycles
@@ -69,6 +71,30 @@ def sample():
         except Exception as e:
             errs[name] = str(e)[:200]
     _t("bitstamp+coinbase", t0)
+    # Market making cubierto: cotizar en MEXC (maker 0%) y cubrir en Binance (taker 0,1% / 0,075% con BNB)
+    try:
+        mb, bb = sources.mexc_book_all(), sources.binance_book_all()
+        for fee, key in ((0.1, "hedge_mexc_binance"), (0.075, "hedge_mexc_binance_bnb")):
+            h = scan_hedge(mb, bb, 0.0, fee)
+            rec[key] = h[:15]
+            rec[key + "_positive"] = sum(x["net_pct"] > 0 for x in h)
+        rec["hedge_common_pairs"] = len(set(mb) & set(bb))
+    except Exception as e:
+        errs["hedge"] = str(e)[:200]
+    _t("cobertura MEXC-Binance", t0)
+    # Carry de funding (contado + corto perpetuo) en MEXC y Gate
+    frows = []
+    for name, fn in (("mexc_funding", sources.mexc_funding), ("gate_funding", sources.gate_funding)):
+        try:
+            frows += fn()
+        except Exception as e:
+            errs[name] = str(e)[:200]
+    if frows:
+        f = scan_funding(frows)
+        rec["funding"] = f[:15]
+        rec["funding_count"] = len(f)
+        rec["funding_top_apr"] = [x["apr_pct"] for x in f[:5]]
+    _t("funding", t0)
     books = {k: v for k, v in books.items() if v}
     # Paridad EURC: vender EURC por encima de 1 (o comprar debajo) y convertir 1:1 gratis en Kraken
     peg = []
