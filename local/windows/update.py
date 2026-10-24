@@ -58,6 +58,14 @@ def protected_changes(cur, new):
 
 
 def open_positions():
+    """Posiciones abiertas del PAPER, solo si el agente está vivo.
+
+    Si el agente está detenido, su estado guardado no representa posiciones vigentes (son simuladas)
+    y bloquear la actualización impediría instalar justamente el arreglo (bloqueo circular visto el
+    24-oct-2026). ANTES DE LA FASE 6 esto debe reemplazarse por la conciliación con el exchange (R-05).
+    """
+    if not agent_alive(600):
+        return []
     books = paths.read_json(paths.state("paper_books.json"), {})
     return [k for k, v in books.items() if v.get("state") == "long"]
 
