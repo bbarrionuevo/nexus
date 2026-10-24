@@ -136,6 +136,10 @@ def test_informe_diario_contiene_lo_esencial():
     t = digest(pc, "tabla", now=1_800_000_000)
     assert "BONKUSDT" in t and "paper" in t and "tabla" in t
     assert "sin datos" in digest(None)
+    pc["status"]["evidence"] = {"by_kind": {"maker": {"n": 9, "total": 0.5}, "stop": {"n": 2, "total": -0.9}},
+                                "excluded_old_model": 837}
+    t = digest(pc, "", now=1_800_000_000)
+    assert "stop 2 vueltas -0.90 €" in t and "837" in t
 
 
 def test_maker_descarta_libros_rotos():
@@ -480,3 +484,22 @@ def test_defecto3_operaciones_del_intervalo_contra_la_orden_vieja(tmp_path, monk
     ma.step(G, c, cfg, seen, last_ok, [])
     bk = G.books["X"]
     assert bk.state == "long" and bk.entry == 1.00             # llenada a 1,00 con el mercado ya en 0,996
+
+
+def test_latido_incluye_vueltas_del_modelo_vigente_y_desglose(tmp_path, monkeypatch):
+    import json
+    from nexus import evidence, paths
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    rows = [{"ts": 0, "sym": "A", "pnl": -0.1, "kind": "timeout", "model": evidence.FILL_MODEL},
+            {"ts": 1, "sym": "A", "pnl": 0.5, "kind": "maker"},                                  # modelo viejo
+            {"ts": 2, "sym": "A", "pnl": 0.05, "kind": "maker", "hold_s": 30, "entry": 1, "exit": 1.001,
+             "lab": True, "model": evidence.FILL_MODEL},
+            {"ts": 3, "sym": "A", "pnl": -0.4, "kind": "stop", "model": evidence.FILL_MODEL}]
+    paths.state("trades.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    tail = rep.trades_tail()
+    assert [t[3] for t in tail] == ["timeout", "maker", "stop"] and tail[1][7] == 1   # la 1ª línea no se pierde
+    assert [t[3] for t in rep.trades_tail(max_bytes=150)][-1] == "stop"                 # archivo grande: cola
+    ev = evidence.evaluate(paths.state("trades.jsonl"))
+    assert ev["by_kind"] == {"timeout": {"n": 1, "total": -0.1}, "maker": {"n": 1, "total": 0.05},
+                             "stop": {"n": 1, "total": -0.4}}
+    assert ev["per_symbol"]["A"]["by_kind"]["stop"]["n"] == 1

@@ -47,6 +47,16 @@ def stats(pnls):
             "win_rate": round(sum(x > 0 for x in pnls) / n, 3)}
 
 
+def by_kind(trades):
+    """Cuántas vueltas y cuánto dejó cada tipo de cierre (maker = venta con ganancia, stop, timeout)."""
+    d = defaultdict(lambda: {"n": 0, "total": 0.0})
+    for t in trades:
+        k = d[t.get("kind", "?")]
+        k["n"] += 1
+        k["total"] = round(k["total"] + t["pnl"], 4)
+    return dict(d)
+
+
 def daily(trades):
     d = defaultdict(float)
     for t in trades:
@@ -79,9 +89,11 @@ def evaluate(path, now=None):
     by_sym = defaultdict(list)
     for t in trades:
         by_sym[t["sym"]].append(t)
-    per_sym = {s: stats([t["pnl"] for t in ts]) | {"lab": any(t.get("lab") for t in ts)} for s, ts in by_sym.items()}
+    per_sym = {s: stats([t["pnl"] for t in ts]) | {"lab": any(t.get("lab") for t in ts), "by_kind": by_kind(ts)}
+               for s, ts in by_sym.items()}
     crit = criteria(trades, now)
-    return {"overall": stats([t["pnl"] for t in trades]), "daily": daily(trades), "per_symbol": per_sym,
+    return {"overall": stats([t["pnl"] for t in trades]), "by_kind": by_kind(trades), "daily": daily(trades),
+            "per_symbol": per_sym,
             "criteria": [{"name": n, "ok": ok, "detail": d} for n, ok, d in crit],
             "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit),
             "excluded_old_model": excluded}

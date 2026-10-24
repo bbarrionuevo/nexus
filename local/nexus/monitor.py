@@ -71,6 +71,13 @@ def digest(pc, research_md=None, now=None):
             L += ["", f"### Criterios para pasar a dinero real: {ev['criteria_met']}/{ev['criteria_total']}",
                   "| criterio | estado | detalle |", "|---|---|---|"]
             L += [f"| {c['name']} | {'✅' if c['ok'] else '⏳'} | {c['detail']} |" for c in ev["criteria"]]
+        kinds = ev.get("by_kind") or {}
+        if kinds:
+            names = {"maker": "venta con ganancia (maker)", "stop": "stop", "timeout": "tiempo máximo"}
+            L += ["", "**De dónde sale el resultado:** " + " · ".join(
+                f"{names.get(k, k)} {v['n']} vueltas {v['total']:+.2f} €" for k, v in kinds.items())]
+            if ev.get("excluded_old_model"):
+                L.append(f"(Excluidas {ev['excluded_old_model']} vueltas del modelo de llenado anterior, con sesgo.)")
         per = ev.get("per_symbol") or {}
         if per:
             rows = sorted(per.items(), key=lambda kv: (kv[1].get("n", 0) >= 30, kv[1].get("mean") or -9),
