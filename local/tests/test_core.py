@@ -362,3 +362,81 @@ def test_clientes_siguen_sin_endpoints_de_ordenes_ni_retiros():
         for path in bad:
             with pytest.raises(ReadOnlyViolation):
                 c._get(path)
+
+
+def test_carry_con_historial_real_detecta_intervalo_y_racha():
+    from nexus.discovery.funding_history import carry_stats, verdict
+    now = 1_800_000_000
+    h = [(now - i * 4 * 3600, 0.0005) for i in range(200)][::-1]          # cada 4 h, 0,05% fijo
+    s = carry_stats(h, roundtrip_cost_pct=0.2)
+    assert s["interval_h"] == 4 and s["d7"]["n"] == 42 and s["d7"]["positive_share"] == 1.0
+    assert 105 < s["d7"]["apr_pct"] < 115 and s["d7"]["net_pct"] == round(42 * 0.05 - 0.2, 3)
+    assert verdict(s) == "candidato"
+    spike = h[:-10] + [(h[-10][0], -0.08)] + h[-9:]                      # un día con -8%: se descarta como candidato
+    assert verdict(carry_stats(spike)) != "candidato"
+    flip = [(t, r if i % 2 else -0.001) for i, (t, r) in enumerate(h)]  # se da vuelta seguido
+    s2 = carry_stats(flip)
+    assert s2["worst_24h_pct"] < 0 and verdict(s2) == "descartado"
+    assert carry_stats([(now, 0.001)]) is None and verdict(None) == "sin datos"
+
+
+def test_redes_publicas_de_varios_exchanges():
+    from nexus.discovery import networks as nw
+    mexc = nw.parse_mexc({"data": [{"currency": "bmt", "coins": [
+        {"chain": "BEP20(BSC)", "fee": 5, "is_deposit_enabled": True, "is_withdraw_enabled": False}]}]})
+    binance = nw.parse_binance({"data": [{"coin": "BMT", "networkList": [
+        {"network": "BSC", "depositEnable": True, "withdrawEnable": True, "withdrawFee": "3"}]}]})
+    gate = nw.parse_gate([{"currency": "BMT", "chains": [{"name": "BSC", "deposit_disabled": False,
+                                                          "withdraw_disabled": False}]},
+                          {"currency": "OLD", "delisted": True}])
+    kucoin = nw.parse_kucoin({"data": [{"currency": "BMT", "chains": [
+        {"chainName": "BEP20", "isDepositEnabled": False, "isWithdrawEnabled": False, "withdrawalMinFee": "4"}]},
+        {"currency": "X", "chains": None}]})
+    bitget = nw.parse_bitget({"data": [{"coin": "BMT", "chains": [
+        {"chain": "ArbitrumOne", "rechargeable": "true", "withdrawable": "false", "withdrawFee": "1"}]}]})
+    htx = nw.parse_htx({"data": [{"currency": "bmt", "chains": [
+        {"displayName": "BEP20", "depositStatus": "allowed", "withdrawStatus": "prohibited"}]}]})
+    assert mexc["BMT"]["BSC"] == {"deposit": True, "withdraw": False, "fee": 5.0}
+    assert nw.status(mexc, "BMT") == "retiro cerrado" and nw.status(binance, "BMT") == "abierto"
+    assert nw.status(gate, "BMT") == "abierto" and "OLD" not in gate
+    assert nw.status(kucoin, "BMT") == "depósito y retiro cerrados" and nw.status(kucoin, "X") == "depósito y retiro cerrados"
+    assert "ARB" in bitget["BMT"] and nw.status(htx, "BMT") == "retiro cerrado"
+    assert nw.status(binance, "ZZZ") == "no listada"
+    assert nw.best_route(mexc, binance, "BMT") is None                     # MEXC no deja retirar
+    assert nw.best_route(binance, mexc, "BMT") == ("BSC", 3.0)
+
+
+def test_informe_de_viabilidad_se_arma_sin_red():
+    from nexus.research_feasibility import base_of, to_markdown
+    assert base_of("BMTUSDT") == "BMT" and base_of("ZECUSD1") == "ZEC" and base_of("USDT") is None
+    funding = [{"exchange": "MEXC", "pair": "JCT_USDT", "rate_now_pct": 0.07, "cycle_h": 4, "volume_24h_usdt": 5e6,
+                "stats": {"interval_h": 4, "days_covered": 30, "worst_24h_pct": -0.1,
+                          "d7": {"apr_pct": 80, "positive_share": 0.9, "net_pct": 1.3},
+                          "d30": {"apr_pct": 60, "positive_share": 0.85, "net_pct": 4.7}}, "verdict": "candidato"},
+               {"exchange": "Gate", "pair": "-", "error": "timeout"}]
+    hedge = [{"coin": "BMT", "edge": (1.2, "BMTUSDT", "buy_A_sell_B"), "status": {"Gate": "abierto"}}]
+    md = to_markdown(funding, hedge, {"MEXC": "HTTPError"}, ["Gate"])
+    assert "**candidato**" in md and "BMT" in md and "error: timeout" in md and "HTTPError" in md
+
+
+def test_paper_carry_cobra_solo_lo_liquidado_despues_de_abrir():
+    from nexus import paper_carry as pc
+    t0 = 1_800_000_000
+    hist = {"AGT_USDT": [(t0 - 3600, 0.01)], "BAD_USDT": [(t0 - 3600, 0.001)]}
+    prices = {"AGT_USDT": (0.999, 1.0, 1.001, 1.002), "BAD_USDT": (1.0, 1.0, 0.99, 0.991)}
+    st = pc.step({}, [("AGT_USDT", "candidato"), ("BAD_USDT", "candidato"), ("X_USDT", "inestable")],
+                 prices, lambda s: hist.get(s, []), now=t0)
+    assert list(st["open"]) == ["AGT_USDT"]                      # BAD: perpetuo 1% bajo el contado
+    assert st["open"]["AGT_USDT"]["settlements"] == 0            # el cobro previo a la apertura no cuenta
+    hist["AGT_USDT"] += [(t0 + 4 * 3600, 0.001), (t0 + 8 * 3600, 0.002)]
+    st = pc.step(st, [("AGT_USDT", "candidato")], {"AGT_USDT": (1.0, 1.001, 1.001, 1.001)},
+                 lambda s: hist.get(s, []), now=t0 + 9 * 3600)
+    p = st["open"]["AGT_USDT"]
+    assert p["settlements"] == 2 and abs(p["funding"] - 30 * 0.003) < 1e-12
+    assert p["mark"]["basis"] == round(30 * (1.0 / 1.0 - 1.001 / 1.001), 4)
+    assert abs(p["mark"]["net"] - (0.09 - 2 * 30 * 0.0012)) < 1e-4
+    hist["AGT_USDT"] += [(t0 + h * 3600, -0.001) for h in (12, 16, 20)]   # tres cobros negativos: cierra
+    st = pc.step(st, [("AGT_USDT", "candidato")], {"AGT_USDT": (1.0, 1.001, 1.001, 1.001)},
+                 lambda s: hist.get(s, []), now=t0 + 21 * 3600)
+    assert st["open"] == {} and st["closed"][0]["sym"] == "AGT_USDT" and st["summary"]["closed"] == 1
+    assert "AGT_USDT (cerrada)" in pc.to_markdown(st)
