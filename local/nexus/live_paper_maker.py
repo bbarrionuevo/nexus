@@ -1,10 +1,15 @@
-"""Paper trading de market making EN VIVO con modelo de cola (Binance, flujo público).
+"""Market making long-only con modelo de cola, para paper trading en vivo (Binance/MEXC).
 
-- Se une al mejor bid con 100 EUR equivalentes. Cola delante = cantidad en el bid al llegar.
-- Cada operación agresora vendedora a ese precio consume la cola; al agotarla, nos llenan.
-  Si se opera por debajo de nuestro precio, llenado total.
-- Si el mejor bid se aleja, cancelamos y volvemos a entrar al final de la nueva cola.
-- Con inventario: venta en el mejor ask con la misma lógica de cola; stop a mercado (taker).
+Entrada: orden límite de compra en el mejor bid, al final de la cola visible. Cada operación
+agresora vendedora a ese precio consume la cola; al agotarla nos llenan. Si se opera por debajo
+de nuestro precio, llenado total. Si el mejor bid se mueve, cancelamos y volvemos a entrar al final.
+
+Salida: venta límite en max(mejor ask, piso). El piso = entrada * (1 + 2*maker + margen mínimo):
+como maker NUNCA se vende a pérdida. Si el piso queda por encima del mejor ask, no conocemos la
+cola en ese nivel y solo se llena si el precio lo ATRAVIESA (supuesto conservador).
+Protecciones: stop a mercado (taker) y tiempo máximo de tenencia (taker al bid).
+Métricas: wins = vueltas con PnL > 0 (no "salidas como maker").
+
 python -m nexus.live_paper_maker OUT.jsonl SYM1,SYM2 minutos
 """
 import json
@@ -12,82 +17,129 @@ import sys
 import threading
 import time
 
-import websocket
-
 WS = "wss://data-stream.binance.vision/stream?streams="
 
 
 class Book:
-    def __init__(self, sym, notional=100.0, maker=0.0, taker=0.1, stop_pct=1.0):
-        self.sym, self.notional, self.maker, self.taker, self.stop = sym, notional, maker, taker, stop_pct
+    def __init__(self, sym, notional=40.0, maker=0.0, taker=0.1, stop_pct=1.0, min_edge_pct=0.0,
+                 max_hold_s=1800, gate=None, now=time.time):
+        self.sym, self.notional, self.maker, self.taker = sym, notional, maker, taker
+        self.stop, self.min_edge, self.max_hold, self.gate, self.now = stop_pct, min_edge_pct, max_hold_s, gate, now
         self.bid = self.ask = self.bq = self.aq = None
-        self.state, self.px, self.queue, self.qty = "flat", None, 0.0, 0.0
-        self.entry, self.eq, self.rt, self.wins, self.stops, self.requotes = 0.0, 0.0, 0, 0, 0, 0
+        self.state, self.px, self.queue, self.qty = "flat", None, None, 0.0
+        self.entry, self.entry_fee, self.entry_ts, self.eq = 0.0, 0.0, 0.0, 0.0
+        self.rt = self.wins = self.stops = self.timeouts = self.requotes = 0
+
+    # -- cotización ---------------------------------------------------------------------------
+    def _quote(self, price, queue):
+        if price != self.px:
+            self.px, self.queue = price, queue
+            self.requotes += 1
+            if self.gate:
+                self.gate.record_order()
+
+    def floor(self):
+        return self.entry * (1 + (2 * self.maker + self.min_edge) / 100)
 
     def on_book(self, b, bq, a, aq):
         self.bid, self.bq, self.ask, self.aq = b, bq, a, aq
         if self.state == "flat":
-            if self.px != b:                                  # (re)cotizar al final de la cola
-                self.px, self.queue = b, bq
-                self.requotes += 1
+            if self.gate and not self.gate.allow_entry(self.notional, self.gate.exposure()):
+                self.px, self.queue = None, None              # el riesgo veta: se cancela la compra
+                return
+            if self.px != b:
+                self._quote(b, bq)
         elif self.state == "long":
-            if b < self.entry * (1 - self.stop / 100):        # stop a mercado
-                self._close(b, self.taker, win=False)
-            elif self.px != a:
-                self.px, self.queue = a, aq
-                self.requotes += 1
+            if b < self.entry * (1 - self.stop / 100):
+                self._close(b, self.taker, kind="stop")
+            elif self.now() - self.entry_ts > self.max_hold:
+                self._close(b, self.taker, kind="timeout")
+            else:
+                target = max(a, self.floor())
+                self._quote(target, aq if target == a else None)
 
     def on_trade(self, price, qty, buyer_is_maker):
         if self.px is None:
             return
         if self.state == "flat" and buyer_is_maker:           # vendedor agresor golpea bids
             if price < self.px or (price == self.px and self._consume(qty)):
-                self.state, self.entry = "long", self.px
+                self.state, self.entry, self.entry_ts = "long", self.px, self.now()
                 self.qty = self.notional / self.px
-                self.eq -= self.notional * self.maker / 100
-                self.px, self.queue = self.ask, self.aq
+                self.entry_fee = self.notional * self.maker / 100
+                self.eq -= self.entry_fee
+                self.px, self.queue = None, None
+                if self.ask is not None:
+                    target = max(self.ask, self.floor())
+                    self._quote(target, self.aq if target == self.ask else None)
         elif self.state == "long" and not buyer_is_maker:     # comprador agresor levanta asks
             if price > self.px or (price == self.px and self._consume(qty)):
-                self._close(self.px, self.maker, win=True)
+                self._close(self.px, self.maker, kind="maker")
 
     def _consume(self, qty):
+        if self.queue is None:                                # cola desconocida: solo si atraviesa
+            return False
         self.queue -= qty
         return self.queue < 0
 
-    def _close(self, px, fee, win):
-        self.eq += self.qty * (px - self.entry) - self.qty * px * fee / 100
+    def _close(self, px, fee, kind):
+        exit_fee = self.qty * px * fee / 100
+        gross = self.qty * (px - self.entry)
+        self.eq += gross - exit_fee
+        pnl = gross - exit_fee - self.entry_fee
         self.rt += 1
-        self.wins += win
-        self.stops += not win
-        self.state, self.px, self.queue = "flat", None, 0.0
+        self.wins += pnl > 0
+        self.stops += kind == "stop"
+        self.timeouts += kind == "timeout"
+        if self.gate:
+            self.gate.on_close(pnl, kind != "maker")
+            if kind != "maker":
+                self.gate.record_order()
+        self.state, self.px, self.queue, self.qty, self.entry_fee = "flat", None, None, 0.0, 0.0
+        return pnl
+
+    # -- reporte y persistencia -----------------------------------------------------------------
+    def exposure(self):
+        return self.notional if self.state == "long" else 0.0
 
     def mark(self):
         open_pnl = self.qty * (self.bid - self.entry) if self.state == "long" and self.bid else 0.0
         return {"sym": self.sym, "maker": self.maker, "pnl_eur": round(self.eq + open_pnl, 4),
-                "roundtrips": self.rt, "wins": self.wins, "stops": self.stops, "requotes": self.requotes,
-                "state": self.state}
+                "realized_eur": round(self.eq + (self.entry_fee if self.state == "long" else 0), 4),
+                "roundtrips": self.rt, "wins": self.wins, "stops": self.stops, "timeouts": self.timeouts,
+                "requotes": self.requotes, "state": self.state}
+
+    KEYS = ("state", "entry", "entry_fee", "entry_ts", "qty", "eq", "rt", "wins", "stops", "timeouts", "requotes")
+
+    def to_dict(self):
+        return {k: getattr(self, k) for k in self.KEYS}
+
+    def load(self, d):
+        for k in self.KEYS:
+            if k in d:
+                setattr(self, k, d[k])
+        self.px, self.queue = None, None                      # tras reiniciar, se re-cotiza desde cero
 
 
 def run(syms, minutes, out):
+    import websocket
+
     books = {s: [Book(s, maker=0.0), Book(s, maker=0.1)] for s in syms}
     streams = "/".join(f"{s.lower()}@bookTicker/{s.lower()}@aggTrade" for s in syms)
 
     def on_msg(_, m):
         d = json.loads(m)["data"]
-        s = d["s"]
-        for bk in books.get(s, []):
+        for bk in books.get(d["s"], []):
             if "b" in d and "B" in d and "a" in d:
                 bk.on_book(float(d["b"]), float(d["B"]), float(d["a"]), float(d["A"]))
             elif d.get("e") == "aggTrade":
                 bk.on_trade(float(d["p"]), float(d["q"]), d["m"])
 
     ws = websocket.WebSocketApp(WS + streams, on_message=on_msg)
-    t = threading.Thread(target=ws.run_forever, kwargs={"ping_interval": 20}, daemon=True)
-    t.start()
+    threading.Thread(target=ws.run_forever, kwargs={"ping_interval": 20}, daemon=True).start()
     t0 = time.time()
     while time.time() - t0 < minutes * 60:
         time.sleep(60)
-        snap = {"ts": time.time(), "elapsed_min": round((time.time() - t0) / 60, 1),
+        snap = {"ts": time.time(), "elapsed_min": round((time.time() - t0) / 60, 1), "model": "v2-floor",
                 "books": [bk.mark() for v in books.values() for bk in v]}
         with open(out, "a") as f:
             f.write(json.dumps(snap) + "\n")

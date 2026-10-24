@@ -16,7 +16,7 @@ API = "https://api.mexc.com/api/v3"
 
 def run(syms, minutes, out):
     s = requests.Session()
-    books = {x: [Book(x, maker=0.0, taker=0.05), Book(x, maker=0.1, taker=0.1)] for x in syms}
+    books = {x: [Book(x, maker=0.0, taker=0.05), Book(x, maker=0.1, taker=0.1)] for x in syms}  # modelo v2
     seen = {x: set() for x in syms}
     t0, last_dump, errors = time.time(), time.time(), 0
     while time.time() - t0 < minutes * 60:
@@ -41,7 +41,7 @@ def run(syms, minutes, out):
         time.sleep(0.5)
         if time.time() - last_dump >= 60:
             last_dump = time.time()
-            snap = {"ts": time.time(), "exchange": "mexc", "elapsed_min": round((time.time() - t0) / 60, 1),
+            snap = {"ts": time.time(), "exchange": "mexc", "model": "v2-floor", "elapsed_min": round((time.time() - t0) / 60, 1),
                     "errors": errors, "books": [bk.mark() for v in books.values() for bk in v]}
             with open(out, "a") as f:
                 f.write(json.dumps(snap) + "\n")

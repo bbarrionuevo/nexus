@@ -1,14 +1,25 @@
-# Agente de market making. live: false = paper trading (no envía órdenes).
+# Agente de market making. live: false = paper trading. En esta versión NO existe código para
+# enviar órdenes reales: activar el modo real exige construirlo y tu autorización (R-02).
 live: false
 exchange: mexc
-symbols: [AIUSDT, BONKUSDT]   # lo actualiza el informe diario según la evidencia
-notional_eur: 100
-maker_fee_pct: 0.0             # MEXC spot API: 0% maker (verificar al operar)
+symbols: [BONKUSDT, AIUSDT]   # candidatos con señal en paper; se revisan con el informe diario
+maker_fee_pct: 0.0             # MEXC spot API; al arrancar se verifica con la API si hay claves
 taker_fee_pct: 0.05
-stop_pct: 1.0
-poll_seconds: 0.5
+stop_pct: 1.0                  # stop a mercado al caer 1% bajo la entrada
+min_edge_pct: 0.0              # margen mínimo sobre entrada+comisiones para vender como maker
+max_hold_min: 30               # tenencia máxima; luego sale al bid (taker)
+poll_seconds: 1.0
+stale_data_s: 20               # sin datos frescos por 20 s => se cancela la compra pendiente
+
+# Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
+# con tu autorización (el CI rechaza valores por encima de la línea base aprobada).
 risk:
-  max_notional_eur: 100
-  daily_loss_limit_eur: 3      # 3% del capital: corta el día
-  max_consecutive_stops: 4
+  max_position_eur: 40         # por posición
+  max_total_exposure_eur: 80   # suma de posiciones abiertas (deja 20 EUR de colchón)
+  daily_loss_limit_eur: 2      # 2% del capital: no abre más ese día
+  weekly_loss_limit_eur: 4     # 4%
+  max_drawdown_eur: 8          # 8% acumulado: halt permanente, rearme humano
+  max_consecutive_stops: 3
+  stops_cooldown_min: 60
   max_orders_per_minute: 30
+  losing_days_window: 7        # PnL neto de los últimos 7 días < 0 => la estrategia se apaga
