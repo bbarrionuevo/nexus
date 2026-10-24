@@ -7,8 +7,11 @@ Código de salida: 0 todo bien · 1 alguna clave falla · 2 alguna cuenta inform
 (R-01: para operar real, la clave debe crearse SIN permiso de retiro y con lista blanca de IP).
 """
 import os
+import re
 import sys
+import time
 
+import requests
 import yaml
 
 from . import paths
@@ -16,6 +19,42 @@ from .agent.maker_agent import CFG
 from .exchanges.binance import BinanceReadOnly
 from .exchanges.kraken import KrakenReadOnly
 from .exchanges.mexc import MexcReadOnly, parse_fee
+
+
+SECRET_LIKE = re.compile(r"[A-Za-z0-9+/=_-]{28,}")
+TIME_URLS = {"MEXC": ("https://api.mexc.com/api/v3/time", lambda j: j["serverTime"]),
+             "Binance": ("https://api.binance.com/api/v3/time", lambda j: j["serverTime"]),
+             "Kraken": ("https://api.kraken.com/0/public/Time", lambda j: j["result"]["unixtime"] * 1000)}
+HINTS = {"700002": "firma inválida: ¿clave y secreto intercambiados o con espacios?",
+         "700003": "hora desfasada: sincronizá Windows (Configuración > Hora > Sincronizar ahora)",
+         "700006": "la clave está limitada a otra IP: agregá la IP de esta PC en MEXC",
+         "700007": "la clave no tiene permiso de lectura de cuenta: tildá 'ver cuenta' en MEXC",
+         "10072": "clave inválida o vencida: creá una nueva en MEXC",
+         "-1021": "hora desfasada: sincronizá Windows",
+         "-2015": "clave inválida, IP no permitida o sin permiso de lectura (Binance)",
+         "EAPI:Invalid key": "clave de Kraken inválida",
+         "EAPI:Invalid nonce": "nonce inválido: hora desfasada o clave usada en otro programa",
+         "EGeneral:Permission denied": "a la clave de Kraken le falta el permiso 'Query Funds'"}
+
+
+def describe_error(e):
+    """Mensaje útil y SEGURO: código HTTP, código y texto del exchange, y una pista. Nunca la clave."""
+    resp = getattr(e, "response", None)
+    body = ""
+    if resp is not None:
+        body = SECRET_LIKE.sub("[oculto]", (resp.text or "")[:300])
+    elif str(e).startswith("['") or "EAPI" in str(e) or "EGeneral" in str(e):
+        body = str(e)[:300]
+    hint = next((h for code, h in HINTS.items() if code in body), "")
+    status = f"HTTP {resp.status_code} " if resp is not None else ""
+    return f"{type(e).__name__} {status}{body}" + (f" -> {hint}" if hint else "")
+
+
+def clock_offset_ms(name):
+    url, get = TIME_URLS[name]
+    t0 = time.time() * 1000
+    server = get(requests.get(url, timeout=10).json())
+    return server - (t0 + time.time() * 1000) / 2
 
 
 def _nonzero(balances, key_free="free"):
@@ -56,16 +95,22 @@ EXCHANGES = (
 )
 
 
-def run(exchanges=EXCHANGES, out=print):
+def run(exchanges=EXCHANGES, out=print, check_clock=True):
     code = 0
     for name, k, s, cls, fn in exchanges:
         if not (os.environ.get(k) and os.environ.get(s)):
             out(f"{name}: sin clave en .env (se omite)")
             continue
         try:
+            off = clock_offset_ms(name) if check_clock and name in TIME_URLS else 0
+            if abs(off) > 1000:
+                out(f"{name}: ATENCIÓN reloj de la PC desfasado {off / 1000:+.1f} s respecto del exchange")
+        except Exception:
+            pass
+        try:
             r = fn(cls())
         except Exception as e:
-            out(f"{name}: ERROR al consultar ({type(e).__name__}) — revisá la clave o sus permisos de lectura")
+            out(f"{name}: ERROR {describe_error(e)}")
             code = max(code, 1)
             continue
         out(f"{name}: OK {r}")

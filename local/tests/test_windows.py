@@ -158,9 +158,21 @@ def test_check_keys_no_muestra_secretos_y_detecta_retiros(monkeypatch):
         raise RuntimeError("401")
 
     lines = []
-    assert ck.run([("A", "FAKE_K", "FAKE_S", Ok, ok)], lines.append) == 0
-    assert ck.run([("B", "FAKE_K", "FAKE_S", Ok, retiros)], lines.append) == 2
-    assert ck.run([("C", "FAKE_K", "FAKE_S", Ok, falla)], lines.append) == 1
-    assert ck.run([("D", "NADA_K", "NADA_S", Ok, ok)], lines.append) == 0
+    assert ck.run([("A", "FAKE_K", "FAKE_S", Ok, ok)], lines.append, check_clock=False) == 0
+    assert ck.run([("B", "FAKE_K", "FAKE_S", Ok, retiros)], lines.append, check_clock=False) == 2
+    assert ck.run([("C", "FAKE_K", "FAKE_S", Ok, falla)], lines.append, check_clock=False) == 1
+    assert ck.run([("D", "NADA_K", "NADA_S", Ok, ok)], lines.append, check_clock=False) == 0
     texto = "\n".join(lines)
     assert "super-secret" not in texto and "R-01" in texto and "sin clave" in texto
+
+
+
+def test_describe_error_es_util_y_no_filtra_claves():
+    import requests
+    from nexus.check_keys import describe_error
+    r = requests.models.Response()
+    r.status_code = 400
+    r._content = b'{"code":700003,"msg":"Timestamp for this request is outside of the recvWindow. key=mx0vglABCDEFGHIJKLMNOPQRSTUVWXYZ12"}'
+    msg = describe_error(requests.HTTPError(response=r))
+    assert "HTTP 400" in msg and "700003" in msg and "sincronizá" in msg and "mx0vgl" not in msg
+    assert "Query Funds" in describe_error(RuntimeError("['EGeneral:Permission denied']"))
