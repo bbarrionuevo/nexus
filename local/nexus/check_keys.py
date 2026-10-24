@@ -26,7 +26,7 @@ def main():
     bal = {b["asset"]: b["free"] for b in acc.get("balances", []) if float(b.get("free", 0)) > 0}
     print(f"canTrade={acc.get('canTrade')} canWithdraw={acc.get('canWithdraw')} "
           f"permissions={acc.get('permissions')} saldos={bal}")
-    for sym in yaml.safe_load(CFG.read_text())["symbols"]:
+    for sym in yaml.safe_load(CFG.read_text(encoding="utf-8"))["symbols"]:
         try:
             print(sym, "comisión maker/taker %:", parse_fee(c.trade_fee(sym)))
         except Exception as e:

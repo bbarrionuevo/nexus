@@ -118,7 +118,7 @@ class Issues:
 
 def _load(path):
     try:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return None
 
@@ -139,7 +139,7 @@ def run_watchdog(pc_path, ci_conclusion=None):
 
 
 def run_digest(pc_path, research_path=None):
-    research = Path(research_path).read_text() if research_path and Path(research_path).exists() else None
+    research = Path(research_path).read_text(encoding="utf-8") if research_path and Path(research_path).exists() else None
     text = digest(_load(pc_path), research)
     gh = Issues()
     issue = gh.ensure(DIGEST_TITLE, "Informe diario automático de nexus (un comentario por día).")
