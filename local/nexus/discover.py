@@ -76,7 +76,7 @@ def sample():
         mb, bb = sources.mexc_book_all(), sources.binance_book_all()
         for fee, key in ((0.1, "hedge_mexc_binance"), (0.075, "hedge_mexc_binance_bnb")):
             h = scan_hedge(mb, bb, 0.0, fee)
-            rec[key] = h[:15]
+            rec[key] = h[:30]
             rec[key + "_positive"] = sum(x["net_pct"] > 0 for x in h)
         rec["hedge_common_pairs"] = len(set(mb) & set(bb))
     except Exception as e:
@@ -91,7 +91,7 @@ def sample():
             errs[name] = str(e)[:200]
     if frows:
         f = scan_funding(frows)
-        rec["funding"] = f[:15]
+        rec["funding"] = f[:40]
         rec["funding_count"] = len(f)
         rec["funding_top_apr"] = [x["apr_pct"] for x in f[:5]]
     _t("funding", t0)
