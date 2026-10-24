@@ -3,8 +3,9 @@
 Por cada par se cotiza el mejor bid y el mejor ask de MEXC, solo si al precio actual de Binance la
 vuelta cubierta deja al menos `min_edge_pct`. Llenado con el mismo modelo de cola conservador que
 el resto del sistema (hay que agotar la cola visible, o que se opere atravesando el precio).
-La cobertura NO se hace al precio del momento: se usa el precio de Binance del SIGUIENTE sondeo
-(~1-2 s después), para incluir la demora real y el movimiento adverso.
+En cada sondeo primero se evalúan las operaciones contra las órdenes que estaban puestas y después
+se re-cotiza (al revés se esquivan llenados adversos). La cobertura NO se hace al precio del momento:
+se usa el precio de Binance del sondeo SIGUIENTE a la detección, para incluir demora y movimiento adverso.
 Inventario (lots): con capital chico no se puede llenar sin límite. Con lots=L, cada par arranca
 con L lotes de moneda y L de USDT en cada exchange; una compra en MEXC gasta USDT de MEXC y moneda
 de Binance. Si un lado se agota, ese lado deja de cotizar hasta que un llenado del lado contrario
@@ -64,6 +65,7 @@ class HedgedPair:
     def __init__(self, sym, notional=40.0, taker_b_pct=0.1, min_edge_pct=0.05, lots=None, transfer_usdt=None):
         self.sym, self.notional, self.fb, self.min_edge = sym, notional, taker_b_pct / 100, min_edge_pct / 100
         self.buy, self.sell = Side("buy"), Side("sell")
+        self.fresh = []                                      # llenados detectados en este sondeo
         self.pending = []                                    # llenados esperando cobertura (próximo sondeo)
         self.fills, self.pnl, self.adverse = 0, 0.0, 0
         self.b_bid = self.b_ask = None
@@ -101,7 +103,7 @@ class HedgedPair:
             self.pnl += self.notional * r
             self.fills += 1
             self.adverse += r < edge_then
-        self.pending = []
+        self.pending, self.fresh = self.fresh, []
         self.b_bid, self.b_ask = b_bid, b_ask
         # 2) cotizar solo si la vuelta cubierta deja margen al precio actual
         if self.can("buy") and b_bid * (1 - self.fb) / m_bid - 1 >= self.min_edge:
@@ -120,7 +122,7 @@ class HedgedPair:
                     edge = self.b_bid * (1 - self.fb) / side.px - 1
                 else:
                     edge = side.px / (self.b_ask * (1 + self.fb)) - 1
-                self.pending.append((side.kind, side.px, edge))
+                self.fresh.append((side.kind, side.px, edge))
                 self.pos += 1 if side.kind == "buy" else -1
                 side.cancel()                                # se re-cotiza en el próximo ciclo
 
@@ -176,14 +178,15 @@ def run(syms, minutes, out, taker_b_pct=0.1, lots=None, notional=40.0, rebalance
             try:
                 m, b = m_all[x], b_all[x]
                 trades = s.get(f"{MEXC}/trades", params={"symbol": x, "limit": 100}, timeout=5).json()
-                hp.on_books(float(m["bidPrice"]), float(m["bidQty"]), float(m["askPrice"]), float(m["askQty"]),
-                            float(b["bidPrice"]), float(b["askPrice"]))
-                for t in sorted(trades, key=lambda t: t["time"]):
+                first = not seen[x]
+                for t in sorted(trades, key=lambda t: t["time"]):  # contra las órdenes que estaban puestas
                     k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
                     if k not in seen[x]:
                         seen[x].add(k)
-                        if time.time() - t0 > 5:             # ignora el historial previo al arranque
+                        if not first:                        # el primer lote es previo a toda orden
                             hp.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
+                hp.on_books(float(m["bidPrice"]), float(m["bidQty"]), float(m["askPrice"]), float(m["askQty"]),
+                            float(b["bidPrice"]), float(b["askPrice"]))
                 if len(seen[x]) > 4000:
                     seen[x] = set(sorted(seen[x])[-1500:])
             except Exception:

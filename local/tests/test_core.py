@@ -328,9 +328,10 @@ def test_cobertura_en_vivo_cubre_con_el_precio_siguiente():
     hp = HedgedPair("X", notional=100, taker_b_pct=0.1, min_edge_pct=0.05)
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)          # bid MEXC 1% bajo Binance: cotiza compra
     assert hp.buy.px == 0.990 and hp.sell.px is None          # el ask de MEXC no deja margen
-    hp.on_trade(0.990, 20, True)                              # nos llenan la compra
-    assert hp.fills == 0 and hp.pending                       # todavía no cubierto
-    hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # Binance cayó antes de cubrir
+    hp.on_trade(0.990, 20, True)                              # sondeo 2: nos llenan la compra
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)           # libros del sondeo 2: todavía no se cubre
+    assert hp.fills == 0 and hp.pending                       # se cubre en el sondeo siguiente
+    hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # sondeo 3: Binance cayó antes de cubrir
     assert hp.fills == 1 and hp.adverse == 1
     assert abs(hp.pnl - 100 * (0.995 * 0.999 / 0.990 - 1)) < 1e-9 and hp.pnl > 0
 
@@ -449,7 +450,7 @@ def test_cobertura_con_inventario_limitado_se_bloquea_y_rebalancea():
     hp.on_trade(0.990, 20, True)                                  # compra llenada: usa el único lote
     assert hp.pos == 1 and not hp.can("buy") and hp.can("sell")
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=60)
-    assert hp.buy.px is None and hp.fills == 1                    # sin USDT en MEXC: no cotiza compra
+    assert hp.buy.px is None and hp.fills == 0                    # sin USDT en MEXC: no cotiza compra
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=180)
     assert hp.blocked_s["buy"] == 120 and hp.blocked_s["sell"] == 0
     hp.rebalance()                                                # transferencia manual del dueño

@@ -446,3 +446,37 @@ def test_evidencia_excluye_vueltas_del_modelo_viejo(tmp_path):
     p.write_text("\n".join(json.dumps(r) for r in rows))
     ev = evidence.evaluate(p)
     assert ev["overall"]["n"] == 1 and ev["excluded_old_model"] == 1
+
+
+def test_defecto3_operaciones_del_intervalo_contra_la_orden_vieja(tmp_path, monkeypatch):
+    """Regresión: si el precio cae entre sondeos, las ventas del intervalo llenan la orden que estaba
+    puesta (compra adversa). Antes se re-cotizaba primero al bid nuevo y se esquivaba ese llenado."""
+    import nexus.agent.maker_agent as ma
+    from nexus import paths
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    polls = iter([
+        ({"bidPrice": "1.00", "bidQty": "1", "askPrice": "1.01", "askQty": "1"}, []),
+        ({"bidPrice": "0.996", "bidQty": "1", "askPrice": "1.001", "askQty": "1"},
+         [{"time": 5, "price": "0.995", "qty": "3", "isBuyerMaker": True}]),   # vendieron a 0,995 < 1,00
+    ])
+
+    class Client:
+        def book_ticker(self, s):
+            self.cur = next(polls)
+            return self.cur[0]
+
+        def trades(self, s):
+            return self.cur[1]
+
+    from nexus.live_paper_maker import Book
+
+    class G:
+        books = {"X": Book("X", notional=40, maker=0.0, taker=0.08)}
+
+    cfg = {"stale_data_s": 20}
+    seen, last_ok = {"X": set()}, {"X": 0}
+    c = Client()
+    ma.step(G, c, cfg, seen, last_ok, [])
+    ma.step(G, c, cfg, seen, last_ok, [])
+    bk = G.books["X"]
+    assert bk.state == "long" and bk.entry == 1.00             # llenada a 1,00 con el mercado ya en 0,996

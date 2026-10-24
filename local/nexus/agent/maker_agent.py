@@ -98,11 +98,13 @@ def verified_fees(client, cfg):
 
 
 def feed(bk, trades, seen):
-    """Pasa al libro solo las operaciones NUEVAS de MEXC.
+    """Pasa al libro solo las operaciones NUEVAS de MEXC (defecto 3).
 
-    En el primer sondeo de un libro (arranque, reinicio o par nuevo del laboratorio) las operaciones
-    recibidas son ANTERIORES a nuestra orden: solo se marcan como vistas. Antes se procesaban y podían
-    llenar compras que no existían o cerrar con ganancia posiciones restauradas (defecto 3).
+    Se llama ANTES de on_book: las operaciones ocurridas desde el sondeo anterior se evalúan contra la
+    orden que estaba puesta en ese intervalo, y recién después se mueve la orden al libro nuevo. Al
+    revés, el paper esquivaba compras perdedoras y stops (sesgo optimista).
+    En el primer sondeo de un libro (arranque, reinicio o par nuevo del laboratorio) las operaciones son
+    anteriores a cualquier orden nuestra: solo se marcan como vistas.
     """
     first = not getattr(bk, "primed", False)
     bk.primed = True
@@ -271,8 +273,8 @@ class Lab:
             try:
                 bt = self.client.book_ticker(sym)
                 trades = self.client.trades(sym)
+                feed(bk, trades, self.seen[sym])          # primero, contra la orden que estaba puesta
                 bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
-                feed(bk, trades, self.seen[sym])
                 if len(self.seen[sym]) > 3000:
                     self.seen[sym] = set(sorted(self.seen[sym])[-1000:])
             except Exception as e:
@@ -292,8 +294,8 @@ def step(gate, client, cfg, seen, last_ok, errors):
         try:
             bt = client.book_ticker(x)
             trades = client.trades(x)
+            feed(bk, trades, seen[x])          # primero, contra la orden que estaba puesta
             bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
-            feed(bk, trades, seen[x])
             if len(seen[x]) > 5000:
                 seen[x] = set(sorted(seen[x])[-2000:])
             last_ok[x] = time.time()
