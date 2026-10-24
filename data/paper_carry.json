@@ -1,0 +1,43 @@
+{
+ "open": {
+  "JCT_USDT": {
+   "opened": 1792855990.4115694,
+   "notional": 30.0,
+   "entry_spot": 0.00637,
+   "entry_perp": 0.006361,
+   "funding": 0.0,
+   "settlements": 0,
+   "last_settle": 1792855990.4115694,
+   "mark": {
+    "funding": 0.0,
+    "basis": -0.245,
+    "fees": 0.072,
+    "net": -0.317
+   }
+  },
+  "MAGMA_USDT": {
+   "opened": 1792855990.4115694,
+   "notional": 30.0,
+   "entry_spot": 0.37159,
+   "entry_perp": 0.37093,
+   "funding": 0.0,
+   "settlements": 0,
+   "last_settle": 1792855990.4115694,
+   "mark": {
+    "funding": 0.0,
+    "basis": -0.1776,
+    "fees": 0.072,
+    "net": -0.2496
+   }
+  }
+ },
+ "closed": [],
+ "summary": {
+  "ts": 1792855990.4115694,
+  "open": 2,
+  "closed": 0,
+  "realized_eur": 0,
+  "open_net_eur": -0.5666,
+  "total_eur": -0.5666
+ }
+}
