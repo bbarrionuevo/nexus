@@ -97,3 +97,46 @@ def binance_24h(quote_eur):
                             float(t["quoteVolume"]) * rate))
                 break
     return out
+
+
+def mexc_book_all():
+    """Top-of-book de todos los pares spot de MEXC: {simbolo: (bid, ask, bid_qty, ask_qty)}."""
+    out = {}
+    for t in _get("https://api.mexc.com/api/v3/ticker/bookTicker"):
+        try:
+            out[t["symbol"]] = (float(t["bidPrice"]), float(t["askPrice"]), float(t["bidQty"]), float(t["askQty"]))
+        except (TypeError, ValueError, KeyError):
+            pass
+    return out
+
+
+def binance_book_all():
+    out = {}
+    for t in _get(f"{BINANCE_DATA}/api/v3/ticker/bookTicker"):
+        try:
+            out[t["symbol"]] = (float(t["bidPrice"]), float(t["askPrice"]), float(t["bidQty"]), float(t["askQty"]))
+        except (TypeError, ValueError, KeyError):
+            pass
+    return out
+
+
+def mexc_funding():
+    """[(exchange, simbolo, funding_por_periodo, periodos_por_dia, volumen_24h_usdt)] de perpetuos MEXC.
+    Se asume funding cada 8 h (3 por día), que es lo habitual; algunos pares usan otro intervalo."""
+    rows = []
+    for t in _get("https://contract.mexc.com/api/v1/contract/ticker").get("data", []):
+        try:
+            rows.append(("MEXC", t["symbol"], float(t["fundingRate"]), 3, float(t.get("amount24") or 0)))
+        except (TypeError, ValueError, KeyError):
+            pass
+    return rows
+
+
+def gate_funding():
+    rows = []
+    for t in _get("https://api.gateio.ws/api/v4/futures/usdt/tickers"):
+        try:
+            rows.append(("Gate", t["contract"], float(t["funding_rate"]), 3, float(t.get("volume_24h_quote") or 0)))
+        except (TypeError, ValueError, KeyError):
+            pass
+    return rows
