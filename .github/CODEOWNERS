@@ -1,0 +1,9 @@
+# Rutas protegidas (categoría C): cambios solo con aprobación del dueño. Ver docs/REGLAS.md.
+/backtest/                      @bbarrionuevo
+/.github/                       @bbarrionuevo
+/local/nexus/agent/risk.py      @bbarrionuevo
+/local/nexus/exchanges/         @bbarrionuevo
+/local/nexus/paths.py           @bbarrionuevo
+/local/windows/update.py        @bbarrionuevo
+/local/config/                  @bbarrionuevo
+/docs/REGLAS.md                 @bbarrionuevo

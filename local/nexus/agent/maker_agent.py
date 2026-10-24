@@ -10,6 +10,7 @@ python -m nexus.agent.maker_agent
 import json
 import logging
 import os
+import sys
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -50,7 +51,8 @@ class Gate:
 def setup_logging():
     h = RotatingFileHandler(paths.logs("agent.log"), maxBytes=5_000_000, backupCount=5, encoding="utf-8")
     h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logging.basicConfig(level=logging.INFO, handlers=[h, logging.StreamHandler()])
+    handlers = [h] + ([logging.StreamHandler()] if sys.stderr and sys.stderr.isatty() else [])
+    logging.basicConfig(level=logging.INFO, handlers=handlers)
 
 
 def load_config():
@@ -117,6 +119,12 @@ def main():
             if time.time() - last_ok[x] > cfg["stale_data_s"] and bk.state == "flat" and bk.px is not None:
                 bk.px, bk.queue = None, None
                 log.warning("datos viejos en %s: se cancela la compra pendiente", x)
+        restart = paths.state("RESTART")
+        if restart.exists():                             # pedido del actualizador (R-13)
+            paths.write_json_atomic(paths.state("paper_books.json"), {x: b.to_dict() for x, b in gate.books.items()})
+            restart.unlink()
+            log.info("reinicio controlado solicitado: estado guardado, saliendo")
+            return
         if time.time() - last_status >= 30:
             last_status = time.time()
             errors = [e for e in errors if time.time() - e < 3600]
