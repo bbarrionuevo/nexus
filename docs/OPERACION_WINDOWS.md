@@ -42,7 +42,9 @@ cd $env:USERPROFILE\nexus\local; ..\.venv\Scripts\python -m nexus.check_keys
 Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
 todas estas condiciones:
 - El CI está en verde.
-- No hay cambios protegidos sin tu aprobación local.
+- No hay cambios protegidos sin tu aprobación local. Tu aprobación de una versión sigue valiendo
+  para las versiones posteriores que **no** vuelvan a tocar rutas protegidas (así no tenés que
+  re-aprobar si main avanza con mejoras comunes antes de que el PC instale lo aprobado).
 - No hay posiciones abiertas.
 - Los tests pasan en el PC.
 
