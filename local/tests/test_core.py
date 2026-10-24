@@ -302,3 +302,34 @@ def test_estrategias_no_importan_clientes_de_exchange():
     root = pathlib.Path(__file__).resolve().parents[1] / "nexus"
     for name in ("live_paper_maker.py", "research_maker.py", "backtest_trading.py"):
         assert "exchanges" not in (root / name).read_text(encoding="utf-8")
+
+
+def test_cobertura_detecta_bid_atrasado_y_descarta_tickers_distintos():
+    from nexus.discovery.hedge import scan_hedge
+    mexc = {"AIUSDT": (0.995, 1.0015, 10, 10), "OTROUSDT": (5.0, 5.01, 1, 1)}
+    binance = {"AIUSDT": (1.000, 1.001, 500, 500), "OTROUSDT": (1.0, 1.001, 1, 1)}   # mismo ticker, otro activo
+    h = scan_hedge(mexc, binance, 0.0, 0.1)
+    assert {x["pair"] for x in h} == {"AIUSDT"}
+    top = h[0]
+    assert top["side"] == "buy_A_sell_B" and 0.39 < top["net_pct"] < 0.41 and top["hedge_depth_usdt"] == 500
+    assert h[1]["side"] == "sell_A_buy_B" and h[1]["net_pct"] < 0
+
+
+def test_funding_ordena_por_neto_y_filtra_volumen():
+    from nexus.discovery.funding import scan_funding, annualize
+    rows = [("MEXC", "A_USDT", 0.0003, 3, 5e6), ("MEXC", "B_USDT", 0.001, 3, 10), ("Gate", "C_USDT", -0.0001, 3, 5e6)]
+    f = scan_funding(rows)
+    assert [x["pair"] for x in f] == ["A_USDT", "C_USDT"] and round(annualize(0.0003), 2) == 32.85
+    assert f[0]["net_pct"] > 0 > f[1]["net_pct"]
+
+
+def test_cobertura_en_vivo_cubre_con_el_precio_siguiente():
+    from nexus.live_paper_hedge import HedgedPair
+    hp = HedgedPair("X", notional=100, taker_b_pct=0.1, min_edge_pct=0.05)
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)          # bid MEXC 1% bajo Binance: cotiza compra
+    assert hp.buy.px == 0.990 and hp.sell.px is None          # el ask de MEXC no deja margen
+    hp.on_trade(0.990, 20, True)                              # nos llenan la compra
+    assert hp.fills == 0 and hp.pending                       # todavía no cubierto
+    hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # Binance cayó antes de cubrir
+    assert hp.fills == 1 and hp.adverse == 1
+    assert abs(hp.pnl - 100 * (0.995 * 0.999 / 0.990 - 1)) < 1e-9 and hp.pnl > 0

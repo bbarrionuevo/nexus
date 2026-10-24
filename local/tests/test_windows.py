@@ -352,6 +352,13 @@ def test_agente_publica_laboratorio_y_evidencia(tmp_path, monkeypatch):
     assert kinds == {True, False}
 
 
+def test_los_tests_nunca_usan_el_estado_real(tmp_path):
+    """Regresión del 24-oct: aunque el PC tenga una actualización pospuesta, los tests no la ven."""
+    import os
+    from nexus import paths
+    assert "nexus_home" in os.environ["NEXUS_HOME"]
+    assert not paths.state("update.json").exists()
+
 
 def test_documentos_no_piden_aprobacion_local(tmp_path):
     import subprocess as sp
