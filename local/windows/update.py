@@ -60,6 +60,30 @@ def protected_changes(cur, new):
         os.chdir(cwd)
 
 
+def is_ancestor(a, b):
+    return subprocess.run(["git", "-C", str(REPO), "merge-base", "--is-ancestor", a, b],
+                          capture_output=True).returncode == 0
+
+
+def approval_covers(cur, new, approvals):
+    """¿Alguna aprobación local cubre a la candidata?
+
+    Vale la aprobación exacta de `new`, o la de un commit A con cur <= A <= new tal que de A a new no
+    cambió nada protegido: lo protegido en new es idéntico a lo que el usuario aprobó. Así, si main
+    avanza con cambios de categoría B antes de que el PC instale lo aprobado, no hay que re-aprobar.
+    Una aprobación más vieja que la versión instalada no cuenta (no permite volver atrás).
+    """
+    if new in approvals:
+        return True
+    for a in approvals:
+        try:
+            if is_ancestor(cur, a) and is_ancestor(a, new) and not protected_changes(a, new):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def open_positions():
     """Posiciones abiertas del PAPER, solo si el agente está vivo.
 
@@ -134,7 +158,7 @@ def main():
     if cur == new:
         return record(result="al día", version=cur[:7])
     prot = protected_changes(cur, new)
-    approved = new in paths.read_json(paths.state("approvals.json"), {})
+    approved = approval_covers(cur, new, paths.read_json(paths.state("approvals.json"), {}))
     why = blockers(ci_green(new), prot, approved, open_positions())
     if why:
         return record(result="pospuesta", current=cur[:7], candidate=new[:7], reasons=why)

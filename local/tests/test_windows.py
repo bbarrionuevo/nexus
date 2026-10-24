@@ -377,3 +377,36 @@ def test_documentos_no_piden_aprobacion_local(tmp_path):
         assert upd.protected_changes("HEAD~1", "HEAD") == []
     finally:
         upd.REPO = old
+
+
+def test_aprobacion_vale_para_descendientes_sin_cambios_protegidos(tmp_path):
+    import subprocess as sp
+    g = ["git", "-C", str(tmp_path)]
+    ident = ["-c", "user.email=t@t", "-c", "user.name=t"]
+    sp.run(g + ["init", "-q"], check=True)
+    risk = tmp_path / "local" / "nexus" / "agent" / "risk.py"
+    risk.parent.mkdir(parents=True)
+    risk.write_text("x=1\n")
+    (tmp_path / "README.md").write_text("a\n")
+    sp.run(g + ["add", "-A"], check=True)
+    sp.run(g + ident + ["commit", "-qm", "instalada"], check=True)
+
+    def commit(path, text, msg):
+        path.write_text(text)
+        sp.run(g + ident + ["commit", "-qam", msg], check=True)
+        return sp.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    cur = sp.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    aprobada = commit(risk, "x=2\n", "cambio protegido aprobado")
+    b = commit(tmp_path / "README.md", "b\n", "categoría B posterior")
+    otra_c = commit(risk, "x=3\n", "otro cambio protegido")
+    old = upd.REPO
+    upd.REPO = tmp_path
+    try:
+        assert upd.approval_covers(cur, aprobada, {aprobada: {}})
+        assert upd.approval_covers(cur, b, {aprobada: {}})            # B encima de lo aprobado: no re-aprobar
+        assert not upd.approval_covers(cur, otra_c, {aprobada: {}})   # nuevo cambio protegido: sí
+        assert not upd.approval_covers(b, otra_c, {cur: {}})          # aprobación vieja no permite volver atrás
+        assert not upd.approval_covers(cur, b, {"f" * 40: {}})        # commit inexistente
+    finally:
+        upd.REPO = old
