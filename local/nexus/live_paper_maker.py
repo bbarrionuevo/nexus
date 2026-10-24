@@ -13,9 +13,11 @@ Métricas: wins = vueltas con PnL > 0 (no "salidas como maker").
 python -m nexus.live_paper_maker OUT.jsonl SYM1,SYM2 minutos
 """
 import json
+import math
 import sys
 import threading
 import time
+from collections import deque
 
 WS = "wss://data-stream.binance.vision/stream?streams="
 
@@ -30,6 +32,8 @@ class Book:
         self.state, self.px, self.queue, self.qty = "flat", None, None, 0.0
         self.entry, self.entry_fee, self.entry_ts, self.eq = 0.0, 0.0, 0.0, 0.0
         self.rt = self.wins = self.stops = self.timeouts = self.requotes = 0
+        self.mids = deque(maxlen=240)                         # (ts, precio medio) para la volatilidad
+        self.entry_ctx = {}                                   # spread y volatilidad al entrar (diario)
 
     # -- cotización ---------------------------------------------------------------------------
     def _quote(self, price, queue):
@@ -42,8 +46,19 @@ class Book:
     def floor(self):
         return self.entry * (1 + (2 * self.maker + self.min_edge) / 100)
 
+    def vol_1m(self):
+        """Volatilidad realizada del precio medio, en % por minuto (None si hay pocos datos)."""
+        if len(self.mids) < 10:
+            return None
+        pts = list(self.mids)
+        var = sum(math.log(b / a) ** 2 for (_, a), (_, b) in zip(pts, pts[1:]) if a > 0 and b > 0)
+        secs = pts[-1][0] - pts[0][0]
+        return round(math.sqrt(var / secs * 60) * 100, 4) if secs > 0 else None
+
     def on_book(self, b, bq, a, aq):
         self.bid, self.bq, self.ask, self.aq = b, bq, a, aq
+        if b > 0 and a > 0:
+            self.mids.append((self.now(), (a + b) / 2))
         if self.state == "flat":
             if self.gate and not self.gate.allow_entry(self.notional, self.gate.exposure()):
                 self.px, self.queue = None, None              # el riesgo veta: se cancela la compra
@@ -65,6 +80,8 @@ class Book:
         if self.state == "flat" and buyer_is_maker:           # vendedor agresor golpea bids
             if price < self.px or (price == self.px and self._consume(qty)):
                 self.state, self.entry, self.entry_ts = "long", self.px, self.now()
+                self.entry_ctx = {"spread_pct": round((self.ask / self.bid - 1) * 100, 4)
+                                  if self.bid and self.ask else None, "vol_1m_pct": self.vol_1m()}
                 self.qty = self.notional / self.px
                 self.entry_fee = self.notional * self.maker / 100
                 self.eq -= self.entry_fee
@@ -98,7 +115,8 @@ class Book:
         if self.on_closed:
             self.on_closed({"ts": self.now(), "sym": self.sym, "pnl": round(pnl, 6), "kind": kind,
                             "hold_s": round(self.now() - self.entry_ts, 1), "entry": self.entry, "exit": px,
-                            "notional": self.notional, "maker": self.maker, "taker": self.taker})
+                            "notional": self.notional, "maker": self.maker, "taker": self.taker}
+                           | self.entry_ctx)
         self.state, self.px, self.queue, self.qty, self.entry_fee = "flat", None, None, 0.0, 0.0
         return pnl
 

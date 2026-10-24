@@ -19,7 +19,9 @@ lab:
   min_spread_pct: 0.10
   max_spread_pct: 1.50
   reselect_hours: 6
-  per_loop: 2                  # pares de laboratorio sondeados por ciclo (respeta límites de la API)
+  per_loop: 12                 # pares de laboratorio sondeados por ciclo (en paralelo; ~13 pedidos/s)
+  pause_window: 15             # si las últimas 15 vueltas de un par pierden en promedio...
+  pause_hours: 24              # ...se pausa 24 h y no se vuelve a elegir
 
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).

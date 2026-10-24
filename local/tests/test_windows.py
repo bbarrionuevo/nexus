@@ -93,7 +93,7 @@ def test_humo_agente_completo_sin_red(tmp_path, monkeypatch):
 
         def book_ticker(self, s):
             n = next(calls)
-            if n == 40:
+            if n >= 40:                                       # ">=": con pedidos en paralelo el 40 puede caer en trades
                 paths.state("RESTART").touch()
             return {"bidPrice": "10.0", "bidQty": "1", "askPrice": "10.05", "askQty": "1"}
 
@@ -233,23 +233,23 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
     monkeypatch.delenv("MEXC_API_KEY", raising=False)
     monkeypatch.setattr(ma.time, "sleep", lambda s: None)
     for run_n, restart_at in ((1, 6), (2, 30)):
-        calls = itertools.count()
+        bt_n, tr_n = {}, {}                                   # sondeos por par y por método (pedidos en paralelo)
 
         class FakeClient:
             has_keys = False
 
             def book_ticker(self, s):
-                n = next(calls)
-                if n == restart_at:
+                n = bt_n[s] = bt_n.get(s, -1) + 1
+                if s == "BONKUSDT" and n == restart_at:
                     paths.state("RESTART").touch()
                 # el precio cae después de comprar: la posición queda abierta (sin tocar el stop)
-                bid = 10.0 if n < 8 else 9.97
+                bid = 10.0 if n < 4 else 9.97
                 return {"bidPrice": str(bid), "bidQty": "1", "askPrice": str(bid + 0.01), "askQty": "1"}
 
             def trades(self, s):
                 # el primer sondeo de cada libro solo marca operaciones previas (defecto 3); el segundo llena
-                n = next(calls)
-                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 8 else []
+                n = tr_n[s] = tr_n.get(s, -1) + 1
+                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 4 else []
 
         monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
         ma.main()
@@ -347,7 +347,7 @@ def test_agente_publica_laboratorio_y_evidencia(tmp_path, monkeypatch):
 
     class Client(FakeMexc):
         def book_ticker(self, s):
-            if next(calls) == 60:
+            if next(calls) >= 60:
                 paths.state("RESTART").touch()
             return super().book_ticker(s)
 
@@ -458,19 +458,16 @@ def test_defecto3_operaciones_del_intervalo_contra_la_orden_vieja(tmp_path, monk
     import nexus.agent.maker_agent as ma
     from nexus import paths
     monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
-    polls = iter([
-        ({"bidPrice": "1.00", "bidQty": "1", "askPrice": "1.01", "askQty": "1"}, []),
-        ({"bidPrice": "0.996", "bidQty": "1", "askPrice": "1.001", "askQty": "1"},
-         [{"time": 5, "price": "0.995", "qty": "3", "isBuyerMaker": True}]),   # vendieron a 0,995 < 1,00
-    ])
+    books = iter([{"bidPrice": "1.00", "bidQty": "1", "askPrice": "1.01", "askQty": "1"},
+                  {"bidPrice": "0.996", "bidQty": "1", "askPrice": "1.001", "askQty": "1"}])
+    trades = iter([[], [{"time": 5, "price": "0.995", "qty": "3", "isBuyerMaker": True}]])  # vendieron a 0,995 < 1,00
 
-    class Client:
+    class Client:                                             # cada método con su secuencia (pedidos en paralelo)
         def book_ticker(self, s):
-            self.cur = next(polls)
-            return self.cur[0]
+            return next(books)
 
         def trades(self, s):
-            return self.cur[1]
+            return next(trades)
 
     from nexus.live_paper_maker import Book
 
@@ -503,3 +500,54 @@ def test_latido_incluye_vueltas_del_modelo_vigente_y_desglose(tmp_path, monkeypa
     assert ev["by_kind"] == {"timeout": {"n": 1, "total": -0.1}, "maker": {"n": 1, "total": 0.05},
                              "stop": {"n": 1, "total": -0.4}}
     assert ev["per_symbol"]["A"]["by_kind"]["stop"]["n"] == 1
+
+
+def test_laboratorio_pausa_pares_que_pierden(tmp_path, monkeypatch):
+    import json
+    from nexus import paths
+    from nexus.agent.maker_agent import Lab
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"pause_window": 3, "pause_hours": 24}, "stop_pct": 1.0,
+           "min_edge_pct": 0.0, "max_hold_min": 30, "risk": {"max_position_eur": 40}}
+    lab = Lab(FakeMexc(), cfg, 0.0, 0.08)
+    for pnl in (0.05, -0.5, 0.05):                             # media negativa en las últimas 3
+        lab.on_closed({"sym": "AAAUSDT", "pnl": pnl, "ts": 1})
+    for pnl in (0.05, 0.05, -0.05):
+        lab.on_closed({"sym": "BBBUSDT", "pnl": pnl, "ts": 1})
+    assert lab.is_paused("AAAUSDT") and not lab.is_paused("BBBUSDT")
+    assert "AAAUSDT" in json.loads(paths.state("lab_paused.json").read_text())
+    assert Lab(FakeMexc(), cfg, 0.0, 0.08).is_paused("AAAUSDT")          # sobrevive al reinicio
+    lab.reselect()
+    assert "AAAUSDT" not in lab.books and "BBBUSDT" in lab.books          # no se vuelve a elegir
+
+
+def test_pedidos_en_paralelo_y_errores_por_par():
+    from nexus.agent.maker_agent import fetch_many
+
+    class C:
+        def book_ticker(self, s):
+            if s == "MAL":
+                raise TimeoutError("lento")
+            return {"s": s}
+
+        def trades(self, s):
+            return [s]
+
+    out = fetch_many(C(), ["A", "MAL", "B"])
+    assert out["A"] == ({"s": "A"}, ["A"]) and out["B"] == ({"s": "B"}, ["B"])
+    assert isinstance(out["MAL"], TimeoutError)                # un par con error no frena a los demás
+
+
+def test_diario_registra_spread_y_volatilidad_al_entrar():
+    from nexus.live_paper_maker import Book
+    t = [0.0]
+    closed = []
+    bk = Book("X", notional=40, maker=0.0, taker=0.08, now=lambda: t[0], on_closed=closed.append)
+    for i in range(12):                                        # precio que oscila: hay volatilidad
+        t[0] = i * 2.0
+        p = 1.0 + (0.002 if i % 2 else 0.0)
+        bk.on_book(p, 1, p + 0.002, 1)
+    assert bk.vol_1m() and bk.vol_1m() > 0
+    bk.on_trade(bk.px - 0.001, 5, True)                        # entra
+    bk.on_trade(bk.px + 0.001, 5, False)                       # sale como maker
+    assert closed and closed[0]["spread_pct"] > 0 and closed[0]["vol_1m_pct"] > 0
