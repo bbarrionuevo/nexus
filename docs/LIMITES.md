@@ -9,7 +9,7 @@ rápido y **apaga automáticamente una estrategia que deja de ganar**.
 |---|---|---|
 | Posición máxima | 40 € | Dos posiciones como máximo; si una se traba, la otra sigue operando |
 | Exposición total | 80 € | Deja 20 € de colchón para comisiones y deslizamiento |
-| Stop por posición | 1% (≈0,45 € con 40 € y comisión taker de 0,05%) | Una vuelta perdedora cuesta como ~3–5 vueltas ganadoras de spread fino |
+| Stop por posición | 1% (≈0,43 € con 40 € y comisión taker real de MEXC de 0,08%) | Una vuelta perdedora cuesta como ~3–5 vueltas ganadoras de spread fino |
 | Pérdida diaria | 2 € (2%) | ≈4 stops; un mal día no se come la semana |
 | Pérdida semanal | 4 € (4%) | Dos días malos en la semana ⇒ pausa hasta el lunes |
 | Drawdown total | 8 € (8%) | **Halt permanente**: solo vuelve si lo rearmás vos (`python -m nexus.agent.risk --rearmar`) |

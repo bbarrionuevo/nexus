@@ -1,4 +1,4 @@
-"""Paper trading de market making en vivo sobre MEXC (maker 0%, taker 0.05%) por sondeo REST.
+"""Paper trading de market making en vivo sobre MEXC (maker 0%, taker 0.08% verificado por API) por sondeo REST.
 
 Reutiliza el modelo de cola de live_paper_maker.Book. Sondea bookTicker y trades recientes cada ~1 s.
 python -m nexus.live_paper_mexc OUT.jsonl SYM1,SYM2 minutos
@@ -16,7 +16,7 @@ API = "https://api.mexc.com/api/v3"
 
 def run(syms, minutes, out):
     s = requests.Session()
-    books = {x: [Book(x, maker=0.0, taker=0.05), Book(x, maker=0.1, taker=0.1)] for x in syms}  # modelo v2
+    books = {x: [Book(x, maker=0.0, taker=0.08), Book(x, maker=0.1, taker=0.1)] for x in syms}  # comisión real verificada
     seen = {x: set() for x in syms}
     t0, last_dump, errors = time.time(), time.time(), 0
     while time.time() - t0 < minutes * 60:
