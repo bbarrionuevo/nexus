@@ -39,11 +39,35 @@ def file_tail(name, n):
     return [redact(x) for x in data.splitlines()[-n:]]
 
 
+def trades_tail(n=4000, max_bytes=1_500_000):
+    """Últimas vueltas del modelo vigente, compactas, para analizar pérdidas desde la nube.
+    Formato por vuelta: [ts, par, pnl, tipo, segundos, entrada, salida, lab]. Sin secretos."""
+    from nexus import evidence
+    p = paths.state("trades.jsonl")
+    if not p.exists():
+        return []
+    with open(p, "rb") as f:
+        f.seek(0, 2)
+        start = max(0, f.tell() - max_bytes)
+        f.seek(start)
+        lines = f.read().decode("utf-8", errors="replace").splitlines()[1 if start else 0:]   # 1ª puede venir cortada
+    out = []
+    for line in lines:
+        try:
+            t = json.loads(line)
+        except ValueError:
+            continue
+        if t.get("model", 1) >= evidence.FILL_MODEL:
+            out.append([round(t["ts"]), t["sym"], t["pnl"], t.get("kind"), t.get("hold_s"), t.get("entry"),
+                        t.get("exit"), int(bool(t.get("lab")))])
+    return out[-n:]
+
+
 def build():
     return {"ts": time.time(), "status": paths.read_json(paths.state("status.json"), {}),
             "update": paths.read_json(paths.state("update.json"), {}), "log_tail": log_tail(),
             "runner_tail": file_tail("runner.log", 10), "stderr_tail": file_tail("agent_stderr.log", 30),
-            "kill_switch": paths.kill_file().exists()}
+            "kill_switch": paths.kill_file().exists(), "trades_tail": trades_tail()}
 
 
 def git(d, *a):
