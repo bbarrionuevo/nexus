@@ -176,3 +176,18 @@ def test_describe_error_es_util_y_no_filtra_claves():
     msg = describe_error(requests.HTTPError(response=r))
     assert "HTTP 400" in msg and "700003" in msg and "sincronizá" in msg and "mx0vgl" not in msg
     assert "Query Funds" in describe_error(RuntimeError("['EGeneral:Permission denied']"))
+
+
+
+def test_check_keys_detecta_prefijo_key(monkeypatch):
+    from nexus import check_keys as ck
+    monkeypatch.setenv("PK", "key: mx0vglSECRETO")
+    monkeypatch.setenv("PS", "secreto-valido-sin-nada-raro")
+    lines = []
+
+    def nunca(c):
+        raise AssertionError("no debe consultar con formato inválido")
+
+    assert ck.run([("MEXC", "PK", "PS", object, nunca)], lines.append, check_clock=False) == 1
+    texto = "\n".join(lines)
+    assert "FORMATO INCORRECTO en PK" in texto and "key:" in texto and "SECRETO" not in texto

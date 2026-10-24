@@ -95,11 +95,30 @@ EXCHANGES = (
 )
 
 
+def format_problems(value):
+    """Errores típicos al pegar una clave (sin devolver el valor): prefijos, espacios, comillas."""
+    p = []
+    if ":" in value:
+        p.append("contiene ':' (¿quedó un prefijo como 'key:'?)")
+    if any(c.isspace() for c in value):
+        p.append("contiene espacios")
+    if any(c in value for c in "\"'<>"):
+        p.append("contiene comillas o < >")
+    return p
+
+
 def run(exchanges=EXCHANGES, out=print, check_clock=True):
     code = 0
     for name, k, s, cls, fn in exchanges:
         if not (os.environ.get(k) and os.environ.get(s)):
             out(f"{name}: sin clave en .env (se omite)")
+            continue
+        bad = {var: format_problems(os.environ[var]) for var in (k, s)}
+        bad = {var: pr for var, pr in bad.items() if pr}
+        if bad:
+            for var, pr in bad.items():
+                out(f"{name}: FORMATO INCORRECTO en {var}: {', '.join(pr)}. Debe ser {var}=<solo la clave>")
+            code = max(code, 1)
             continue
         try:
             off = clock_offset_ms(name) if check_clock and name in TIME_URLS else 0
