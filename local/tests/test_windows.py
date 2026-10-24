@@ -350,3 +350,23 @@ def test_agente_publica_laboratorio_y_evidencia(tmp_path, monkeypatch):
     assert "lab" in st and "evidence" in st
     kinds = {json.loads(x)["lab"] for x in paths.state("trades.jsonl").read_text().splitlines()}
     assert kinds == {True, False}
+
+
+
+def test_documentos_no_piden_aprobacion_local(tmp_path):
+    import subprocess as sp
+    g = ["git", "-C", str(tmp_path)]
+    ident = ["-c", "user.email=t@t", "-c", "user.name=t"]
+    sp.run(g + ["init", "-q"], check=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "REGLAS.md").write_text("a\n")
+    sp.run(g + ["add", "-A"], check=True)
+    sp.run(g + ident + ["commit", "-qm", "a"], check=True)
+    (tmp_path / "docs" / "REGLAS.md").write_text("b\n")
+    sp.run(g + ident + ["commit", "-qam", "b"], check=True)
+    old = upd.REPO
+    upd.REPO = tmp_path
+    try:
+        assert upd.protected_changes("HEAD~1", "HEAD") == []
+    finally:
+        upd.REPO = old

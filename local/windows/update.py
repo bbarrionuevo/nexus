@@ -52,7 +52,10 @@ def protected_changes(cur, new):
     try:
         import os
         os.chdir(REPO)
-        return pp.violations(cur, new)
+        try:
+            return pp.violations(cur, new, runtime=True)   # los documentos no requieren aprobación local
+        except TypeError:
+            return pp.violations(cur, new)                 # versión instalada anterior a este cambio
     finally:
         os.chdir(cwd)
 
