@@ -292,7 +292,7 @@ def test_no_existe_codigo_de_ordenes_reales():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1] / "nexus"
     banned = ("/api/v3/order\"", "/order'", "AddOrder", "capital/withdraw", "newOrder", "/0/private/Withdraw")
-    hits = [f"{p.name}:{b}" for p in root.rglob("*.py") for b in banned if b in p.read_text()]
+    hits = [f"{p.name}:{b}" for p in root.rglob("*.py") for b in banned if b in p.read_text(encoding="utf-8")]
     assert hits == []
 
 
@@ -301,4 +301,4 @@ def test_estrategias_no_importan_clientes_de_exchange():
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1] / "nexus"
     for name in ("live_paper_maker.py", "research_maker.py", "backtest_trading.py"):
-        assert "exchanges" not in (root / name).read_text()
+        assert "exchanges" not in (root / name).read_text(encoding="utf-8")

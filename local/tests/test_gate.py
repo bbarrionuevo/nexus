@@ -9,8 +9,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("gate", ROOT / "backtest" / "run.py")
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
-S = yaml.safe_load((ROOT / "local/config/settings.yaml").read_text())
-A = yaml.safe_load((ROOT / "local/config/agent.yaml").read_text())
+S = yaml.safe_load((ROOT / "local/config/settings.yaml").read_text(encoding="utf-8"))
+A = yaml.safe_load((ROOT / "local/config/agent.yaml").read_text(encoding="utf-8"))
 
 
 def test_config_actual_pasa():

@@ -46,7 +46,7 @@ def main():
     if not (d / ".git").exists():
         git(d, "init", "-q")
         git(d, "remote", "add", "origin", git(REPO, "remote", "get-url", "origin").stdout.strip())
-    (d / "pc_status.json").write_text(json.dumps(build(), indent=1, default=str))
+    (d / "pc_status.json").write_text(json.dumps(build(), indent=1, default=str), encoding="utf-8")
     git(d, "checkout", "-q", "--orphan", f"tmp{int(time.time())}")
     git(d, "add", "pc_status.json")
     git(d, "-c", "user.name=nexus-pc", "-c", "user.email=nexus-pc@users.noreply.github.com",

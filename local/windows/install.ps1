@@ -17,6 +17,7 @@ param(
   [switch]$KeepSleep
 )
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"   # Python lee y escribe UTF-8 (evita errores de cp1252 en Windows)
 
 function Refresh-Path {
   $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
@@ -48,7 +49,8 @@ if (-not (Test-Path $EnvFile)) {
 icacls $EnvFile /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
 
 $Py = "$Dir\.venv\Scripts\python.exe"
-if (-not (Test-Path $Py)) { py -3.12 -m venv "$Dir\.venv" }
+if (-not (Test-Path $Py)) { py -3 -m venv "$Dir\.venv" }
+& $Py -c "import sys; assert sys.version_info >= (3, 10), sys.version"
 & $Py -m pip install -q --upgrade pip
 & $Py -m pip install -q -r "$Dir\local\requirements.txt"
 
@@ -65,7 +67,7 @@ $Ps = "powershell.exe"
 $Common = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File"
 
 $A1 = New-ScheduledTaskAction -Execute $Ps -Argument "$Common `"$Dir\local\windows\run_agent.ps1`""
-$T1 = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$T1 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 Register-ScheduledTask -TaskName "nexus-agente" -Action $A1 -Trigger $T1 -Settings $Settings -Force | Out-Null
 
 $A2 = New-ScheduledTaskAction -Execute $Ps -Argument "$Common `"$Dir\local\windows\maintenance.ps1`""
@@ -73,9 +75,11 @@ $T2 = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInt
 Register-ScheduledTask -TaskName "nexus-mantenimiento" -Action $A2 -Trigger $T2 -Settings $Settings -Force | Out-Null
 
 if (-not $KeepSleep) {
-  powercfg /change standby-timeout-ac 0
-  powercfg /change hibernate-timeout-ac 0
-  Write-Host "Suspensión con corriente desactivada (revertir: powercfg /change standby-timeout-ac 30)."
+  try {
+    powercfg /change standby-timeout-ac 0
+    powercfg /change hibernate-timeout-ac 0
+    Write-Host "Suspensión con corriente desactivada (revertir: powercfg /change standby-timeout-ac 30)."
+  } catch { Write-Warning "No se pudo cambiar la suspensión: desactivala a mano en Configuración > Energía." }
 }
 
 Start-ScheduledTask -TaskName "nexus-agente"

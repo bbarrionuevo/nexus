@@ -56,7 +56,7 @@ def setup_logging():
 
 
 def load_config():
-    cfg = yaml.safe_load(CFG.read_text())
+    cfg = yaml.safe_load(CFG.read_text(encoding="utf-8"))
     if cfg.get("live") is not False:
         raise SystemExit("live debe ser false: el modo real no existe en esta versión (R-02).")
     return cfg
