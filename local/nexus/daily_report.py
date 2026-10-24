@@ -52,7 +52,8 @@ def main(path, hours=24):
     if tri:
         print(f"\nTriangular EUR: ineficiencia bruta máx {max(tri):.3f}% "
               "(si una ruta sin comisión la supera, el cuello de botella es el fee).")
-    n, fund = persistence(rows, "funding", lambda x: f"{x['exchange']} {x['pair']}", lambda x: x["apr_pct"])
+    n, fund = persistence(rows, "funding", lambda x: f"{x['exchange']} {x['pair']}"
+                          + ("" if x.get("spot_same_exchange", True) else " (sin contado)"), lambda x: x["apr_pct"])
     if fund:
         print(f"\n### Funding persistente ({n} muestras): aparece en ≥50% de las muestras")
         print("| exchange par | presencia | APR medio % | APR mínimo % |\n|---|---|---|---|")
