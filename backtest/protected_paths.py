@@ -17,6 +17,9 @@ PROTECTED = (
     "local/windows/update.py",         # actualizador seguro
     "docs/REGLAS.md",
 )
+# Protegidos en GitHub (requieren aprobación del dueño para fusionar) pero que NO cambian cómo opera
+# el PC: el actualizador no pide aprobación local por ellos.
+DOCS_ONLY = ("docs/REGLAS.md", ".github/CODEOWNERS")
 # En estos archivos solo se protegen ciertas claves (el resto, p. ej. symbols, es categoría B).
 PROTECTED_KEYS = {"local/config/agent.yaml": ("live", "risk", "stop_pct", "maker_fee_pct", "taker_fee_pct"),
                   "local/config/settings.yaml": ("paper_trading", "capital_eur", "limits")}
@@ -32,9 +35,12 @@ def show(rev, path):
     return r.stdout if r.returncode == 0 else ""
 
 
-def violations(base, head):
+def violations(base, head, runtime=False):
+    """Cambios protegidos entre base y head. runtime=True: solo los que afectan la operación del PC."""
     import yaml
     v = [p for p in changed(base, head) if any(p == x or (x.endswith("/") and p.startswith(x)) for x in PROTECTED)]
+    if runtime:
+        v = [p for p in v if p not in DOCS_ONLY]
     for path, keys in PROTECTED_KEYS.items():
         a, b = yaml.safe_load(show(base, path) or "{}") or {}, yaml.safe_load(show(head, path) or "{}") or {}
         v += [f"{path}:{k}" for k in keys if a.get(k) != b.get(k)]

@@ -21,11 +21,11 @@ permisos de la clave en el exchange, los fondos depositados, la confirmación es
 | R-08 | Ante fallas críticas, cerrar el paso | Las entradas se bloquean y las salidas se permiten; sin liquidación a ciegas | tests de riesgo | 🟡 falta la tabla de situaciones de órdenes reales (Fase 6) |
 | R-09 | Persistencia y recuperación | Riesgo y estado del paper en `NEXUS_HOME/state` con escritura atómica; **un reinicio no borra la pérdida del día** | `test_perdida_diaria_sobrevive_reinicio`, `test_estado_del_libro_persiste` | ✅ (falta conciliar con el exchange: Fase 6) |
 | R-10 | Registro íntegro | Log rotado de cierres y decisiones; PnL real solo a partir de ejecuciones del exchange | — | 🟡 falta el diario con hash encadenado (Fase 6) |
-| R-11 | Credenciales | Claves solo en `%LOCALAPPDATA%\nexus\.env` (permisos solo del usuario); nada de claves en GitHub; el latido oculta cadenas que parecen secretos | `test_latido_oculta_cadenas_tipo_secreto`, `test_env_no_pisa_variables` | 🟡 **el dueño debe borrar los 6 secretos de exchange en GitHub** |
+| R-11 | Credenciales | Claves solo en `%LOCALAPPDATA%\nexus\.env` (permisos solo del usuario); nada de claves en GitHub; el latido oculta cadenas que parecen secretos | `test_latido_oculta_cadenas_tipo_secreto`, `test_env_no_pisa_variables` | ✅ (el dueño borró los secretos de GitHub el 24-oct; claves solo de lectura y sin retiro) |
 | R-12 | Ningún cambio llega al sistema activo sin validar | El PC solo instala `main` con CI en verde y vuelve a correr los tests localmente | `update.py`, `test_no_activa_sin_ci_verde` | ✅ |
 | R-13 | Actualización segura | No actualiza con posiciones abiertas; reinicio controlado; chequeo de salud y vuelta atrás | `test_no_activa_con_posiciones_abiertas` | ✅ |
 | R-14 | Prohibido relajar límites para salvar una estrategia | Línea base en `backtest/run.py`; bajar límites está permitido, subirlos no | `test_rechaza_relajar_cada_limite` | ✅ |
-| R-15 | Evidencia mínima para promover de fase | Criterios fijados de antemano (abajo) | informe diario | 🟡 |
+| R-15 | Evidencia mínima para promover de fase | Criterios fijados de antemano (abajo) | `evidence.py`, informe diario | ✅ (C6 latencia pendiente de medir) |
 | R-16 | Parada controlada | Archivo `KILL` en `NEXUS_HOME` (ruta absoluta): no abre posiciones y cancela compras pendientes | `test_interruptor_de_emergencia` | 🟡 niveles 2 y 3 (cancelar y cerrar en el exchange) en la Fase 6 |
 | R-17 | Configuración validada | Faltan claves o hay valores fuera de rango ⇒ el CI falla o el riesgo no arranca | `test_gate.py`, `REQUIRED` en `risk.py` | ✅ |
 | R-18 | La IA no tiene autoridad de ejecución | Claude propone por PR; nunca fusiona un PR con `protected-paths` en rojo; no puede aprobar en el PC | política más los controles R-04 y R-12 | 🟡 (ver "límite honesto") |
@@ -35,15 +35,28 @@ permisos de la clave en el exchange, los fondos depositados, la confirmación es
 
 ## Criterios para avanzar de fase (R-15)
 
-- **De paper (Fase 5) a real (Fase 6)**, todos a la vez:
-  - ≥ 4 semanas de paper en el PC y ≥ 300 vueltas cerradas.
-  - PnL neto > 0 con intervalo de confianza del 95% por encima de 0.
-  - Factor de beneficio ≥ 1,3.
-  - Sigue siendo positivo con comisión maker de 0,02% y con 200 ms de latencia adicional.
+Aprobados por el dueño el 24-oct-2026 ("dale"), en reemplazo de "≥4 semanas". Se evalúan solos
+(`nexus/evidence.py`) y su avance aparece en el informe diario.
+
+- **De paper (Fase 5) a real (Fase 6a, 20 € reales)**, todos a la vez:
+  - ≥7 días y ≥300 vueltas cerradas, sumando los pares operados y los de laboratorio.
+  - Ganancia media por vuelta con intervalo de confianza del 95% por encima de 0.
+  - Positivo en ≥5 de los últimos 7 días.
+  - Sigue positivo con +0,02% de comisión por lado y con 200 ms de latencia adicional.
   - Ningún halt permanente.
   - R-05, R-06, R-08, R-10 y R-16 implementadas.
-  - **Autorización explícita del dueño.**
-- **Retroceso automático:** PnL neto de 7 días < 0 ⇒ halt de la estrategia (`losing_days_window`); drawdown de 8 € ⇒ halt total.
+  - **Autorización explícita del dueño** (clave de MEXC solo de trading, sin retiro, con IP fija).
+- **De 6a a 6b (100 €):** una semana con 20 € reales y PnL real, conciliado con el exchange, > 0.
+- **Retroceso automático:** PnL neto de 7 días < 0 ⇒ halt de la estrategia (`losing_days_window`);
+  drawdown de 8 € ⇒ halt total.
+
+## Aprobaciones del dueño (registro)
+
+| Fecha | Qué | Cómo |
+|---|---|---|
+| 24-oct-2026 | Reglas R-01 a R-21, Fase 2, límites para 100 € | "sí a todo" |
+| 24-oct-2026 | Actualizador: un agente detenido no bloquea su arreglo (PR 11) | merge del dueño + APRUEBO en el PC |
+| 24-oct-2026 | Criterios acelerados de R-15 y entrada gradual 20 € → 100 € | "dale" |
 
 ## Categorías de acciones
 
