@@ -91,8 +91,9 @@ class RiskManager:
         return not r
 
     def record_order(self):
-        """Cuenta una orden colocada (entrada, salida o re-cotización)."""
-        self.s["orders"].append(self.now())
+        """Cuenta una orden colocada (entrada, salida o re-cotización). Guarda solo el último minuto."""
+        t = self.now()
+        self.s["orders"] = [x for x in self.s["orders"] if t - x < 60] + [t]
         self._save()
 
     def on_close(self, pnl, was_stop):
@@ -115,7 +116,9 @@ class RiskManager:
         self._save()
 
     def snapshot(self):
-        return {k: v for k, v in self.s.items() if k != "orders"} | {"orders_last_min": len(self.s["orders"])}
+        t = self.now()
+        return {k: v for k, v in self.s.items() if k != "orders"} | {
+            "orders_last_min": sum(1 for x in self.s["orders"] if t - x < 60)}
 
 
 def rearm(path=None):

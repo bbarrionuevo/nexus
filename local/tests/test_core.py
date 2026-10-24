@@ -468,3 +468,17 @@ def test_resumen_de_cobertura_en_espanol():
             "pairs": [hp.mark(60)]}
     md = to_markdown(snap)
     assert "IOSTUSDT" in md and "bloqueado" in md.lower() and "neto" in md
+
+
+def test_ordenes_por_minuto_en_el_reporte_no_crecen(tmp_path):
+    """El informe mostraba órdenes acumuladas de varios minutos (visto en el PC: 48 con límite 30)."""
+    from nexus.agent.risk import RiskManager
+    t = [1_800_000_000.0]
+    cfg = {"max_position_eur": 40, "max_total_exposure_eur": 80, "daily_loss_limit_eur": 2,
+           "weekly_loss_limit_eur": 4, "max_drawdown_eur": 8, "max_consecutive_stops": 3,
+           "stops_cooldown_min": 60, "max_orders_per_minute": 30, "losing_days_window": 7}
+    r = RiskManager(cfg, state_path=tmp_path / "risk.json", kill_file=tmp_path / "KILL", now=lambda: t[0])
+    for _ in range(20):
+        r.record_order()
+        t[0] += 10                                             # 20 órdenes en 200 s: ~6 por minuto
+    assert r.snapshot()["orders_last_min"] <= 6 and len(r.s["orders"]) <= 7

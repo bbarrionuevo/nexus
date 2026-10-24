@@ -551,3 +551,14 @@ def test_diario_registra_spread_y_volatilidad_al_entrar():
     bk.on_trade(bk.px - 0.001, 5, True)                        # entra
     bk.on_trade(bk.px + 0.001, 5, False)                       # sale como maker
     assert closed and closed[0]["spread_pct"] > 0 and closed[0]["vol_1m_pct"] > 0
+
+
+def test_actualizador_tests_colgados_cuentan_como_fallo(monkeypatch):
+    import subprocess as sp
+
+    def colgado(*a, **k):
+        raise sp.TimeoutExpired(cmd="pytest", timeout=k.get("timeout"))
+
+    monkeypatch.setattr(upd.subprocess, "run", colgado)
+    ok, out = upd.run_tests(timeout=5)
+    assert not ok and "5 s" in out
