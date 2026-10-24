@@ -66,10 +66,29 @@ def digest(pc, research_md=None, now=None):
         for b in st.get("books", []):
             L.append(f"| {b['sym']} | {b['state']} | {b['pnl_eur']:+.4f} | {b.get('realized_eur', 0):+.4f} | "
                      f"{b['roundtrips']} | {b['wins']} | {b['stops']} | {b.get('timeouts', 0)} |")
-        rt = sum(b["roundtrips"] for b in st.get("books", []))
-        L += ["", f"Nivel de evidencia: **paper** (simulado con datos reales). Vueltas totales: {rt}. "
-                  "Criterio para proponer dinero real: ≥300 vueltas en ≥4 semanas, PnL neto > 0 con "
-                  "intervalo de confianza, y robustez a comisión 0,02% y +200 ms (docs/REGLAS.md)."]
+        ev = st.get("evidence") or {}
+        if ev.get("criteria"):
+            L += ["", f"### Criterios para pasar a dinero real: {ev['criteria_met']}/{ev['criteria_total']}",
+                  "| criterio | estado | detalle |", "|---|---|---|"]
+            L += [f"| {c['name']} | {'✅' if c['ok'] else '⏳'} | {c['detail']} |" for c in ev["criteria"]]
+        per = ev.get("per_symbol") or {}
+        if per:
+            rows = sorted(per.items(), key=lambda kv: (kv[1].get("n", 0) >= 30, kv[1].get("mean") or -9),
+                          reverse=True)[:12]
+            L += ["", "### Pares (operados y laboratorio) — vueltas cerradas en paper",
+                  "| par | tipo | vueltas | total € | media € | IC95 desde | ganadoras |", "|---|---|---|---|---|---|---|"]
+            for sym, x in rows:
+                L.append(f"| {sym} | {'lab' if x.get('lab') else 'operado'} | {x.get('n')} | {x.get('total')} | "
+                         f"{x.get('mean')} | {x.get('ci95_low')} | {x.get('win_rate')} |")
+            best_lab = [k for k, x in rows if x.get("lab") and x.get("n", 0) >= 30 and (x.get("ci95_low") or -1) > 0]
+            if best_lab:
+                L.append(f"\n**Candidatos del laboratorio con evidencia positiva:** {', '.join(best_lab)}")
+        lab = st.get("lab") or []
+        if lab:
+            L.append(f"\nLaboratorio activo: {', '.join(b['sym'] for b in lab)}")
+        L += ["", "Nivel de evidencia: **paper** (simulado con datos reales). Criterios aprobados el 24-oct: "
+                  "≥7 días, ≥300 vueltas, IC95% > 0, ≥5/7 días positivos, robustez a +0,02% de comisión y "
+                  "+200 ms; luego 20 € reales una semana antes de los 100 €."]
     up = (pc or {}).get("update") or {}
     if up:
         L += ["", f"**Actualización:** {up.get('result')} {up.get('version') or up.get('candidate') or ''} "

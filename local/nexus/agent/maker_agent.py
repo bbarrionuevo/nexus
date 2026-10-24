@@ -5,6 +5,10 @@
 - Toda entrada pasa por el veto del RiskManager (R-03); las salidas siempre se permiten.
 - Datos viejos => se cancela la compra pendiente (R-07).
 - Estado del paper, riesgo y latido en NEXUS_HOME/state (R-09); logs rotados en NEXUS_HOME/logs.
+- Diario de cada vuelta cerrada (state/trades.jsonl) y evaluación de los criterios R-15.
+- Laboratorio: además de los pares operados, mide en paper 10-12 pares de MEXC elegidos solos por
+  spread y volumen (se renuevan cada pocas horas). No pasan por el riesgo ni afectan al capital:
+  solo generan evidencia para decidir qué pares operar.
 python -m nexus.agent.maker_agent
 """
 import json
@@ -17,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from .. import paths
+from .. import evidence, paths
 from ..exchanges.mexc import MexcReadOnly, parse_fee
 from ..live_paper_maker import Book
 from .risk import RiskManager
@@ -93,6 +97,44 @@ def verified_fees(client, cfg):
     return maker, taker
 
 
+def journal(entry):
+    """Agrega una vuelta cerrada al diario (una línea JSON). Tolerante a bloqueos breves."""
+    line = json.dumps(entry) + "\n"
+    for _ in range(5):
+        try:
+            with open(paths.state("trades.jsonl"), "a", encoding="utf-8") as f:
+                f.write(line)
+            return
+        except OSError:
+            time.sleep(0.2)
+    log.warning("no se pudo escribir el diario de vueltas")
+
+
+STABLE = ("USDC", "USDT", "FDUSD", "TUSD", "DAI", "USDE", "PYUSD", "USD1", "EUR", "EURC", "EURQ", "USDQ")
+
+
+def select_lab(client, lab_cfg, exclude):
+    """Elige pares USDT de MEXC con volumen suficiente y spread en rango (datos públicos)."""
+    vol = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in client._get("/api/v3/ticker/24hr")}
+    out = []
+    for t in client._get("/api/v3/ticker/bookTicker"):
+        sym = t["symbol"]
+        if not sym.endswith("USDT") or sym in exclude:
+            continue
+        base = sym[:-4]
+        if base in STABLE or base.endswith(("3L", "3S", "5L", "5S", "UP", "DOWN")):
+            continue
+        b, a = float(t.get("bidPrice") or 0), float(t.get("askPrice") or 0)
+        if b <= 0 or a <= 0:
+            continue
+        spread = (a / b - 1) * 100
+        if lab_cfg["min_spread_pct"] <= spread <= lab_cfg["max_spread_pct"] \
+                and vol.get(sym, 0) >= lab_cfg["min_quote_volume_usdt"]:
+            out.append((vol[sym], sym, round(spread, 3)))
+    out.sort(reverse=True)
+    return [(s, sp) for _, s, sp in out[:lab_cfg["max_symbols"]]]
+
+
 def save_state(name, data, tries=5):
     """Escritura tolerante: en Windows un antivirus o un lector puede trabar el archivo un instante."""
     for i in range(tries):
@@ -117,10 +159,12 @@ def main():
     saved = paths.read_json(paths.state("paper_books.json"), {})
     for x in cfg["symbols"]:
         bk = Book(x, notional=cfg["risk"]["max_position_eur"], maker=maker, taker=taker, stop_pct=cfg["stop_pct"],
-                  min_edge_pct=cfg["min_edge_pct"], max_hold_s=cfg["max_hold_min"] * 60, gate=gate)
+                  min_edge_pct=cfg["min_edge_pct"], max_hold_s=cfg["max_hold_min"] * 60, gate=gate,
+                  on_closed=lambda e: journal(e | {"lab": False}))
         if x in saved:
             bk.load(saved[x])
         gate.books[x] = bk
+    lab = Lab(client, cfg, maker, taker)
     version = os.environ.get("NEXUS_VERSION", "desconocida")
     log.info("arranque version=%s simbolos=%s home=%s", version, cfg["symbols"], paths.home())
     seen = {x: set() for x in gate.books}
@@ -128,10 +172,13 @@ def main():
     errors, last_status = [], 0.0
     log.info("comisiones maker=%s taker=%s; estado cargado: %s", maker, taker,
              {x: b.state for x, b in gate.books.items()})
+    last_eval, ev = 0.0, {}
     while True:
         try:
             if step(gate, client, cfg, seen, last_ok, errors) == "restart":
+                lab.save()
                 return
+            lab.step()
         except Exception:
             log.exception("error inesperado en el ciclo (el agente sigue)")
             errors.append(time.time())
@@ -140,12 +187,89 @@ def main():
             last_status = time.time()
             errors[:] = [e for e in errors if time.time() - e < 3600]
             save_state("paper_books.json", {x: b.to_dict() for x, b in gate.books.items()})
+            lab.save()
+            if time.time() - last_eval >= 300:
+                last_eval = time.time()
+                try:
+                    ev = evidence.evaluate(paths.state("trades.jsonl"))
+                    ev.pop("daily", None)
+                except Exception:
+                    log.exception("no se pudo evaluar la evidencia")
             save_state("status.json", {
                 "ts": time.time(), "version": version, "mode": "paper", "fees": [maker, taker],
                 "books": [b.mark() for b in gate.books.values()], "risk": risk.snapshot(),
                 "risk_block": risk.last_reason, "errors_last_hour": len(errors),
-                "data_age_s": {x: round(time.time() - t, 1) for x, t in last_ok.items()}})
+                "data_age_s": {x: round(time.time() - t, 1) for x, t in last_ok.items()},
+                "lab": lab.status(), "evidence": ev})
         time.sleep(cfg["poll_seconds"])
+
+
+class Lab:
+    """Pares de laboratorio: paper puro (sin riesgo ni capital), sondeados de a pocos por ciclo."""
+
+    def __init__(self, client, cfg, maker, taker):
+        self.client, self.cfg, self.maker, self.taker = client, cfg.get("lab") or {}, maker, taker
+        self.main = set(cfg["symbols"])
+        self.base = cfg
+        self.books, self.seen, self.order, self.i, self.selected_at = {}, {}, [], 0, 0.0
+        self.saved = paths.read_json(paths.state("lab_books.json"), {})
+
+    def _book(self, sym):
+        bk = Book(sym, notional=self.base["risk"]["max_position_eur"], maker=self.maker, taker=self.taker,
+                  stop_pct=self.base["stop_pct"], min_edge_pct=self.base["min_edge_pct"],
+                  max_hold_s=self.base["max_hold_min"] * 60, on_closed=lambda e: journal(e | {"lab": True}))
+        if sym in self.saved:
+            bk.load(self.saved[sym])
+        return bk
+
+    def reselect(self):
+        picked = select_lab(self.client, self.cfg, self.main)
+        keep = {s for s, b in self.books.items() if b.state == "long"}   # no se abandonan posiciones
+        names = [s for s, _ in picked]
+        for s in list(self.books):
+            if s not in names and s not in keep:
+                self.saved[s] = self.books.pop(s).to_dict()
+        for s in names:
+            if s not in self.books:
+                self.books[s] = self._book(s)
+                self.seen[s] = set()
+        self.order = list(self.books)
+        self.selected_at = time.time()
+        log.info("laboratorio: %s", picked)
+
+    def step(self):
+        if not self.cfg.get("enabled"):
+            return
+        if time.time() - self.selected_at > self.cfg["reselect_hours"] * 3600:
+            try:
+                self.reselect()
+            except Exception as e:
+                log.warning("no se pudo elegir pares de laboratorio: %s", type(e).__name__)
+                self.selected_at = time.time() - self.cfg["reselect_hours"] * 3600 + 600
+        for _ in range(min(self.cfg["per_loop"], len(self.order))):
+            sym = self.order[self.i % len(self.order)]
+            self.i += 1
+            bk = self.books[sym]
+            try:
+                bt = self.client.book_ticker(sym)
+                trades = self.client.trades(sym)
+                bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
+                for t in sorted(trades, key=lambda t: t["time"]):
+                    k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
+                    if k not in self.seen[sym]:
+                        self.seen[sym].add(k)
+                        bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
+                if len(self.seen[sym]) > 3000:
+                    self.seen[sym] = set(sorted(self.seen[sym])[-1000:])
+            except Exception as e:
+                log.warning("laboratorio %s: %s", sym, type(e).__name__)
+
+    def save(self):
+        if self.books:
+            save_state("lab_books.json", self.saved | {s: b.to_dict() for s, b in self.books.items()})
+
+    def status(self):
+        return [b.mark() for b in self.books.values()]
 
 
 def step(gate, client, cfg, seen, last_ok, errors):

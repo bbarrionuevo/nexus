@@ -252,3 +252,101 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
         if run_n == 1:
             assert any(b["state"] == "long" for b in books.values())
     assert json.loads(paths.state("status.json").read_text())["books"]
+
+
+# ---------------------------------------------------------------- laboratorio, diario y evidencia (R-15)
+class FakeMexc:
+    has_keys = False
+
+    def _get(self, path, params=None, signed=False):
+        if path == "/api/v3/ticker/24hr":
+            return [{"symbol": s, "quoteVolume": v} for s, v in
+                    (("AAAUSDT", "900000"), ("BBBUSDT", "500000"), ("USDCUSDT", "9e9"), ("CCCUSDT", "1000"),
+                     ("DDD3LUSDT", "9e9"), ("WIDEUSDT", "9e9"), ("BONKUSDT", "9e9"))]
+        return [{"symbol": "AAAUSDT", "bidPrice": "1.000", "askPrice": "1.003"},   # 0.3%: entra
+                {"symbol": "BBBUSDT", "bidPrice": "2.000", "askPrice": "2.004"},   # 0.2%: entra
+                {"symbol": "USDCUSDT", "bidPrice": "1.000", "askPrice": "1.002"},  # stablecoin: fuera
+                {"symbol": "CCCUSDT", "bidPrice": "1.000", "askPrice": "1.003"},   # poco volumen: fuera
+                {"symbol": "DDD3LUSDT", "bidPrice": "1.000", "askPrice": "1.003"}, # apalancado: fuera
+                {"symbol": "WIDEUSDT", "bidPrice": "1.000", "askPrice": "1.050"},  # spread absurdo: fuera
+                {"symbol": "BONKUSDT", "bidPrice": "1.000", "askPrice": "1.003"}]  # ya operado: fuera
+
+    def book_ticker(self, s):
+        return {"bidPrice": "1.000", "bidQty": "1", "askPrice": "1.003", "askQty": "1"}
+
+    def trades(self, s):
+        import time as _t
+        n = int(_t.time() * 1000)
+        return [{"time": n, "price": "1.000", "qty": "5", "isBuyerMaker": True},
+                {"time": n + 1, "price": "1.003", "qty": "5", "isBuyerMaker": False}]
+
+
+LAB = {"enabled": True, "max_symbols": 12, "min_quote_volume_usdt": 200000, "min_spread_pct": 0.1,
+       "max_spread_pct": 1.5, "reselect_hours": 6, "per_loop": 2}
+
+
+def test_laboratorio_elige_pares_razonables():
+    from nexus.agent.maker_agent import select_lab
+    assert [s for s, _ in select_lab(FakeMexc(), LAB, {"BONKUSDT"})] == ["AAAUSDT", "BBBUSDT"]
+
+
+def test_laboratorio_registra_vueltas_sin_tocar_el_riesgo(tmp_path, monkeypatch):
+    import json
+    from nexus import paths
+    from nexus.agent.maker_agent import Lab
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB, "stop_pct": 1.0, "min_edge_pct": 0.0, "max_hold_min": 30,
+           "risk": {"max_position_eur": 40}}
+    lab = Lab(FakeMexc(), cfg, 0.0, 0.08)
+    for _ in range(6):
+        lab.step()
+    lines = [json.loads(x) for x in paths.state("trades.jsonl").read_text().splitlines()]
+    assert lines and all(x["lab"] for x in lines) and {x["sym"] for x in lines} <= {"AAAUSDT", "BBBUSDT"}
+    assert not paths.state("risk.json").exists()          # el laboratorio no toca el riesgo
+    lab.save()
+    assert set(json.loads(paths.state("lab_books.json").read_text())) == {"AAAUSDT", "BBBUSDT"}
+
+
+def _trades(n, days, pnl_fn):
+    t0 = 1_800_000_000
+    return [{"ts": t0 + i * days * 86400 / n, "sym": "X", "pnl": pnl_fn(i), "notional": 40} for i in range(n)]
+
+
+def test_criterios_se_cumplen_con_evidencia_suficiente():
+    from nexus.evidence import criteria
+    tr = _trades(400, 8, lambda i: 0.06 if i % 4 else -0.05)
+    c = {name.split()[0]: ok for name, ok, _ in criteria(tr, now=1_800_000_000 + 8 * 86400)}
+    assert c["C1"] and c["C2"] and c["C3"] and c["C4"] and c["C5"] and not c["C6"]
+
+
+def test_criterios_rechazan_poca_evidencia_o_perdida():
+    from nexus.evidence import criteria
+    pocas = {n.split()[0]: ok for n, ok, _ in criteria(_trades(50, 2, lambda i: 0.05), now=1_800_000_000 + 2 * 86400)}
+    assert not pocas["C1"] and not pocas["C2"]
+    perd = {n.split()[0]: ok for n, ok, _ in criteria(_trades(400, 8, lambda i: -0.01 if i % 2 else 0.005),
+                                                      now=1_800_000_000 + 8 * 86400)}
+    assert not perd["C3"] and not perd["C5"]
+
+
+def test_agente_publica_laboratorio_y_evidencia(tmp_path, monkeypatch):
+    import itertools
+    import json
+    import nexus.agent.maker_agent as ma
+    from nexus import paths
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    monkeypatch.delenv("MEXC_API_KEY", raising=False)
+    monkeypatch.setattr(ma.time, "sleep", lambda s: None)
+    calls = itertools.count()
+
+    class Client(FakeMexc):
+        def book_ticker(self, s):
+            if next(calls) == 60:
+                paths.state("RESTART").touch()
+            return super().book_ticker(s)
+
+    monkeypatch.setattr(ma, "MexcReadOnly", Client)
+    ma.main()
+    st = json.loads(paths.state("status.json").read_text())
+    assert "lab" in st and "evidence" in st
+    kinds = {json.loads(x)["lab"] for x in paths.state("trades.jsonl").read_text().splitlines()}
+    assert kinds == {True, False}
