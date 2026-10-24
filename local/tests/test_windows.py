@@ -38,7 +38,11 @@ def test_posiciones_abiertas_desde_estado(tmp_path, monkeypatch):
     from nexus import paths
     monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
     paths.write_json_atomic(paths.state("paper_books.json"), {"A": {"state": "long"}, "B": {"state": "flat"}})
-    assert upd.open_positions() == ["A"]
+    import time as _t
+    paths.write_json_atomic(paths.state("status.json"), {"ts": _t.time()})
+    assert upd.open_positions() == ["A"]                 # agente vivo: la posición cuenta
+    paths.write_json_atomic(paths.state("status.json"), {"ts": _t.time() - 3600})
+    assert upd.open_positions() == []                    # agente detenido: no bloquea la actualización
 
 
 def test_rutas_protegidas_en_repo_temporal(tmp_path):
