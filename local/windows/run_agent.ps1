@@ -17,6 +17,7 @@ try {
     try {
       $p = Start-Process -FilePath $Py -ArgumentList "-m", "nexus.agent.maker_agent" -NoNewWindow -PassThru `
         -RedirectStandardError "$env:NEXUS_HOME\logs\agent_stderr.log"
+      $null = $p.Handle   # sin leer Handle antes de que termine, PowerShell deja ExitCode vacío
       $p.WaitForExit()
       $Code = $p.ExitCode
     } catch {
