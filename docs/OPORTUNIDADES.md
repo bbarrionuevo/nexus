@@ -68,6 +68,22 @@ El informe vivo está en la rama `data`: `data/radar.md` (cada 2 h), `data/feasi
 | MEP por API de IOL + Binance P2P en USD | IOL API | P2P 1,8% (manual) | ~+3,1% | compra de MEP y venta por API |
 | MEP por API de IOL + Binance/Coinag | IOL API | ~5,5% de spread | ~−0,6% | casi todo, pero no rinde |
 
+## Costos reales de Binance vistos por el dueño (24-oct-2026, 100 USD desde cuenta en dólares argentina)
+| método | USDT recibidos | USD por USDT | costo | rulo con oficial (1.550), venta en Binance por API | con MEP (1.563) |
+|---|---|---|---|---|---|
+| Transferencia bancaria (Coinag) | 94,85 | 1,0543 | 5,43% | −0,10% | −0,96% |
+| Tarjeta de débito en USD | 97,82 | 1,0223 | 2,23% | **+3,03%** | +2,14% |
+| Binance P2P pagando en USD (radar) | — | 1,018 | 1,80% | **+3,46%** | +2,57% |
+| Wise P2P / AirTM P2P (requiere saldo en Wise/AirTM) | 98,62 / 98,43 | 1,014 / 1,016 | 1,4% / 1,6% | +3,9% / +3,7% | +3,0% / +2,8% |
+
+EUR → USDT en Binance: 100 EUR → 109,58 USDT (mercado ~1,12): costo ~2,2%. Sirve para fondear desde N26,
+no cierra un rulo por sí solo.
+
+Conclusión: la vía 100% automática (MEP por API + Coinag) **no rinde** (el costo de Coinag es real). La que
+rinde y es casi toda rápida es **oficial + tarjeta de débito en USD + venta del USDT por API: ~+3% por vuelta**
+(o ~+3,5% con P2P en USD). Próximo paso: prueba chica de punta a punta (50-100 USD) para confirmar que el
+banco permite la compra con tarjeta en Binance y el costo final real.
+
 ## Cómo se decide pasar a dinero real
 Igual que el resto del sistema: evidencia en paper que cumpla R-15, luego 20 € reales una semana,
 luego más capital. El orden probable: (1) diferencia de funding, (5) préstamo, (2) si se verifica.
