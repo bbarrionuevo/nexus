@@ -239,12 +239,13 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
                 if n == restart_at:
                     paths.state("RESTART").touch()
                 # el precio cae después de comprar: la posición queda abierta (sin tocar el stop)
-                bid = 10.0 if n < 4 else 9.97
+                bid = 10.0 if n < 8 else 9.97
                 return {"bidPrice": str(bid), "bidQty": "1", "askPrice": str(bid + 0.01), "askQty": "1"}
 
             def trades(self, s):
+                # el primer sondeo de cada libro solo marca operaciones previas (defecto 3); el segundo llena
                 n = next(calls)
-                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 4 else []
+                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 8 else []
 
         monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
         ma.main()
@@ -255,6 +256,9 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------- laboratorio, diario y evidencia (R-15)
+_TRADE_IDS = __import__("itertools").count(1)
+
+
 class FakeMexc:
     has_keys = False
 
@@ -275,8 +279,7 @@ class FakeMexc:
         return {"bidPrice": "1.000", "bidQty": "1", "askPrice": "1.003", "askQty": "1"}
 
     def trades(self, s):
-        import time as _t
-        n = int(_t.time() * 1000)
+        n = next(_TRADE_IDS) * 10
         return [{"time": n, "price": "1.000", "qty": "5", "isBuyerMaker": True},
                 {"time": n + 1, "price": "1.003", "qty": "5", "isBuyerMaker": False}]
 
@@ -410,3 +413,36 @@ def test_aprobacion_vale_para_descendientes_sin_cambios_protegidos(tmp_path):
         assert not upd.approval_covers(cur, b, {"f" * 40: {}})        # commit inexistente
     finally:
         upd.REPO = old
+
+
+def test_defecto3_operaciones_previas_a_la_orden_no_llenan():
+    """Regresión: al arrancar, las operaciones ya ocurridas no pueden llenar la orden recién puesta
+    ni cerrar con ganancia una posición restaurada."""
+    import json
+    from nexus import evidence
+    from nexus.agent.maker_agent import feed
+    from nexus.live_paper_maker import Book
+    old = [{"time": 1, "price": "0.99", "qty": "100", "isBuyerMaker": True},     # venta bajo nuestro bid
+           {"time": 2, "price": "1.10", "qty": "100", "isBuyerMaker": False}]    # compra sobre el ask
+    bk = Book("X", notional=40, maker=0.0, taker=0.08)
+    bk.on_book(1.0, 1, 1.01, 1)
+    seen = set()
+    feed(bk, old, seen)
+    assert bk.state == "flat" and bk.rt == 0                     # nada se llenó con el pasado
+    feed(bk, old + [{"time": 3, "price": "0.99", "qty": "1", "isBuyerMaker": True}], seen)
+    assert bk.state == "long"                                    # una operación nueva sí llena
+    restaurada = Book("Y", notional=40, maker=0.0, taker=0.08)
+    restaurada.load(bk.to_dict())
+    restaurada.on_book(1.0, 1, 1.01, 1)
+    feed(restaurada, old, set())
+    assert restaurada.state == "long" and restaurada.rt == 0      # no cierra con operaciones previas
+
+
+def test_evidencia_excluye_vueltas_del_modelo_viejo(tmp_path):
+    import json
+    from nexus import evidence
+    p = tmp_path / "trades.jsonl"
+    rows = [{"ts": 1, "sym": "A", "pnl": 0.5}, {"ts": 2, "sym": "A", "pnl": 0.1, "model": evidence.FILL_MODEL}]
+    p.write_text("\n".join(json.dumps(r) for r in rows))
+    ev = evidence.evaluate(p)
+    assert ev["overall"]["n"] == 1 and ev["excluded_old_model"] == 1
