@@ -137,3 +137,30 @@ def test_informe_diario_contiene_lo_esencial():
 def test_maker_descarta_libros_rotos():
     from nexus.discovery.maker import scan_maker
     assert scan_maker([("ALTHEA/EUR", 0.001, 1.5, 40000)], 0.25) == []
+
+
+def test_check_keys_no_muestra_secretos_y_detecta_retiros(monkeypatch):
+    from nexus import check_keys as ck
+    monkeypatch.setenv("FAKE_K", "clave-super-secreta-123")
+    monkeypatch.setenv("FAKE_S", "secreto-super-secreto-456")
+    monkeypatch.delenv("NADA_K", raising=False)
+
+    class Ok:
+        pass
+
+    def ok(c):
+        return {"canTrade": True, "canWithdraw": False}
+
+    def retiros(c):
+        return {"canWithdraw": True}
+
+    def falla(c):
+        raise RuntimeError("401")
+
+    lines = []
+    assert ck.run([("A", "FAKE_K", "FAKE_S", Ok, ok)], lines.append) == 0
+    assert ck.run([("B", "FAKE_K", "FAKE_S", Ok, retiros)], lines.append) == 2
+    assert ck.run([("C", "FAKE_K", "FAKE_S", Ok, falla)], lines.append) == 1
+    assert ck.run([("D", "NADA_K", "NADA_S", Ok, ok)], lines.append) == 0
+    texto = "\n".join(lines)
+    assert "super-secret" not in texto and "R-01" in texto and "sin clave" in texto
