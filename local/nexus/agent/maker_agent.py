@@ -8,7 +8,10 @@
 - Diario de cada vuelta cerrada (state/trades.jsonl) y evaluación de los criterios R-15.
 - Laboratorio: además de los pares operados, mide en paper 10-12 pares de MEXC elegidos solos por
   spread y volumen (se renuevan cada pocas horas). No pasan por el riesgo ni afectan al capital:
-  solo generan evidencia para decidir qué pares operar.
+  solo generan evidencia para decidir qué pares operar. Un par cuyas últimas N vueltas pierden en
+  promedio se pausa (no vuelve a elegirse) por unas horas.
+- Los pedidos de cada ciclo van en paralelo: desde el PC cada uno tarda ~270 ms y en serie las
+  órdenes simuladas quedaban viejas (más llenados adversos y stops tardíos que un bot real).
 python -m nexus.agent.maker_agent
 """
 import json
@@ -16,6 +19,8 @@ import logging
 import os
 import sys
 import time
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -28,6 +33,19 @@ from .risk import RiskManager
 
 CFG = Path(__file__).resolve().parents[2] / "config" / "agent.yaml"
 log = logging.getLogger("nexus.agent")
+POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="datos")
+
+
+def fetch_many(client, syms, timeout=15):
+    """Libro y operaciones de varios pares EN PARALELO: {par: (libro, operaciones) | Exception}."""
+    futs = {s: (POOL.submit(client.book_ticker, s), POOL.submit(client.trades, s)) for s in syms}
+    out = {}
+    for s, (fb, ft) in futs.items():
+        try:
+            out[s] = (fb.result(timeout=timeout), ft.result(timeout=timeout))
+        except Exception as e:                                        # noqa: BLE001 (se informa)
+            out[s] = e
+    return out
 
 
 def draining(max_age_s=2400):
@@ -233,17 +251,36 @@ class Lab:
         self.base = cfg
         self.books, self.seen, self.order, self.i, self.selected_at = {}, {}, [], 0, 0.0
         self.saved = paths.read_json(paths.state("lab_books.json"), {})
+        self.recent = {}                                      # últimas vueltas por par (pausa)
+        self.paused = {s: t for s, t in paths.read_json(paths.state("lab_paused.json"), {}).items()
+                       if t > time.time()}
+
+    def is_paused(self, sym):
+        return self.paused.get(sym, 0) > time.time()
+
+    def on_closed(self, e):
+        """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio."""
+        journal(e | {"lab": True})
+        n = self.cfg.get("pause_window", 15)
+        dq = self.recent.setdefault(e["sym"], deque(maxlen=n))
+        dq.append(e["pnl"])
+        if len(dq) == n and sum(dq) < 0:
+            self.paused[e["sym"]] = time.time() + self.cfg.get("pause_hours", 24) * 3600
+            dq.clear()
+            save_state("lab_paused.json", self.paused)
+            log.info("laboratorio: %s pausado %s h (últimas %s vueltas pierden)", e["sym"],
+                     self.cfg.get("pause_hours", 24), n)
 
     def _book(self, sym):
         bk = Book(sym, notional=self.base["risk"]["max_position_eur"], maker=self.maker, taker=self.taker,
                   stop_pct=self.base["stop_pct"], min_edge_pct=self.base["min_edge_pct"],
-                  max_hold_s=self.base["max_hold_min"] * 60, on_closed=lambda e: journal(e | {"lab": True}))
+                  max_hold_s=self.base["max_hold_min"] * 60, on_closed=self.on_closed)
         if sym in self.saved:
             bk.load(self.saved[sym])
         return bk
 
     def reselect(self):
-        picked = select_lab(self.client, self.cfg, self.main)
+        picked = select_lab(self.client, self.cfg, self.main | {s for s in self.paused if self.is_paused(s)})
         keep = {s for s, b in self.books.items() if b.state == "long"}   # no se abandonan posiciones
         names = [s for s, _ in picked]
         for s in list(self.books):
@@ -266,13 +303,22 @@ class Lab:
             except Exception as e:
                 log.warning("no se pudo elegir pares de laboratorio: %s", type(e).__name__)
                 self.selected_at = time.time() - self.cfg["reselect_hours"] * 3600 + 600
+        syms = []
         for _ in range(min(self.cfg["per_loop"], len(self.order))):
             sym = self.order[self.i % len(self.order)]
             self.i += 1
             bk = self.books[sym]
+            if self.is_paused(sym) and bk.state == "flat":
+                bk.px, bk.queue = None, None                     # pausado: no abre; si estaba comprado, sale
+                continue
+            syms.append(sym)
+        data = fetch_many(self.client, syms)
+        for sym in syms:
+            bk = self.books[sym]
             try:
-                bt = self.client.book_ticker(sym)
-                trades = self.client.trades(sym)
+                if isinstance(data[sym], Exception):
+                    raise data[sym]
+                bt, trades = data[sym]
                 feed(bk, trades, self.seen[sym])          # primero, contra la orden que estaba puesta
                 bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
                 if len(self.seen[sym]) > 3000:
@@ -285,15 +331,17 @@ class Lab:
             save_state("lab_books.json", self.saved | {s: b.to_dict() for s, b in self.books.items()})
 
     def status(self):
-        return [b.mark() for b in self.books.values()]
+        return [b.mark() | {"paused": self.is_paused(b.sym), "vol_1m_pct": b.vol_1m()} for b in self.books.values()]
 
 
 def step(gate, client, cfg, seen, last_ok, errors):
     """Un ciclo: datos de cada par, modelo de cola y pedido de reinicio. Devuelve "restart" si hay que salir."""
+    data = fetch_many(client, list(gate.books))
     for x, bk in gate.books.items():
         try:
-            bt = client.book_ticker(x)
-            trades = client.trades(x)
+            if isinstance(data[x], Exception):
+                raise data[x]
+            bt, trades = data[x]
             feed(bk, trades, seen[x])          # primero, contra la orden que estaba puesta
             bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
             if len(seen[x]) > 5000:

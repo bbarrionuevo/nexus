@@ -41,7 +41,8 @@ def file_tail(name, n):
 
 def trades_tail(n=4000, max_bytes=1_500_000):
     """Últimas vueltas del modelo vigente, compactas, para analizar pérdidas desde la nube.
-    Formato por vuelta: [ts, par, pnl, tipo, segundos, entrada, salida, lab]. Sin secretos."""
+    Formato por vuelta: [ts, par, pnl, tipo, segundos, entrada, salida, lab, spread % y volatilidad
+    %/min al entrar]. Sin secretos."""
     from nexus import evidence
     p = paths.state("trades.jsonl")
     if not p.exists():
@@ -59,7 +60,7 @@ def trades_tail(n=4000, max_bytes=1_500_000):
             continue
         if t.get("model", 1) >= evidence.FILL_MODEL:
             out.append([round(t["ts"]), t["sym"], t["pnl"], t.get("kind"), t.get("hold_s"), t.get("entry"),
-                        t.get("exit"), int(bool(t.get("lab")))])
+                        t.get("exit"), int(bool(t.get("lab"))), t.get("spread_pct"), t.get("vol_1m_pct")])
     return out[-n:]
 
 
