@@ -10,7 +10,9 @@ from .base import ReadOnlyClient
 
 class BinanceReadOnly(ReadOnlyClient):
     PUBLIC_PREFIX = "/api/v3/ticker"
-    ALLOWED_PRIVATE = frozenset({"/api/v3/account", "/api/v3/depth", "/api/v3/exchangeInfo"})
+    # capital/config/getall: SOLO LECTURA de redes, depósitos/retiros habilitados y comisiones por moneda.
+    ALLOWED_PRIVATE = frozenset({"/api/v3/account", "/api/v3/depth", "/api/v3/exchangeInfo",
+                                 "/sapi/v1/capital/config/getall"})
 
     def __init__(self, key=None, secret=None, **kw):
         super().__init__("https://api.binance.com", **kw)
@@ -40,3 +42,7 @@ class BinanceReadOnly(ReadOnlyClient):
     def balances(self):
         acc = self._get("/api/v3/account", signed=True)
         return {b["asset"]: b["free"] for b in acc["balances"] if float(b["free"]) or float(b["locked"])}
+
+    def capital_config(self):
+        """Redes por moneda: depósito/retiro habilitados y comisión de retiro (solo lectura)."""
+        return self._get("/sapi/v1/capital/config/getall", signed=True)

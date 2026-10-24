@@ -10,8 +10,9 @@ from .base import ReadOnlyClient
 
 class MexcReadOnly(ReadOnlyClient):
     PUBLIC_PREFIX = "/api/v3/ticker"
+    # capital/config/getall: SOLO LECTURA de redes, depósitos/retiros habilitados y comisiones por moneda.
     ALLOWED_PRIVATE = frozenset({"/api/v3/account", "/api/v3/tradeFee", "/api/v3/trades",
-                                 "/api/v3/depth", "/api/v3/exchangeInfo"})
+                                 "/api/v3/depth", "/api/v3/exchangeInfo", "/api/v3/capital/config/getall"})
 
     def __init__(self, key=None, secret=None, **kw):
         super().__init__("https://api.mexc.com", **kw)
@@ -48,6 +49,10 @@ class MexcReadOnly(ReadOnlyClient):
 
     def trade_fee(self, symbol):
         return self._get("/api/v3/tradeFee", {"symbol": symbol}, signed=True)
+
+    def capital_config(self):
+        """Redes por moneda: depósito/retiro habilitados y comisión de retiro (solo lectura)."""
+        return self._get("/api/v3/capital/config/getall", signed=True)
 
 
 def parse_fee(raw):
