@@ -37,7 +37,19 @@ def collect():
         res["rulo"] = p2p_ar.rulo(ar["dolar"], ar["bancos"], rs, ar.get("usd"))
         res["banks"] = p2p_ar.fresh_banks(ar["bancos"])[:6]
         k = _safe(p2p_ar.kraken_usdt_usd, errors, "Kraken USDT/USD")
-        res["cross_border"] = p2p_ar.cross_border(rs, ar["bancos"], k)
+        res["cross_border"] = p2p_ar.cross_border(rs, ar["bancos"], k, mep=p2p_ar._mep(ar["dolar"]))
+        conv = p2p_ar.usd_conversion_table({"USDT": ar.get("usd"), "USDC": ar.get("usd_USDC")})
+        res["usd_conversion"] = conv[:10]
+        bids = {}
+        for coin, quotes in (("USDT", ar["quotes"][100]), ("USDC", ar.get("ars_USDC") or {})):
+            rr = p2p_ar.rows(quotes)
+            if rr:
+                b = max(rr, key=lambda r: r[4])
+                bids[coin] = (b[0], b[4])
+        banks = p2p_ar.fresh_banks(ar["bancos"])
+        routes = ([("oficial", banks[0][1])] if banks else []) + \
+                 ([("MEP", p2p_ar._mep(ar["dolar"]))] if p2p_ar._mep(ar["dolar"]) else [])
+        res["local_loops"] = p2p_ar.local_loops(conv, bids, routes)[:8]
         res["apps"] = sorted(([r[0], r[2], r[4]] for r in rs if not r[5]), key=lambda x: -x[2])[:8]
     rows, ferr = fm.fetch_all()
     errors.update({f"funding {k}": v for k, v in ferr.items()})
@@ -64,6 +76,8 @@ def history_line(res):
     r = res.get("rulo") or {}
     return {"ts": res["ts"], "rulo": {x["route"].split(" ")[0]: x["net_pct"] for x in r.get("routes", [])},
             "cross_border": (res.get("cross_border") or {}).get("gross_pct"),
+            "usd_conv_best": (res.get("usd_conversion") or [{}])[0].get("premium_pct"),
+            "local_loop_best": (res.get("local_loops") or [{}])[0].get("net_pct"),
             "p2p_best": {x["platform"]: x["net_pct"] for x in res.get("p2p_spreads", [])[:6]},
             "hedged_best": [(x["platform"], x["side"][:14], x["net_pct"]) for x in res.get("hedged_ads", [])[:4]],
             "cross": {x["base"]: [x["short"], x["long"], x["spread_apr"]] for x in res.get("cross_funding", [])[:15]},
@@ -99,15 +113,34 @@ def to_markdown(res, hist):
                f"cripto USDT {r.get('cripto_usdt')}",
                "", "A verificar antes de operar: cupo de dólares de tu banco, si la plataforma acepta tus dólares por "
                "transferencia y cuánto tarda, impuestos, y la normativa vigente (restricciones cruzadas).", ""]
+    conv = res.get("usd_conversion") or []
+    if conv:
+        md += ["### Costo de pasar dólares a stablecoin dentro de Argentina (la fricción que sostiene la brecha)", "",
+               "| plataforma | moneda | USD por unidad | prima % |", "|---|---|---|---|"]
+        md += [f"| {c['platform']} | {c['coin']} | {c['usd_per_unit']} | {c['premium_pct']:+.2f} |" for c in conv[:8]]
+        loops = res.get("local_loops") or []
+        if loops:
+            b = loops[0]
+            md += ["", f"Mejor rulo **dentro del país**: dólar {b['route']} → {b['coin']} en {b['convert_at']} → pesos en "
+                   f"{b['sell_at']}: **{b['net_pct']:+.2f}% por vuelta** (si alguna plataforma baja su prima a ~1-2%, "
+                   "este rulo se vuelve automatizable sin giros al exterior)."]
+        md.append("")
     cb = res.get("cross_border")
     if cb:
+        sizes = " · ".join(f"{n:,} USD: **{v:+.2f}%**" for n, v in cb.get("by_size", {}).items())
         md += ["### Vuelta internacional (usa tus cuentas del exterior)", "",
-               f"USD afuera → USDT en Kraken a {cb['usdt_usd_ask']} (+0,26% comisión) → vender en **{cb['sell_at']}** a "
-               f"{cb['usdt_bid']:,.2f} ARS → dólar oficial en **{cb['bank']}** a {cb['usd_ars']:,.2f} → transferir al "
-               f"exterior (supuesto {cb['wire_pct']}%): **{cb['gross_pct']:+.2f}% bruto · {cb['net_pct']:+.2f}% neto por vuelta**.",
-               "", "Es la hipótesis más grande del radar y la de más fricción: verificar que puedas comprar dólares "
-               "oficiales sin restricción cruzada por vender cripto, el costo y la demora real de transferir dólares "
-               "al exterior, y tus propios límites (UE < 10.000 € acumulados, AR < 50 M ARS/mes).", ""]
+               f"USD afuera → USDT en Kraken a {cb['usdt_usd_ask']} (+0,26%) → vender en **{cb['sell_at']}** a "
+               f"{cb['usdt_bid']:,.2f} ARS → dólar oficial en **{cb['bank']}** a {cb['usd_ars']:,.2f} → giro al exterior: "
+               f"**{cb['gross_pct']:+.2f}% bruto por vuelta**.",
+               f"Neto por vuelta según el monto (giro supuesto: {cb.get('wire_fixed_usd', 0):.0f} USD fijos + "
+               f"{cb.get('wire_var_pct', cb.get('wire_pct'))}%): {sizes or cb.get('net_pct')}"]
+        if cb.get("mep_by_size"):
+            md.append(f"Con dólar MEP (automatizable por API de un broker): bruto {cb['mep_gross_pct']:+.2f}% · " +
+                      " · ".join(f"{n:,} USD: {v:+.2f}%" for n, v in cb["mep_by_size"].items()))
+        md += ["", "Automatizable: comprar USDT en Kraken, enviarlo y venderlo por pesos (APIs). Manual: comprar los "
+               "dólares (salvo MEP por broker) y el giro al exterior; conviene juntarlo en pocas vueltas grandes. "
+               "A verificar: costo real del giro de tu banco y de la acreditación en Kraken, y tus límites "
+               "(UE < 10.000 € acumulados, AR < 50 M ARS/mes, 2,5 M ARS por operación).", ""]
     if res.get("p2p_spreads"):
         md += ["## 2. P2P: margen del que publica avisos (merchant)", "",
                "| plataforma | mejor compra (bid) | mejor venta (ask) | bruto % | neto % (2 x 0,2% comisión) |",

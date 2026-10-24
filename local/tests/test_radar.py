@@ -101,3 +101,17 @@ def test_informe_del_radar_en_espanol():
     md = to_markdown(res, [history_line(res)] * 3)
     assert "Vuelta internacional" in md and "IRYS" in md and "+128" in md and "Persistencia" in md
     assert persistence([history_line(res)] * 3)[1][0] == ("IRYS", 3, 159.1)
+
+
+def test_rulo_por_tamano_y_conversion_local():
+    from nexus.discovery.p2p_ar import cross_border, local_loops, rows, usd_conversion_table
+    rs = rows({"okexp2p": q(1645, 1641), "fiwind": q(1650, 1637)}, now=NOW)
+    cb = cross_border(rs, {"bna": q(1550, 1500)}, 1.0, now=NOW, mep=1563.45)
+    small, mid, big = cb["by_size"][1000], cb["by_size"][5000], cb["by_size"][10000]
+    assert small < mid < big and abs((big - small) - (40 / 1000 * 100 - 40 / 10000 * 100)) < 0.02
+    assert cb["mep_gross_pct"] < cb["gross_pct"]
+    conv = usd_conversion_table({"USDT": {"fiwind": q(1.065, 1.0), "barato": q(1.015, 0.99)},
+                                 "USDC": {"belo": q(1.03, 1.0), "roto": q(9, 8)}}, now=NOW)
+    assert [c["platform"] for c in conv] == ["barato", "belo", "fiwind"]
+    loops = local_loops(conv, {"USDT": ("okexp2p", 1641), "USDC": ("lemon", 1639)}, [("oficial", 1550)])
+    assert loops[0]["convert_at"] == "barato" and abs(loops[0]["net_pct"] - (1641 / (1550 * 1.015) - 1) * 100) < 1e-3
