@@ -10,9 +10,9 @@
    "last_settle": 1792872000.0,
    "mark": {
     "funding": 0.0814,
-    "basis": -0.1515,
+    "basis": -0.4616,
     "fees": 0.072,
-    "net": -0.1421
+    "net": -0.4522
    }
   },
   "MAGMA_USDT": {
@@ -25,19 +25,19 @@
    "last_settle": 1792872000.0,
    "mark": {
     "funding": 0.0103,
-    "basis": -0.2302,
+    "basis": -0.1434,
     "fees": 0.072,
-    "net": -0.2919
+    "net": -0.2051
    }
   }
  },
  "closed": [],
  "summary": {
-  "ts": 1792872303.5555189,
+  "ts": 1792876332.0902615,
   "open": 2,
   "closed": 0,
   "realized_eur": 0,
-  "open_net_eur": -0.434,
-  "total_eur": -0.434
+  "open_net_eur": -0.6573,
+  "total_eur": -0.6573
  }
 }
