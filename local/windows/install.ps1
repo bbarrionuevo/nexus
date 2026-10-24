@@ -66,9 +66,19 @@ $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 $Ps = "powershell.exe"
 $Common = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File"
 
+# Reinstalación: detener el agente anterior (tarea y procesos huérfanos) antes de registrar de nuevo.
+if (Get-ScheduledTask -TaskName "nexus-agente" -ErrorAction SilentlyContinue) {
+  Stop-ScheduledTask -TaskName "nexus-agente" -ErrorAction SilentlyContinue
+}
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object { $_.CommandLine -like "*nexus.agent.maker_agent*" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
 $A1 = New-ScheduledTaskAction -Execute $Ps -Argument "$Common `"$Dir\local\windows\run_agent.ps1`""
 $T1 = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-Register-ScheduledTask -TaskName "nexus-agente" -Action $A1 -Trigger $T1 -Settings $Settings -Force | Out-Null
+# Autorreparación: cada minuto Windows intenta lanzarla; si ya corre, lo ignora (IgnoreNew).
+$T1b = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "nexus-agente" -Action $A1 -Trigger @($T1, $T1b) -Settings $Settings -Force | Out-Null
 
 $A2 = New-ScheduledTaskAction -Execute $Ps -Argument "$Common `"$Dir\local\windows\maintenance.ps1`""
 $T2 = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 30)
