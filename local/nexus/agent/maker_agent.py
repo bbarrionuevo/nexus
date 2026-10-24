@@ -93,6 +93,19 @@ def verified_fees(client, cfg):
     return maker, taker
 
 
+def save_state(name, data, tries=5):
+    """Escritura tolerante: en Windows un antivirus o un lector puede trabar el archivo un instante."""
+    for i in range(tries):
+        try:
+            paths.write_json_atomic(paths.state(name), data)
+            return True
+        except OSError as e:
+            if i == tries - 1:
+                log.warning("no se pudo guardar %s: %s", name, e)
+            time.sleep(0.2)
+    return False
+
+
 def main():
     paths.load_env()
     setup_logging()
@@ -113,37 +126,21 @@ def main():
     seen = {x: set() for x in gate.books}
     last_ok = {x: 0.0 for x in gate.books}
     errors, last_status = [], 0.0
+    log.info("comisiones maker=%s taker=%s; estado cargado: %s", maker, taker,
+             {x: b.state for x, b in gate.books.items()})
     while True:
-        for x, bk in gate.books.items():
-            try:
-                bt = client.book_ticker(x)
-                trades = client.trades(x)
-                bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
-                for t in sorted(trades, key=lambda t: t["time"]):
-                    k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
-                    if k not in seen[x]:
-                        seen[x].add(k)
-                        bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
-                if len(seen[x]) > 5000:
-                    seen[x] = set(sorted(seen[x])[-2000:])
-                last_ok[x] = time.time()
-            except Exception as e:
-                errors.append(time.time())
-                log.warning("error de datos %s: %s", x, type(e).__name__)
-            if time.time() - last_ok[x] > cfg["stale_data_s"] and bk.state == "flat" and bk.px is not None:
-                bk.px, bk.queue = None, None
-                log.warning("datos viejos en %s: se cancela la compra pendiente", x)
-        restart = paths.state("RESTART")
-        if restart.exists():                             # pedido del actualizador (R-13)
-            paths.write_json_atomic(paths.state("paper_books.json"), {x: b.to_dict() for x, b in gate.books.items()})
-            restart.unlink()
-            log.info("reinicio controlado solicitado: estado guardado, saliendo")
-            return
+        try:
+            if step(gate, client, cfg, seen, last_ok, errors) == "restart":
+                return
+        except Exception:
+            log.exception("error inesperado en el ciclo (el agente sigue)")
+            errors.append(time.time())
+            time.sleep(5)
         if time.time() - last_status >= 30:
             last_status = time.time()
-            errors = [e for e in errors if time.time() - e < 3600]
-            paths.write_json_atomic(paths.state("paper_books.json"), {x: b.to_dict() for x, b in gate.books.items()})
-            paths.write_json_atomic(paths.state("status.json"), {
+            errors[:] = [e for e in errors if time.time() - e < 3600]
+            save_state("paper_books.json", {x: b.to_dict() for x, b in gate.books.items()})
+            save_state("status.json", {
                 "ts": time.time(), "version": version, "mode": "paper", "fees": [maker, taker],
                 "books": [b.mark() for b in gate.books.values()], "risk": risk.snapshot(),
                 "risk_block": risk.last_reason, "errors_last_hour": len(errors),
@@ -151,5 +148,43 @@ def main():
         time.sleep(cfg["poll_seconds"])
 
 
+def step(gate, client, cfg, seen, last_ok, errors):
+    """Un ciclo: datos de cada par, modelo de cola y pedido de reinicio. Devuelve "restart" si hay que salir."""
+    for x, bk in gate.books.items():
+        try:
+            bt = client.book_ticker(x)
+            trades = client.trades(x)
+            bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
+            for t in sorted(trades, key=lambda t: t["time"]):
+                k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
+                if k not in seen[x]:
+                    seen[x].add(k)
+                    bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
+            if len(seen[x]) > 5000:
+                seen[x] = set(sorted(seen[x])[-2000:])
+            last_ok[x] = time.time()
+        except Exception as e:
+            errors.append(time.time())
+            log.warning("error de datos %s: %s", x, type(e).__name__)
+        if time.time() - last_ok[x] > cfg["stale_data_s"] and bk.state == "flat" and bk.px is not None:
+            bk.px, bk.queue = None, None
+            log.warning("datos viejos en %s: se cancela la compra pendiente", x)
+    restart = paths.state("RESTART")
+    if restart.exists():                             # pedido del actualizador (R-13)
+        save_state("paper_books.json", {x: b.to_dict() for x, b in gate.books.items()})
+        restart.unlink()
+        log.info("reinicio controlado solicitado: estado guardado, saliendo")
+        return "restart"
+    return None
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        try:
+            setup_logging()
+        except Exception:
+            pass
+        log.exception("el agente se detuvo por un error al arrancar o fatal")
+        raise

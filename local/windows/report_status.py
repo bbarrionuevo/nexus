@@ -30,9 +30,19 @@ def log_tail(n=20):
     return [redact(x) for x in lines if " WARNING " in x or " ERROR " in x][-n:]
 
 
+def file_tail(name, n):
+    """Últimas n líneas de un log (con cadenas tipo secreto ocultas) para diagnosticar a distancia."""
+    p = paths.logs(name)
+    if not p.exists():
+        return []
+    data = p.read_bytes()[-20000:].decode("utf-8", errors="replace")
+    return [redact(x) for x in data.splitlines()[-n:]]
+
+
 def build():
     return {"ts": time.time(), "status": paths.read_json(paths.state("status.json"), {}),
             "update": paths.read_json(paths.state("update.json"), {}), "log_tail": log_tail(),
+            "runner_tail": file_tail("runner.log", 10), "stderr_tail": file_tail("agent_stderr.log", 30),
             "kill_switch": paths.kill_file().exists()}
 
 

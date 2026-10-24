@@ -213,3 +213,38 @@ def test_vaciado_para_actualizar(tmp_path, monkeypatch):
     paths.write_json_atomic(paths.state("update.json"),
                             {"ts": _t.time() - 3600, "result": "pospuesta", "reasons": ["hay posiciones abiertas: X"]})
     assert not draining()                    # informe viejo: no bloquea para siempre
+
+
+def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
+    """Reproduce el caso del PC: el agente sale por RESTART con una posición abierta y vuelve a arrancar."""
+    import itertools
+    import json
+    import nexus.agent.maker_agent as ma
+    from nexus import paths
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    monkeypatch.delenv("MEXC_API_KEY", raising=False)
+    monkeypatch.setattr(ma.time, "sleep", lambda s: None)
+    for run_n, restart_at in ((1, 6), (2, 30)):
+        calls = itertools.count()
+
+        class FakeClient:
+            has_keys = False
+
+            def book_ticker(self, s):
+                n = next(calls)
+                if n == restart_at:
+                    paths.state("RESTART").touch()
+                # el precio cae después de comprar: la posición queda abierta (sin tocar el stop)
+                bid = 10.0 if n < 4 else 9.97
+                return {"bidPrice": str(bid), "bidQty": "1", "askPrice": str(bid + 0.01), "askQty": "1"}
+
+            def trades(self, s):
+                n = next(calls)
+                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 4 else []
+
+        monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
+        ma.main()
+        books = json.loads(paths.state("paper_books.json").read_text())
+        if run_n == 1:
+            assert any(b["state"] == "long" for b in books.values())
+    assert json.loads(paths.state("status.json").read_text())["books"]
