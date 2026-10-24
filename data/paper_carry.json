@@ -5,14 +5,14 @@
    "notional": 30.0,
    "entry_spot": 0.00637,
    "entry_perp": 0.006361,
-   "funding": 0.0,
-   "settlements": 0,
-   "last_settle": 1792855990.4115694,
+   "funding": 0.08141999999999999,
+   "settlements": 2,
+   "last_settle": 1792872000.0,
    "mark": {
-    "funding": 0.0,
-    "basis": -0.245,
+    "funding": 0.0814,
+    "basis": -0.1515,
     "fees": 0.072,
-    "net": -0.317
+    "net": -0.1421
    }
   },
   "MAGMA_USDT": {
@@ -20,24 +20,24 @@
    "notional": 30.0,
    "entry_spot": 0.37159,
    "entry_perp": 0.37093,
-   "funding": 0.0,
-   "settlements": 0,
-   "last_settle": 1792855990.4115694,
+   "funding": 0.010260000000000002,
+   "settlements": 2,
+   "last_settle": 1792872000.0,
    "mark": {
-    "funding": 0.0,
-    "basis": -0.1776,
+    "funding": 0.0103,
+    "basis": -0.2302,
     "fees": 0.072,
-    "net": -0.2496
+    "net": -0.2919
    }
   }
  },
  "closed": [],
  "summary": {
-  "ts": 1792855990.4115694,
+  "ts": 1792872303.5555189,
   "open": 2,
   "closed": 0,
   "realized_eur": 0,
-  "open_net_eur": -0.5666,
-  "total_eur": -0.5666
+  "open_net_eur": -0.434,
+  "total_eur": -0.434
  }
 }
