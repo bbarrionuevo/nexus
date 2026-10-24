@@ -12,6 +12,10 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\nexus-install.ps1
 - Crea `%LOCALAPPDATA%\nexus` (estado, logs y `.env` privado) y dos tareas programadas:
   `nexus-agente` (al iniciar sesión, se reinicia sola) y `nexus-mantenimiento` (cada 30 min).
 - Desactiva la suspensión con corriente (`-KeepSleep` para no tocarla).
+- **Autorreparación:** si el agente se detiene, Windows lo relanza en menos de 1 minuto, y el
+  mantenimiento (cada 30 min) también lo verifica.
+- **Reinstalar o actualizar el instalador:** volver a correr los dos comandos de arriba. Detiene el
+  agente anterior, instala la última versión validada de `main` y vuelve a registrar las tareas.
 - **Reinicios de Windows:** el agente arranca al iniciar sesión. Si Windows Update reinicia la PC,
   vuelve a operar cuando inicies sesión. El vigilante te avisa por mail si el PC deja de reportar.
 
