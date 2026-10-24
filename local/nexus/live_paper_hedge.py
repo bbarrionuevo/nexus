@@ -3,12 +3,17 @@
 Por cada par se cotiza el mejor bid y el mejor ask de MEXC, solo si al precio actual de Binance la
 vuelta cubierta deja al menos `min_edge_pct`. Llenado con el mismo modelo de cola conservador que
 el resto del sistema (hay que agotar la cola visible, o que se opere atravesando el precio).
-La cobertura NO se hace al precio del momento: se usa el precio de Binance del SIGUIENTE sondeo
-(~1-2 s después), para incluir la demora real y el movimiento adverso.
-Supuesto: hay inventario en ambos exchanges (USDT y moneda); el costo de rebalancear con
-transferencias se estima aparte. Resultado: llenados por hora y ganancia neta realizada.
+En cada sondeo primero se evalúan las operaciones contra las órdenes que estaban puestas y después
+se re-cotiza (al revés se esquivan llenados adversos). La cobertura NO se hace al precio del momento:
+se usa el precio de Binance del sondeo SIGUIENTE a la detección, para incluir demora y movimiento adverso.
+Inventario (lots): con capital chico no se puede llenar sin límite. Con lots=L, cada par arranca
+con L lotes de moneda y L de USDT en cada exchange; una compra en MEXC gasta USDT de MEXC y moneda
+de Binance. Si un lado se agota, ese lado deja de cotizar hasta que un llenado del lado contrario
+lo rebalancee solo, o hasta el rebalanceo MANUAL del dueño (R-01: las claves no pueden retirar),
+modelado cada `rebalance_h` horas con el costo real de las transferencias.
+Resultado: llenados por hora, ganancia neta y minutos bloqueado por falta de inventario.
 
-python -m nexus.live_paper_hedge OUT.jsonl SYM1,SYM2 minutos [taker_binance_pct]
+python -m nexus.live_paper_hedge OUT.jsonl SYM1,SYM2 minutos [taker_binance_pct] [lots] [nocional]
 """
 import json
 import sys
@@ -16,6 +21,10 @@ import time
 
 import requests
 
+# Costo en USDT de un rebalanceo (moneda en un sentido + USDT en el otro), red más barata.
+# Medido en el PC con capital/config el 24-oct-2026 (reportes/20261024-1250.md en pc-sesion).
+TRANSFER_USDT = {"IOSTUSDT": 0.02, "QUICKUSDT": 0.08, "DCRUSDT": 0.15, "TREEUSDT": 0.10, "PORTOUSDT": 0.45}
+DEFAULT_TRANSFER_USDT = 1.0                                   # conservador si no fue medido
 MEXC = "https://api.mexc.com/api/v3"
 BINANCE = "https://data-api.binance.vision/api/v3"
 
@@ -53,14 +62,38 @@ class Side:
 
 
 class HedgedPair:
-    def __init__(self, sym, notional=40.0, taker_b_pct=0.1, min_edge_pct=0.05):
+    def __init__(self, sym, notional=40.0, taker_b_pct=0.1, min_edge_pct=0.05, lots=None, transfer_usdt=None):
         self.sym, self.notional, self.fb, self.min_edge = sym, notional, taker_b_pct / 100, min_edge_pct / 100
         self.buy, self.sell = Side("buy"), Side("sell")
+        self.fresh = []                                      # llenados detectados en este sondeo
         self.pending = []                                    # llenados esperando cobertura (próximo sondeo)
         self.fills, self.pnl, self.adverse = 0, 0.0, 0
         self.b_bid = self.b_ask = None
+        self.lots, self.pos = lots, 0                        # pos: lotes netos comprados en MEXC
+        self.transfer = TRANSFER_USDT.get(sym, DEFAULT_TRANSFER_USDT) if transfer_usdt is None else transfer_usdt
+        self.rebalances, self.transfer_cost = 0, 0.0
+        self.blocked_s = {"buy": 0.0, "sell": 0.0}
+        self.last_t, self.was_blocked = None, []
 
-    def on_books(self, m_bid, m_bq, m_ask, m_aq, b_bid, b_ask):
+    def can(self, kind):
+        if self.lots is None:
+            return True
+        return self.pos < self.lots if kind == "buy" else self.pos > -self.lots
+
+    def rebalance(self):
+        """Rebalanceo manual del dueño: vuelve a inventario parejo pagando las transferencias."""
+        if self.pos != 0:
+            self.pos = 0
+            self.rebalances += 1
+            self.transfer_cost += self.transfer
+
+    def on_books(self, m_bid, m_bq, m_ask, m_aq, b_bid, b_ask, now=None):
+        now = time.time() if now is None else now
+        if self.last_t is not None:                          # bloqueo visto en el sondeo anterior
+            for kind in self.was_blocked:
+                self.blocked_s[kind] += now - self.last_t
+        self.last_t = now
+        self.was_blocked = [k for k in ("buy", "sell") if not self.can(k)]
         # 1) cubrir los llenados del ciclo anterior al precio de Binance de AHORA (demora real)
         for kind, px, edge_then in self.pending:
             if kind == "buy":                                # compré en MEXC: vendo en Binance al bid
@@ -70,14 +103,14 @@ class HedgedPair:
             self.pnl += self.notional * r
             self.fills += 1
             self.adverse += r < edge_then
-        self.pending = []
+        self.pending, self.fresh = self.fresh, []
         self.b_bid, self.b_ask = b_bid, b_ask
         # 2) cotizar solo si la vuelta cubierta deja margen al precio actual
-        if b_bid * (1 - self.fb) / m_bid - 1 >= self.min_edge:
+        if self.can("buy") and b_bid * (1 - self.fb) / m_bid - 1 >= self.min_edge:
             self.buy.quote(m_bid, m_bq)
         else:
             self.buy.cancel()
-        if m_ask / (b_ask * (1 + self.fb)) - 1 >= self.min_edge:
+        if self.can("sell") and m_ask / (b_ask * (1 + self.fb)) - 1 >= self.min_edge:
             self.sell.quote(m_ask, m_aq)
         else:
             self.sell.cancel()
@@ -89,49 +122,93 @@ class HedgedPair:
                     edge = self.b_bid * (1 - self.fb) / side.px - 1
                 else:
                     edge = side.px / (self.b_ask * (1 + self.fb)) - 1
-                self.pending.append((side.kind, side.px, edge))
+                self.fresh.append((side.kind, side.px, edge))
+                self.pos += 1 if side.kind == "buy" else -1
                 side.cancel()                                # se re-cotiza en el próximo ciclo
 
     def mark(self, minutes):
+        net = self.pnl - self.transfer_cost
         return {"sym": self.sym, "fills": self.fills, "pnl_eur": round(self.pnl, 4),
                 "per_fill_eur": round(self.pnl / self.fills, 4) if self.fills else None,
                 "fills_per_hour": round(self.fills / max(minutes, 1e-9) * 60, 2), "adverse": self.adverse,
-                "quoting": [s.kind for s in (self.buy, self.sell) if s.px is not None]}
+                "quoting": [s.kind for s in (self.buy, self.sell) if s.px is not None],
+                "lots": self.lots, "pos": self.pos, "rebalances": self.rebalances,
+                "transfer_cost": round(self.transfer_cost, 4), "net_eur": round(net, 4),
+                "net_per_hour": round(net / max(minutes, 1e-9) * 60, 4),
+                "blocked_min": {k: round(v / 60, 1) for k, v in self.blocked_s.items()}}
 
 
-def run(syms, minutes, out, taker_b_pct=0.1):
+def to_markdown(snap):
+    """Resumen de la última foto de una corrida, en español, ordenado por neto por hora."""
+    ts = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(snap["ts"]))
+    md = [f"# Market making cubierto MEXC→Binance (paper) — {ts}", "",
+          f"{snap['elapsed_min']} min · nocional {snap['notional']} € por llenado · lotes por lado: "
+          f"{snap['lots'] if snap['lots'] is not None else 'sin límite'} · taker Binance {snap['taker_b_pct']}% · "
+          f"errores {snap['errors']}", "",
+          "| par | llenados | por hora | € por llenado | adversos | transferencias € | neto € | neto €/h | bloqueado compra/venta (min) |",
+          "|---|---|---|---|---|---|---|---|---|"]
+    for p in sorted(snap["pairs"], key=lambda p: -p.get("net_per_hour", 0)):
+        b = p.get("blocked_min", {})
+        md.append(f"| {p['sym']} | {p['fills']} | {p['fills_per_hour']} | {p['per_fill_eur'] if p['per_fill_eur'] is not None else '—'} | "
+                  f"{p['adverse']} | {p.get('transfer_cost', 0)} | {p.get('net_eur', p['pnl_eur'])} | "
+                  f"{p.get('net_per_hour', '—')} | {b.get('buy', 0)} / {b.get('sell', 0)} |")
+    md += ["", "Bloqueado = minutos sin inventario para ese lado (con capital chico, el límite real). "
+           "El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h."]
+    return "\n".join(md) + "\n"
+
+
+def run(syms, minutes, out, taker_b_pct=0.1, lots=None, notional=40.0, rebalance_h=12.0, dump_s=300):
+    """Libros en lote (2 pedidos por ciclo) + operaciones por par. Rebalanceo manual cada rebalance_h."""
     s = requests.Session()
-    pairs = {x: HedgedPair(x, taker_b_pct=taker_b_pct) for x in syms}
+    pairs = {x: HedgedPair(x, notional=notional, taker_b_pct=taker_b_pct, lots=lots) for x in syms}
     seen = {x: set() for x in syms}
-    t0, last_dump, errors = time.time(), time.time(), 0
+    t0 = last_dump = last_rebalance = time.time()
+    errors = 0
     while time.time() - t0 < minutes * 60:
+        try:
+            m_all = {t["symbol"]: t for t in s.get(f"{MEXC}/ticker/bookTicker", timeout=5).json()}
+            b_all = {t["symbol"]: t for t in s.get(f"{BINANCE}/ticker/bookTicker",
+                                                    params={"symbols": json.dumps(list(pairs), separators=(",", ":"))},
+                                                    timeout=5).json()}
+        except Exception:
+            errors += 1
+            time.sleep(2)
+            continue
         for x, hp in pairs.items():
             try:
-                m = s.get(f"{MEXC}/ticker/bookTicker", params={"symbol": x}, timeout=5).json()
-                b = s.get(f"{BINANCE}/ticker/bookTicker", params={"symbol": x}, timeout=5).json()
+                m, b = m_all[x], b_all[x]
                 trades = s.get(f"{MEXC}/trades", params={"symbol": x, "limit": 100}, timeout=5).json()
-                hp.on_books(float(m["bidPrice"]), float(m["bidQty"]), float(m["askPrice"]), float(m["askQty"]),
-                            float(b["bidPrice"]), float(b["askPrice"]))
-                for t in sorted(trades, key=lambda t: t["time"]):
+                first = not seen[x]
+                for t in sorted(trades, key=lambda t: t["time"]):  # contra las órdenes que estaban puestas
                     k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
                     if k not in seen[x]:
                         seen[x].add(k)
-                        if time.time() - t0 > 5:             # ignora el historial previo al arranque
+                        if not first:                        # el primer lote es previo a toda orden
                             hp.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
+                hp.on_books(float(m["bidPrice"]), float(m["bidQty"]), float(m["askPrice"]), float(m["askQty"]),
+                            float(b["bidPrice"]), float(b["askPrice"]))
                 if len(seen[x]) > 4000:
                     seen[x] = set(sorted(seen[x])[-1500:])
             except Exception:
                 errors += 1
+        if time.time() - last_rebalance >= rebalance_h * 3600:
+            last_rebalance = time.time()
+            for hp in pairs.values():
+                hp.rebalance()
         time.sleep(0.5)
-        if time.time() - last_dump >= 60:
+        if time.time() - last_dump >= dump_s or time.time() - t0 >= minutes * 60:
             last_dump = time.time()
             mins = (time.time() - t0) / 60
-            snap = {"ts": time.time(), "elapsed_min": round(mins, 1), "taker_b_pct": taker_b_pct,
-                    "errors": errors, "pairs": [p.mark(mins) for p in pairs.values()]}
+            snap = {"ts": time.time(), "elapsed_min": round(mins, 1), "taker_b_pct": taker_b_pct, "lots": lots,
+                    "notional": notional, "errors": errors, "pairs": [p.mark(mins) for p in pairs.values()]}
             with open(out, "a") as f:
                 f.write(json.dumps(snap) + "\n")
+            with open(str(out).replace(".jsonl", ".md"), "w", encoding="utf-8") as f:
+                f.write(to_markdown(snap))
             print(json.dumps(snap), flush=True)
 
 
 if __name__ == "__main__":
-    run(sys.argv[2].split(","), float(sys.argv[3]), sys.argv[1], *(float(a) for a in sys.argv[4:5]))
+    a = sys.argv
+    run(a[2].split(","), float(a[3]), a[1], *(float(x) for x in a[4:5]),
+        *(int(x) for x in a[5:6]), *(float(x) for x in a[6:7]))

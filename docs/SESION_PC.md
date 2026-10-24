@@ -32,16 +32,23 @@ Desde la carpeta del despliegue:
 ```powershell
 $d = "$env:TEMP\nexus-pcsesion"; Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
 git clone -q --branch pc-sesion https://github.com/bbarrionuevo/nexus.git $d 2>$null
-if (-not $?) { git clone -q https://github.com/bbarrionuevo/nexus.git $d; git -C $d checkout -q --orphan pc-sesion; git -C $d rm -rq . }
+if (-not $?) { git clone -q https://github.com/bbarrionuevo/nexus.git $d; git -C $d checkout -q --orphan pc-sesion; git -C $d rm -rqf . }
 New-Item -ItemType Directory -Force "$d\reportes" | Out-Null
 Set-Content -Encoding utf8 "$d\reportes\$(Get-Date -Format yyyyMMdd-HHmm).md" "<tu reporte aquí>"
 git -C $d add reportes; git -C $d commit -qm "reporte del PC"; git -C $d push -q origin HEAD:pc-sesion
 ```
 
 ## Tareas pendientes (las actualiza la sesión en la nube)
-1. Verificar que `nexus-agente` y `nexus-mantenimiento` estén en estado `Running`/`Ready` y que
-   `state\status.json` tenga menos de 2 minutos. Si no, diagnosticar y reparar (relanzar o reinstalar).
-2. Cuando el dueño haya fusionado el PR 18 y aprobado en el PC: correr
-   `python -m nexus.transfers BMT,IOST,ATM,QUICK,DCR,TREE,PORTO,AGT,JCT` y subir el resultado a `pc-sesion`.
-3. Medir la latencia del PC a MEXC y a Binance (10 pedidos a `/api/v3/time` de cada uno; mínimo,
-   mediana y máximo en ms) y subirla a `pc-sesion`. Sirve para el criterio C6 (+200 ms).
+Hechas el 24-oct-2026 (`reportes/20261024-1250.md`): estado de tareas, transferencias de 9 monedas y
+latencia. Gracias: el informe fue muy útil.
+
+1. Confirmar que el actualizador instaló la versión aprobada (`state\update.json` con `activada`).
+   Si quedó `pospuesta` solo por posiciones abiertas, esperar: el agente deja de abrir y se vacía solo.
+2. Registrar el disparador de 1 minuto de `nexus-agente`: **solo si** la versión instalada es igual a
+   `origin/main` (`git -C %USERPROFILE%\nexus rev-parse HEAD` contra `git -C %USERPROFILE%\nexus rev-parse origin/main`
+   después de `git fetch`), correr `local\windows\install.ps1`. Si no son iguales, no reinstalar
+   (saltearía la aprobación local) y anotarlo en el reporte.
+3. Con la versión nueva instalada (ya trae `nexus.transfers`), correr
+   `python -m nexus.transfers CYBER,ANIME,LUNA,ID,AMP,POLYX,OPEN,IMX,ATM` y subir el resultado.
+4. ATM: comparar en la salida cruda de `capital/config` de ambos exchanges la red `CHZ` (MEXC) y `CHZ2`
+   (Binance): nombre completo y dirección de contrato si aparece. Solo informar; no agregar alias.

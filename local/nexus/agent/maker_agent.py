@@ -97,9 +97,29 @@ def verified_fees(client, cfg):
     return maker, taker
 
 
+def feed(bk, trades, seen):
+    """Pasa al libro solo las operaciones NUEVAS de MEXC (defecto 3).
+
+    Se llama ANTES de on_book: las operaciones ocurridas desde el sondeo anterior se evalúan contra la
+    orden que estaba puesta en ese intervalo, y recién después se mueve la orden al libro nuevo. Al
+    revés, el paper esquivaba compras perdedoras y stops (sesgo optimista).
+    En el primer sondeo de un libro (arranque, reinicio o par nuevo del laboratorio) las operaciones son
+    anteriores a cualquier orden nuestra: solo se marcan como vistas.
+    """
+    first = not getattr(bk, "primed", False)
+    bk.primed = True
+    for t in sorted(trades, key=lambda t: t["time"]):
+        k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
+        if k not in seen:
+            seen.add(k)
+            if not first:
+                bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
+
+
 def journal(entry):
-    """Agrega una vuelta cerrada al diario (una línea JSON). Tolerante a bloqueos breves."""
-    line = json.dumps(entry) + "\n"
+    """Agrega una vuelta cerrada al diario (una línea JSON). Tolerante a bloqueos breves.
+    `model` marca la versión del modelo de llenado: la evidencia solo cuenta la vigente."""
+    line = json.dumps(entry | {"model": evidence.FILL_MODEL}) + "\n"
     for _ in range(5):
         try:
             with open(paths.state("trades.jsonl"), "a", encoding="utf-8") as f:
@@ -253,12 +273,8 @@ class Lab:
             try:
                 bt = self.client.book_ticker(sym)
                 trades = self.client.trades(sym)
+                feed(bk, trades, self.seen[sym])          # primero, contra la orden que estaba puesta
                 bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
-                for t in sorted(trades, key=lambda t: t["time"]):
-                    k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
-                    if k not in self.seen[sym]:
-                        self.seen[sym].add(k)
-                        bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
                 if len(self.seen[sym]) > 3000:
                     self.seen[sym] = set(sorted(self.seen[sym])[-1000:])
             except Exception as e:
@@ -278,12 +294,8 @@ def step(gate, client, cfg, seen, last_ok, errors):
         try:
             bt = client.book_ticker(x)
             trades = client.trades(x)
+            feed(bk, trades, seen[x])          # primero, contra la orden que estaba puesta
             bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
-            for t in sorted(trades, key=lambda t: t["time"]):
-                k = (t["time"], t["price"], t["qty"], t["isBuyerMaker"])
-                if k not in seen[x]:
-                    seen[x].add(k)
-                    bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
             if len(seen[x]) > 5000:
                 seen[x] = set(sorted(seen[x])[-2000:])
             last_ok[x] = time.time()

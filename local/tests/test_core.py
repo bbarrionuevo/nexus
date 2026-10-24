@@ -328,9 +328,10 @@ def test_cobertura_en_vivo_cubre_con_el_precio_siguiente():
     hp = HedgedPair("X", notional=100, taker_b_pct=0.1, min_edge_pct=0.05)
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)          # bid MEXC 1% bajo Binance: cotiza compra
     assert hp.buy.px == 0.990 and hp.sell.px is None          # el ask de MEXC no deja margen
-    hp.on_trade(0.990, 20, True)                              # nos llenan la compra
-    assert hp.fills == 0 and hp.pending                       # todavía no cubierto
-    hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # Binance cayó antes de cubrir
+    hp.on_trade(0.990, 20, True)                              # sondeo 2: nos llenan la compra
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)           # libros del sondeo 2: todavía no se cubre
+    assert hp.fills == 0 and hp.pending                       # se cubre en el sondeo siguiente
+    hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # sondeo 3: Binance cayó antes de cubrir
     assert hp.fills == 1 and hp.adverse == 1
     assert abs(hp.pnl - 100 * (0.995 * 0.999 / 0.990 - 1)) < 1e-9 and hp.pnl > 0
 
@@ -440,3 +441,30 @@ def test_paper_carry_cobra_solo_lo_liquidado_despues_de_abrir():
                  lambda s: hist.get(s, []), now=t0 + 21 * 3600)
     assert st["open"] == {} and st["closed"][0]["sym"] == "AGT_USDT" and st["summary"]["closed"] == 1
     assert "AGT_USDT (cerrada)" in pc.to_markdown(st)
+
+
+def test_cobertura_con_inventario_limitado_se_bloquea_y_rebalancea():
+    from nexus.live_paper_hedge import HedgedPair
+    hp = HedgedPair("IOSTUSDT", notional=25, taker_b_pct=0.1, min_edge_pct=0.05, lots=1)
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=0)       # MEXC barato: cotiza compra
+    hp.on_trade(0.990, 20, True)                                  # compra llenada: usa el único lote
+    assert hp.pos == 1 and not hp.can("buy") and hp.can("sell")
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=60)
+    assert hp.buy.px is None and hp.fills == 0                    # sin USDT en MEXC: no cotiza compra
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=180)
+    assert hp.blocked_s["buy"] == 120 and hp.blocked_s["sell"] == 0
+    hp.rebalance()                                                # transferencia manual del dueño
+    assert hp.pos == 0 and hp.rebalances == 1 and hp.transfer_cost == 0.02
+    m = hp.mark(3)
+    assert m["net_eur"] == round(hp.pnl - 0.02, 4) and m["blocked_min"]["buy"] == 2.0
+    libre = HedgedPair("X", lots=None)                            # modelo anterior: sin límite
+    assert libre.can("buy") and libre.can("sell") and libre.transfer == 1.0
+
+
+def test_resumen_de_cobertura_en_espanol():
+    from nexus.live_paper_hedge import HedgedPair, to_markdown
+    hp = HedgedPair("IOSTUSDT", notional=25, lots=1)
+    snap = {"ts": 1_800_000_000, "elapsed_min": 60, "notional": 25, "lots": 1, "taker_b_pct": 0.1, "errors": 0,
+            "pairs": [hp.mark(60)]}
+    md = to_markdown(snap)
+    assert "IOSTUSDT" in md and "bloqueado" in md.lower() and "neto" in md

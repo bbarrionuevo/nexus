@@ -13,9 +13,12 @@ from collections import defaultdict
 from pathlib import Path
 
 MIN_DAYS, MIN_TRADES, MIN_POS_DAYS, EXTRA_FEE_PCT = 7, 300, 5, 0.02
+# Versión del modelo de llenado. 2 = ya no se llenan órdenes con operaciones previas a la orden
+# (defecto 3, 24-oct-2026). Las vueltas de modelos anteriores quedan en el diario pero no cuentan.
+FILL_MODEL = 2
 
 
-def load(path, since=None):
+def load(path, since=None, min_model=FILL_MODEL):
     p = Path(path)
     if not p.exists():
         return []
@@ -25,7 +28,7 @@ def load(path, since=None):
             t = json.loads(line)
         except ValueError:
             continue
-        if since is None or t.get("ts", 0) >= since:
+        if (since is None or t.get("ts", 0) >= since) and t.get("model", 1) >= min_model:
             out.append(t)
     return out
 
@@ -72,6 +75,7 @@ def criteria(trades, now=None):
 
 def evaluate(path, now=None):
     trades = load(path)
+    excluded = len(load(path, min_model=0)) - len(trades)
     by_sym = defaultdict(list)
     for t in trades:
         by_sym[t["sym"]].append(t)
@@ -79,7 +83,8 @@ def evaluate(path, now=None):
     crit = criteria(trades, now)
     return {"overall": stats([t["pnl"] for t in trades]), "daily": daily(trades), "per_symbol": per_sym,
             "criteria": [{"name": n, "ok": ok, "detail": d} for n, ok, d in crit],
-            "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit)}
+            "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit),
+            "excluded_old_model": excluded}
 
 
 if __name__ == "__main__":
