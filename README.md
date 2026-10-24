@@ -26,6 +26,7 @@ explícita del dueño ([docs/REGLAS.md](docs/REGLAS.md)).
 - [docs/LIMITES.md](docs/LIMITES.md): límites de riesgo para 100 € y su derivación.
 - [docs/OPERACION_WINDOWS.md](docs/OPERACION_WINDOWS.md): instalación, parada de emergencia, actualización y rearme.
 - [docs/SESION_DIARIA.md](docs/SESION_DIARIA.md): qué hace (y qué no) la sesión diaria automática de Claude.
+- [docs/SESION_PC.md](docs/SESION_PC.md): instrucciones para la sesión de Claude en el PC (canal: rama `pc-sesion`).
 
 ## Desarrollo
 ```

@@ -350,3 +350,11 @@ def test_agente_publica_laboratorio_y_evidencia(tmp_path, monkeypatch):
     assert "lab" in st and "evidence" in st
     kinds = {json.loads(x)["lab"] for x in paths.state("trades.jsonl").read_text().splitlines()}
     assert kinds == {True, False}
+
+
+def test_los_tests_nunca_usan_el_estado_real(tmp_path):
+    """Regresión del 24-oct: aunque el PC tenga una actualización pospuesta, los tests no la ven."""
+    import os
+    from nexus import paths
+    assert "nexus_home" in os.environ["NEXUS_HOME"]
+    assert not paths.state("update.json").exists()
