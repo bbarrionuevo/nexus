@@ -11,6 +11,16 @@ max_hold_min: 30               # tenencia máxima; luego sale al bid (taker)
 poll_seconds: 1.0
 stale_data_s: 20               # sin datos frescos por 20 s => se cancela la compra pendiente
 
+# Laboratorio: mide en paper (sin riesgo ni capital) pares de MEXC elegidos solos cada pocas horas.
+lab:
+  enabled: true
+  max_symbols: 12
+  min_quote_volume_usdt: 200000
+  min_spread_pct: 0.10
+  max_spread_pct: 1.50
+  reselect_hours: 6
+  per_loop: 2                  # pares de laboratorio sondeados por ciclo (respeta límites de la API)
+
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).
 risk:

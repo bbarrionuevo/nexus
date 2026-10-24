@@ -22,7 +22,8 @@ WS = "wss://data-stream.binance.vision/stream?streams="
 
 class Book:
     def __init__(self, sym, notional=40.0, maker=0.0, taker=0.1, stop_pct=1.0, min_edge_pct=0.0,
-                 max_hold_s=1800, gate=None, now=time.time):
+                 max_hold_s=1800, gate=None, now=time.time, on_closed=None):
+        self.on_closed = on_closed                            # callback(dict) por cada vuelta cerrada
         self.sym, self.notional, self.maker, self.taker = sym, notional, maker, taker
         self.stop, self.min_edge, self.max_hold, self.gate, self.now = stop_pct, min_edge_pct, max_hold_s, gate, now
         self.bid = self.ask = self.bq = self.aq = None
@@ -94,6 +95,10 @@ class Book:
             self.gate.on_close(pnl, kind != "maker")
             if kind != "maker":
                 self.gate.record_order()
+        if self.on_closed:
+            self.on_closed({"ts": self.now(), "sym": self.sym, "pnl": round(pnl, 6), "kind": kind,
+                            "hold_s": round(self.now() - self.entry_ts, 1), "entry": self.entry, "exit": px,
+                            "notional": self.notional, "maker": self.maker, "taker": self.taker})
         self.state, self.px, self.queue, self.qty, self.entry_fee = "flat", None, None, 0.0, 0.0
         return pnl
 
