@@ -26,8 +26,9 @@ OWNER_REPO = "bbarrionuevo/nexus"
 BRANCH = "main"
 
 
-def git(*args, check=True):
-    r = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True)
+def git(*args, check=True, timeout=180):
+    # Con tiempo máximo: un fetch colgado (red) no debe trabar el mantenimiento para siempre.
+    r = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True, timeout=timeout)
     if check and r.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {r.stderr.strip()}")
     return r.stdout.strip()
@@ -109,9 +110,14 @@ def blockers(ci_ok, protected, approved, positions):
     return r
 
 
-def run_tests():
-    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-                       cwd=REPO / "local", capture_output=True, text=True)
+def run_tests(timeout=900):
+    """Tests de la candidata en esta PC. Si tardan más de `timeout` s cuentan como fallidos (rollback):
+    un test colgado no puede dejar trabado el mantenimiento ni activar una versión sin probar."""
+    try:
+        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                           cwd=REPO / "local", capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"los tests superaron {timeout} s (¿alguno colgado?)"
     return r.returncode == 0, r.stdout[-2000:]
 
 
