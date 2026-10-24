@@ -140,3 +140,9 @@ def gate_funding():
         except (TypeError, ValueError, KeyError):
             pass
     return rows
+
+
+def gate_spot_pairs():
+    """Pares spot de Gate con precio (para saber si el carry se puede armar en el mismo exchange)."""
+    return {t["currency_pair"] for t in _get("https://api.gateio.ws/api/v4/spot/tickers")
+            if float(t.get("last") or 0) > 0}
