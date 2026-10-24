@@ -191,3 +191,25 @@ def test_check_keys_detecta_prefijo_key(monkeypatch):
     assert ck.run([("MEXC", "PK", "PS", object, nunca)], lines.append, check_clock=False) == 1
     texto = "\n".join(lines)
     assert "FORMATO INCORRECTO en PK" in texto and "key:" in texto and "SECRETO" not in texto
+
+
+def test_vaciado_para_actualizar(tmp_path, monkeypatch):
+    """Si la actualización se pospuso SOLO por posiciones abiertas, no se abren nuevas."""
+    import time as _t
+    from nexus import paths
+    from nexus.agent.maker_agent import Gate, draining
+    from nexus.agent.risk import RiskManager
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    g = Gate(RiskManager({"max_position_eur": 40, "max_total_exposure_eur": 80, "daily_loss_limit_eur": 2,
+                          "weekly_loss_limit_eur": 4, "max_drawdown_eur": 8, "max_consecutive_stops": 3,
+                          "stops_cooldown_min": 60, "max_orders_per_minute": 30, "losing_days_window": 7}))
+    assert not draining() and g.allow_entry(40, 0)
+    paths.write_json_atomic(paths.state("update.json"),
+                            {"ts": _t.time(), "result": "pospuesta", "reasons": ["hay posiciones abiertas: AIUSDT"]})
+    assert draining() and not g.allow_entry(40, 0)
+    paths.write_json_atomic(paths.state("update.json"), {"ts": _t.time(), "result": "pospuesta",
+                            "reasons": ["el CI de ese commit no está en verde", "hay posiciones abiertas: X"]})
+    assert not draining()                    # si hay otra causa, no tiene sentido vaciar
+    paths.write_json_atomic(paths.state("update.json"),
+                            {"ts": _t.time() - 3600, "result": "pospuesta", "reasons": ["hay posiciones abiertas: X"]})
+    assert not draining()                    # informe viejo: no bloquea para siempre

@@ -26,6 +26,18 @@ CFG = Path(__file__).resolve().parents[2] / "config" / "agent.yaml"
 log = logging.getLogger("nexus.agent")
 
 
+def draining(max_age_s=2400):
+    """True si el actualizador pospuso hace poco una versión validada SOLO por posiciones abiertas.
+
+    Entonces no se abren posiciones nuevas: las abiertas cierran (como maker, stop o tiempo máximo)
+    y en el siguiente ciclo la actualización entra. Si pospuso por otra causa (CI, aprobación), no.
+    """
+    u = paths.read_json(paths.state("update.json"), {})
+    reasons = u.get("reasons") or []
+    return (u.get("result") == "pospuesta" and time.time() - u.get("ts", 0) < max_age_s
+            and len(reasons) == 1 and reasons[0].startswith("hay posiciones abiertas"))
+
+
 class Gate:
     """Adaptador entre los libros (estrategia) y el RiskManager (veto)."""
 
@@ -33,8 +45,10 @@ class Gate:
         self.risk, self.books = risk, {}
 
     def allow_entry(self, notional, exposure):
-        ok = self.risk.allow_entry(notional, exposure)
-        return ok
+        if draining():
+            self.risk.last_reason = "vaciando posiciones para instalar una actualización"
+            return False
+        return self.risk.allow_entry(notional, exposure)
 
     def exposure(self):
         return sum(b.exposure() for b in self.books.values())
