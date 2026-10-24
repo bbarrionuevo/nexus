@@ -43,6 +43,31 @@ El informe vivo está en la rama `data`: `data/radar.md` (cada 2 h), `data/feasi
    MEXC (futuros sin API de órdenes) y Binance. OKX, KuCoin o Bitget (con tu residencia argentina)
    abrirían las mejores combinaciones. No abras nada todavía: primero que el paper lo confirme.
 
+## Normativa y controles investigados (24-oct-2026; verificar antes de operar, cambia seguido)
+- **Restricción cruzada** (BCRA, Com. "A" 8336, septiembre 2025; no se encontró norma de 2026 que la
+  derogue): quien compra dólar **oficial** no puede operar **MEP ni CCL** por 90 días, y al revés
+  (declaración jurada). **No hay tope de monto** para el oficial. Consecuencia: elegir UNA vía
+  (oficial o MEP) y sostenerla; no mezclarlas dentro de 90 días.
+- **MEP por broker**: comprar AL30 en pesos y vender AL30D; pide declarar que no operaste oficial en los
+  últimos 90 días; puede haber "parking". **IOL tiene API oficial** (invertironline.com/api, token
+  Bearer; hay que habilitarla en la cuenta) para comprar y vender por programa. PPI: solo cliente no oficial.
+- **Binance + Coinag** (enero 2026): transferencias locales en dólares desde bancos argentinos que se
+  convierten a USDC "sin comisiones". CriptoYa cotiza esa conversión a ~1,055 USD por USDC (spread de
+  ~5,5% incluido en el precio): verificar en la app con una prueba chica.
+- **Controles de ARCA** (régimen de información): bancos, billeteras y PSAV informan acreditaciones y
+  saldos mensuales **por encima de 50 M ARS** por entidad para personas humanas; desde **2,5 M ARS** por
+  transferencia se informa el CBU/CVU de origen y destino; extracciones en efectivo desde 10 M ARS.
+  Informar no es sancionar, pero coincide con los límites que fijó el dueño (AR < 50 M ARS/mes y
+  < 2,5 M ARS por operación), que cualquier automatización debe respetar como límites duros. Además los
+  fondos deben ser justificables con tus ingresos y las ganancias tributan.
+
+## Cálculo con la normativa aplicada (radar del 24-oct, 23 h)
+| vía | compra de dólares | dólares → stablecoin | neto por vuelta | automatizable |
+|---|---|---|---|---|
+| Oficial + Binance P2P en USD | banco (manual) | P2P 1,8% (manual) | ~+4,8% | aviso + venta por API |
+| MEP por API de IOL + Binance P2P en USD | IOL API | P2P 1,8% (manual) | ~+3,1% | compra de MEP y venta por API |
+| MEP por API de IOL + Binance/Coinag | IOL API | ~5,5% de spread | ~−0,6% | casi todo, pero no rinde |
+
 ## Cómo se decide pasar a dinero real
 Igual que el resto del sistema: evidencia en paper que cumpla R-15, luego 20 € reales una semana,
 luego más capital. El orden probable: (1) diferencia de funding, (5) préstamo, (2) si se verifica.
