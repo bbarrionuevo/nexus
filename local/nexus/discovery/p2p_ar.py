@@ -37,6 +37,12 @@ def fetch(coin="USDT", vols=(100, 1000)):
         out["usd"] = _get(f"{coin}/USD/100")             # cuántos dólares cuesta un USDT en plataformas AR
     except Exception:                                      # noqa: BLE001 (opcional)
         out["usd"] = {}
+    for c in ("USDC",):                                    # la otra vía local: dólares -> USDC -> pesos
+        try:
+            out[f"usd_{c}"] = _get(f"{c}/USD/100")
+            out[f"ars_{c}"] = _get(f"{c}/ARS/100")
+        except Exception:                                  # noqa: BLE001
+            out[f"usd_{c}"], out[f"ars_{c}"] = {}, {}
     return out
 
 
@@ -165,15 +171,50 @@ def kraken_usdt_usd():
     return None
 
 
-def cross_border(rs, bancos, usdt_usd_ask, buy_fee_pct=0.26, network_pct=0.1, wire_pct=1.0, now=None):
-    """USD afuera -> USDT (Kraken) -> pesos (mejor totalBid) -> dólar oficial (banco) -> USD afuera.
-    wire_pct: costo supuesto de la transferencia al exterior (A VERIFICAR con tu banco)."""
+def cross_border(rs, bancos, usdt_usd_ask, buy_fee_pct=0.26, network_pct=0.1, wire_pct=1.0, now=None,
+                 mep=None, wire_fixed_usd=40.0, wire_var_pct=0.3, sizes=(1_000, 5_000, 10_000)):
+    """USD afuera -> USDT (Kraken) -> pesos (mejor totalBid) -> dólares (banco oficial o MEP por broker)
+    -> USD afuera. El giro al exterior tiene un costo FIJO (comisión del banco + corresponsal, supuesto
+    wire_fixed_usd) más un %: con montos chicos el fijo se come la ganancia. Se informa el neto por
+    vuelta para varios tamaños de capital. Todos los costos del giro son A VERIFICAR con tu banco."""
     banks = fresh_banks(bancos, now)
     if not rs or not banks or not usdt_usd_ask:
         return None
     best = max(rs, key=lambda r: r[4])
     cost_usd = usdt_usd_ask * (1 + buy_fee_pct / 100)
     gross = (best[4] / banks[0][1] / cost_usd - 1) * 100
-    return {"usdt_usd_ask": usdt_usd_ask, "sell_at": best[0], "usdt_bid": best[4], "bank": banks[0][0],
-            "usd_ars": banks[0][1], "gross_pct": round(gross, 3),
-            "net_pct": round(gross - network_pct - wire_pct, 3), "wire_pct": wire_pct}
+    out = {"usdt_usd_ask": usdt_usd_ask, "sell_at": best[0], "usdt_bid": best[4], "bank": banks[0][0],
+           "usd_ars": banks[0][1], "gross_pct": round(gross, 3),
+           "net_pct": round(gross - network_pct - wire_pct, 3), "wire_pct": wire_pct,
+           "wire_fixed_usd": wire_fixed_usd, "wire_var_pct": wire_var_pct}
+    out["by_size"] = {n: round(gross - network_pct - wire_var_pct - wire_fixed_usd / n * 100, 2) for n in sizes}
+    if mep:
+        g_mep = (best[4] / mep / cost_usd - 1) * 100
+        out["mep_gross_pct"] = round(g_mep, 3)
+        out["mep_by_size"] = {n: round(g_mep - network_pct - wire_var_pct - wire_fixed_usd / n * 100, 2) for n in sizes}
+    return out
+
+
+def usd_conversion_table(usd_quotes_by_coin, now=None):
+    """Cuánto cuesta en cada plataforma argentina pasar dólares a una stablecoin (USD por unidad).
+    Es la fricción que mantiene la brecha: si alguna baja de ~1,02, el rulo queda dentro del país."""
+    out = []
+    for coin, quotes in usd_quotes_by_coin.items():
+        for r in rows(quotes or {}, now, max_dev_pct=15.0, ref=1.0):
+            out.append({"coin": coin, "platform": r[0], "usd_per_unit": round(r[2], 4),
+                        "premium_pct": round((r[2] - 1) * 100, 2)})
+    return sorted(out, key=lambda x: x["usd_per_unit"])
+
+
+def local_loops(conv, ars_bids_by_coin, usd_ars_routes):
+    """Rulo SIN salir del país para cada plataforma de conversión: pesos -> dólares (ruta) -> stablecoin
+    (plataforma) -> pesos (mejor bid de esa moneda). Neto % por vuelta."""
+    out = []
+    for c in conv:
+        bid = ars_bids_by_coin.get(c["coin"])
+        if not bid:
+            continue
+        for label, usd_ars in usd_ars_routes:
+            out.append({"route": label, "convert_at": c["platform"], "coin": c["coin"], "sell_at": bid[0],
+                        "net_pct": round((bid[1] / (usd_ars * c["usd_per_unit"]) - 1) * 100, 3)})
+    return sorted(out, key=lambda x: -x["net_pct"])
