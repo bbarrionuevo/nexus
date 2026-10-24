@@ -1,0 +1,41 @@
+{
+ "open": {
+  "IRYS:MEXC/OKX": {
+   "base": "IRYS",
+   "opened": 1792882062.576535,
+   "notional": 50.0,
+   "short_ex": "MEXC",
+   "long_ex": "OKX",
+   "short_symbol": "IRYS_USDT",
+   "long_symbol": "IRYS-USDT-SWAP",
+   "short_entry": 0.04323,
+   "long_entry": 0.04313,
+   "short_last": 1792882062.576535,
+   "long_last": 1792882062.576535,
+   "funding": 0.0,
+   "fees": 0.14,
+   "settlements": 0,
+   "realized_at_open": [
+    2.394,
+    127.9,
+    1.0,
+    6.8
+   ],
+   "mark": {
+    "funding": 0.0,
+    "basis": 0.0,
+    "fees": 0.14,
+    "net": -0.14
+   }
+  }
+ },
+ "closed": [],
+ "summary": {
+  "ts": 1792882062.576535,
+  "open": 1,
+  "closed": 0,
+  "realized_eur": 0,
+  "open_net_eur": -0.14,
+  "total_eur": -0.14
+ }
+}
