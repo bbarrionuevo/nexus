@@ -29,8 +29,11 @@ WS = "wss://data-stream.binance.vision/stream?streams="
 class Book:
     def __init__(self, sym, notional=40.0, maker=0.0, taker=0.1, stop_pct=1.0, min_edge_pct=0.0,
                  max_hold_s=1800, gate=None, now=time.time, on_closed=None, max_vol_1m_pct=None, context=None,
-                 min_imbalance=None):
+                 min_imbalance=None, improve_ticks=0, price_dp=None):
         self.on_closed = on_closed                            # callback(dict) por cada vuelta cerrada
+        # mejorar el precio N ticks (compra arriba del bid, venta abajo del ask) para quedar primero en la
+        # cola; price_dp = decimales del precio del par (tick = 10^-dp). Sin dp no se puede: no entra.
+        self.improve, self.dp = improve_ticks or 0, price_dp
         self.max_vol = max_vol_1m_pct                         # no entrar si la volatilidad supera esto (%/min)
         self.min_imb = min_imbalance                          # entrar solo si bidQty/(bidQty+askQty) ≥ esto
         self.context = context                                # callable -> dict con el clima del mercado (BTC)
@@ -88,16 +91,50 @@ class Book:
             if self.min_imb is not None and (bq or 0) + (aq or 0) > 0 and bq / (bq + aq) < self.min_imb:
                 self.px, self.queue = None, None              # más presión vendedora que compradora: no compra
                 return
-            if self.px != b:
-                self._quote(b, bq)
+            if self.improve and self.dp is None:
+                self.px, self.queue = None, None
+                return
+            px, q = self._bid_target(b, bq, a)
+            if self.px != px:
+                self._quote(px, q)
         elif self.state == "long":
             if b < self.entry * (1 - self.stop / 100):
                 self._close(b, self.taker, kind="stop")
             elif self.now() - self.entry_ts > self.max_hold:
                 self._close(b, self.taker, kind="timeout")
             else:
-                target = max(a, self.floor())
-                self._quote(target, aq if target == a else None)
+                self._quote(*self._ask_target(a, aq, b))
+
+    def _tick(self):
+        return 10 ** -self.dp
+
+    def _bid_target(self, b, bq, a):
+        """(precio, cola de adelante) de la compra: el mejor bid, al final de la cola visible. Con mejora,
+        N ticks arriba (nadie adelante) si queda lugar para vender N ticks abajo del ask con margen; si
+        nuestra orden ya ES el mejor bid (en real el libro la incluye) no se mueve: no se persigue sola."""
+        if not self.improve:
+            return b, bq
+        t = self._tick()
+        if self.px is not None and abs(self.px - b) < t / 2:
+            return self.px, self.queue
+        px = round(b + self.improve * t, self.dp)
+        if a - b >= (2 * self.improve + 1) * t - t / 2:
+            return px, 0.0
+        return b, bq
+
+    def _ask_target(self, a, aq, b):
+        """(precio, cola) de la venta: max(mejor ask, piso). Con mejora, N ticks abajo del ask si sigue
+        arriba del bid y del piso (nunca a pérdida como maker); si ya somos el mejor ask, no se mueve."""
+        fl = self.floor()
+        if self.improve and self.dp is not None:
+            t = self._tick()
+            if self.px is not None and abs(self.px - a) < t / 2 and self.px >= fl:
+                return self.px, self.queue
+            px = round(a - self.improve * t, self.dp)
+            if px - b > t / 2 and px >= fl:
+                return px, 0.0
+        target = max(a, fl)
+        return target, (aq if target == a else None)
 
     def on_trade(self, price, qty, buyer_is_maker):
         if self.px is None:
@@ -114,8 +151,7 @@ class Book:
                 self.eq -= self.entry_fee
                 self.px, self.queue = None, None
                 if self.ask is not None:
-                    target = max(self.ask, self.floor())
-                    self._quote(target, self.aq if target == self.ask else None)
+                    self._quote(*self._ask_target(self.ask, self.aq, self.bid))
         elif self.state == "long" and not buyer_is_maker:     # comprador agresor levanta asks
             if price > self.px or (price == self.px and self._consume(qty, self.qty)):
                 self._close(self.px, self.maker, kind="maker")

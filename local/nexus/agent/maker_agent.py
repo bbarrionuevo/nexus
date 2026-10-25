@@ -517,6 +517,7 @@ class Lab:
         self.paused = {s: t for s, t in paths.read_json(paths.state("lab_paused.json"), {}).items()
                        if t > time.time()}
         self.alloc = paths.read_json(paths.state("allocator.json"), {})   # promociones (explorar/explotar)
+        self.dp = {}                                          # decimales de precio por par (variantes con tick)
 
     def variants(self):
         v = dict(self.cfg.get("variants") or {})
@@ -564,12 +565,26 @@ class Lab:
                   max_hold_s=self.base["max_hold_min"] * 60,
                   on_closed=(lambda e: self.on_closed(e, arm)) if arm else self.on_closed,
                   max_vol_1m_pct=spec.get("max_vol_1m_pct", self.base.get("max_vol_1m_pct")),
-                  min_imbalance=spec.get("min_imbalance"),
+                  min_imbalance=spec.get("min_imbalance"), improve_ticks=spec.get("improve_ticks", 0),
+                  price_dp=self.price_dp(sym) if spec.get("improve_ticks") else None,
                   context=lambda: MARKET.snapshot() | {"sel": allocator.status(self.alloc, sym)})
         key = f"{sym}#{arm}" if arm else sym
         if key in self.saved:
             bk.load(self.saved[key])
         return bk
+
+    def price_dp(self, sym):
+        """Decimales del precio del par (exchangeInfo de MEXC), para las variantes que mejoran el precio
+        un tick. Sin el dato, esa variante no entra en el par (no se mezcla con la vigente)."""
+        cache = self.dp
+        if sym not in cache:
+            try:
+                info = self.client._get("/api/v3/exchangeInfo", {"symbol": sym})
+                cache[sym] = int(next(x for x in info["symbols"] if x["symbol"] == sym)["quotePrecision"])
+            except Exception as e:                                    # noqa: BLE001
+                log.warning("laboratorio %s: sin decimales de precio (%s)", sym, type(e).__name__)
+                return None
+        return cache[sym]
 
     def promote(self, now=None):
         """Califica los pares con sus vueltas y devuelve los promovidos que se conservan (explotar)."""

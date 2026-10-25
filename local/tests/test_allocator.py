@@ -123,19 +123,57 @@ def test_variantes_del_laboratorio_y_su_comparacion(tmp_path, monkeypatch):
     from nexus.agent.maker_agent import Lab
     from tests.test_windows import LAB, FakeMexc
     monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
-    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"variants": {"v4": {"max_vol_1m_pct": None, "min_imbalance": 0.0}}},
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"variants": {"v4": {"max_vol_1m_pct": None, "min_imbalance": 0.0},
+                                                               "v5": {"max_vol_1m_pct": None, "improve_ticks": 1}}},
            "stop_pct": 1.0, "min_edge_pct": 0.0, "max_hold_min": 30, "risk": {"max_position_eur": 40}}
-    lab = Lab(FakeMexc(), cfg, 0.0, 0.08)
+
+    class ConDecimales(FakeMexc):
+        def _get(self, path, params=None, signed=False):
+            if path == "/api/v3/exchangeInfo":
+                return {"symbols": [{"symbol": params["symbol"], "quotePrecision": 3}]}
+            return super()._get(path, params, signed)
+    lab = Lab(ConDecimales(), cfg, 0.0, 0.08)
     for _ in range(8):
         lab.step()
     lab.save()
     keys = set(json.loads(paths.state("lab_books.json").read_text()))
-    assert {"AAAUSDT", "AAAUSDT#control", "AAAUSDT#v4"} <= keys
+    assert {"AAAUSDT", "AAAUSDT#control", "AAAUSDT#v4", "AAAUSDT#v5"} <= keys
     rows = [json.loads(x) for x in paths.state("trades.jsonl").read_text().splitlines()]
-    assert {"control", "v4"} <= {r["strategy"] for r in rows}
+    assert {"control", "v4", "v5"} <= {r["strategy"] for r in rows}
+    v5 = [r for r in rows if r["strategy"] == "v5"]
+    assert v5[0]["entry"] == 1.001 and v5[0]["exit"] == 1.002                   # un tick adentro de cada lado
+    assert lab.dp["AAAUSDT"] == 3                                               # exchangeInfo, una vez por par
     st = {b["sym"]: b for b in lab.status()}
-    assert "v4" in st["AAAUSDT"]["arms"]
+    assert {"v4", "v5"} <= set(st["AAAUSDT"]["arms"])
     var = evidence.by_variant([r | {"model": evidence.FILL_MODEL} for r in rows])
-    assert set(var) >= {"control", "v4"} and all(v["n"] > 0 for v in var.values())
+    assert set(var) >= {"control", "v4", "v5"} and all(v["n"] > 0 for v in var.values())
     old = [{"ts": 1, "sym": "A", "pnl": 1.0, "lab": True, "strategy": "v4"}]
     assert evidence.by_variant(old, now=1 + 25 * 3600) == {}                  # fuera de la ventana de 24 h
+
+
+def test_mejora_de_un_tick_queda_primera_sin_perseguirse_ni_vender_a_perdida():
+    from nexus.live_paper_maker import Book
+    b = Book("X", notional=10, improve_ticks=1, price_dp=4)
+    b.on_book(1.0000, 500, 1.0010, 500)                        # 10 ticks de spread: 1 tick arriba, nadie adelante
+    assert b.px == 1.0001 and b.queue == 0.0
+    b.on_book(1.0001, 15, 1.0010, 500)                         # en real el mejor bid somos nosotros: no se mueve
+    assert b.px == 1.0001 and b.requotes == 1
+    b.on_book(0.9995, 500, 1.0010, 500)                        # el bid baja: no paga de más, baja con él
+    assert b.px == 0.9996
+    b.on_book(1.0007, 500, 1.0010, 500)                        # 3 ticks: todavía entra mejorando
+    assert b.px == 1.0008
+    b.on_book(1.0008, 500, 1.0010, 500)                        # 2 ticks: sin lugar para ganar, va al final
+    assert b.px == 1.0008                                      # (igual al bid: se queda)
+    b.on_book(1.0000, 500, 1.0010, 500)
+    b.on_trade(1.0001, 10.0, True)                             # basta el volumen de NUESTRA orden
+    assert b.state == "long" and b.entry == 1.0001 and b.px == 1.0009 and b.queue == 0.0
+    b.on_book(1.0000, 500, 1.0003, 500)                        # el ask baja: un tick abajo, nunca bajo el piso
+    assert b.px == 1.0002
+    b.on_book(1.0000, 500, 1.0001, 500)                        # ask en la entrada: el piso manda
+    assert b.px == 1.0001
+    sin = Book("Y", notional=10, improve_ticks=1)              # sin decimales del par: no entra
+    sin.on_book(1.0, 500, 1.001, 500)
+    assert sin.px is None
+    vig = Book("Z", notional=10)                               # la vigente no cambia: al bid, detrás de la cola
+    vig.on_book(1.0000, 500, 1.0010, 500)
+    assert vig.px == 1.0 and vig.queue == 500
