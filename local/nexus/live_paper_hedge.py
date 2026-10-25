@@ -38,9 +38,12 @@ class Side:
 
     def quote(self, px, queue, own=0.0):
         """queue = cola visible adelante; own = tamaño de nuestra orden. Se llena recién cuando el
-        volumen operado a nuestro precio cubre las dos (modelo 3)."""
+        volumen operado a nuestro precio cubre las dos (modelo 3). Modelo 4: en el mismo precio, la cola
+        de adelante nunca supera lo visible (si los demás cancelan, avanzamos)."""
         if px != self.px:
             self.px, self.queue = px, queue + own
+        elif self.queue is not None:
+            self.queue = min(self.queue, queue + own)
 
     def cancel(self):
         self.px, self.queue = None, None
@@ -77,6 +80,19 @@ class HedgedPair:
         self.rebalances, self.transfer_cost = 0, 0.0
         self.blocked_s = {"buy": 0.0, "sell": 0.0}
         self.last_t, self.was_blocked = None, []
+        self.mid0 = self.mid = None                          # precio de Binance al empezar y ahora
+
+    def capital(self):
+        """Capital que exige el par: L lotes de moneda y L de USDT en cada exchange."""
+        return 4 * self.lots * self.notional if self.lots is not None else None
+
+    def inventory_change(self):
+        """Riesgo de precio: la cobertura mantiene constante la moneda total (2 L lotes entre los dos
+        exchanges), así que su valor sube y baja con el precio. No es ganancia de la estrategia, pero
+        hay que tenerlo en cuenta (se puede cubrir con un corto en futuros)."""
+        if self.lots is None or not self.mid0 or not self.mid:
+            return None
+        return 2 * self.lots * self.notional * (self.mid / self.mid0 - 1)
 
     def can(self, kind):
         if self.lots is None:
@@ -108,6 +124,8 @@ class HedgedPair:
             self.adverse += r < edge_then
         self.pending, self.fresh = self.fresh, []
         self.b_bid, self.b_ask = b_bid, b_ask
+        self.mid = (b_bid + b_ask) / 2
+        self.mid0 = self.mid0 or self.mid
         # 2) cotizar solo si la vuelta cubierta deja margen al precio actual
         if self.can("buy") and b_bid * (1 - self.fb) / m_bid - 1 >= self.min_edge:
             self.buy.quote(m_bid, m_bq, self.notional / m_bid)
@@ -131,7 +149,10 @@ class HedgedPair:
 
     def mark(self, minutes):
         net = self.pnl - self.transfer_cost
-        return {"sym": self.sym, "fills": self.fills, "pnl_eur": round(self.pnl, 4),
+        cap, inv = self.capital(), self.inventory_change()
+        return {"sym": self.sym, "model": 4, "fills": self.fills, "pnl_eur": round(self.pnl, 4),
+                "capital_eur": cap, "inventory_eur": None if inv is None else round(inv, 4),
+                "net_pct_day": round(net / max(minutes, 1e-9) * 1440 / cap * 100, 3) if cap else None,
                 "per_fill_eur": round(self.pnl / self.fills, 4) if self.fills else None,
                 "fills_per_hour": round(self.fills / max(minutes, 1e-9) * 60, 2), "adverse": self.adverse,
                 "quoting": [s.kind for s in (self.buy, self.sell) if s.px is not None],
@@ -148,15 +169,20 @@ def to_markdown(snap):
           f"{snap['elapsed_min']} min · nocional {snap['notional']} € por llenado · lotes por lado: "
           f"{snap['lots'] if snap['lots'] is not None else 'sin límite'} · taker Binance {snap['taker_b_pct']}% · "
           f"errores {snap['errors']}", "",
-          "| par | llenados | por hora | € por llenado | adversos | transferencias € | neto € | neto €/h | bloqueado compra/venta (min) |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          "| par | llenados | por hora | € por llenado | adversos | transferencias € | neto € | neto €/h | "
+          "% por día sobre el capital | inventario € (precio) | bloqueado compra/venta (min) |",
+          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for p in sorted(snap["pairs"], key=lambda p: -p.get("net_per_hour", 0)):
         b = p.get("blocked_min", {})
         md.append(f"| {p['sym']} | {p['fills']} | {p['fills_per_hour']} | {p['per_fill_eur'] if p['per_fill_eur'] is not None else '—'} | "
                   f"{p['adverse']} | {p.get('transfer_cost', 0)} | {p.get('net_eur', p['pnl_eur'])} | "
-                  f"{p.get('net_per_hour', '—')} | {b.get('buy', 0)} / {b.get('sell', 0)} |")
+                  f"{p.get('net_per_hour', '—')} | {p.get('net_pct_day', '—')} | {p.get('inventory_eur', '—')} | "
+                  f"{b.get('buy', 0)} / {b.get('sell', 0)} |")
+    cap = next((p.get("capital_eur") for p in snap["pairs"] if p.get("capital_eur")), None)
     md += ["", "Bloqueado = minutos sin inventario para ese lado (con capital chico, el límite real). "
-           "El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h."]
+           "El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h.",
+           f"Capital por par: {cap} € (moneda y USDT en los dos exchanges). Inventario € = cuánto cambió el "
+           "valor de la moneda que hay que tener (riesgo de precio, aparte de la ganancia). Modelo de cola 4."]
     return "\n".join(md) + "\n"
 
 

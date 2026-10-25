@@ -58,12 +58,13 @@ Se actualiza solo: el estado del agente cada 5 segundos y las oportunidades cada
   de 30 minutos después de actualizarse). Cuando se instala una versión nueva, el tablero se
   reinicia solo con el código nuevo. Su log está en `logs\dashboard.log`.
 
-## Dinero real (Fase 6a)
+## Dinero real
 El repositorio nunca activa el modo real: lo activás **vos en la PC** con una autorización que vence
-(máximo 20 € y 7 días). Hasta entonces el agente opera solo en paper.
+(máximo 100 € y 7 días). Hasta entonces el agente opera solo en paper.
 
-1. **Subcuenta en MEXC (recomendado, R-01).** Creá una subcuenta "nexus" y pasale solo el capital
-   autorizado (20 USDT). Así, pase lo que pase, el agente no puede tocar más que eso.
+1. **Subcuenta en MEXC (recomendado, R-01).** Creá una subcuenta "nexus" y pasale solo el capital que
+   querés que opere. Así, pase lo que pase, el agente no puede tocar más que eso. Con `--todo` opera
+   siempre **todo** lo que haya en la subcuenta (hasta 100 €): para invertir más, transferí más ahí.
 2. **Clave de API en esa subcuenta:**
    - Permisos: **Spot: ver y operar**. **Sin retiro**, sin futuros y sin margen.
    - Vinculada a la IP pública de la PC (`irm https://ifconfig.me`). Si tu IP cambia, la clave deja de
@@ -75,8 +76,13 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
    ```
 4. **Autorizá** (pide confirmar que la clave no tiene retiro y escribir una frase exacta):
    ```powershell
-   ..\.venv\Scripts\python -m nexus.agent.authorize --capital 20 --dias 7 --pares XXXUSDT --calibracion
+   ..\.venv\Scripts\python -m nexus.agent.authorize --todo --dias 7 --pares XXXUSDT --calibracion
    ```
+   `--todo` = siempre todo el capital de la subcuenta (USDT + lo invertido en la posición), hasta
+   100 €. El monto por vuelta se recalcula cada 10 minutos con el saldo real, solo entre vueltas: las
+   ganancias se reinvierten solas. `--capital N` en vez de `--todo` fija un monto menor. Nunca supera
+   el máximo por posición de la config de riesgo (40 €); con más capital, el modo automático lo
+   reparte entre varios pares.
    **No hace falta reiniciar**: el agente toma la autorización solo en menos de un minuto. Si alguna
    vez querés reiniciarlo, usá el reinicio controlado (guarda el estado y cancela sus órdenes):
    `New-Item $env:LOCALAPPDATA\nexus\state\RESTART`. Hay un solo agente por PC: si quedara uno
@@ -87,12 +93,12 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
 
    **Modo automático** (en vez de elegir el par a mano):
    ```powershell
-   ..\.venv\Scripts\python -m nexus.agent.authorize --capital 20 --dias 7 --auto 1 --calibracion
+   ..\.venv\Scripts\python -m nexus.agent.authorize --todo --dias 7 --auto 1 --calibracion
    ```
    El agente opera los mejores pares **promovidos** por el laboratorio (`--auto 1` a `--auto 3`; el
    capital se reparte entre los que estén promovidos en ese momento). Cuando el laboratorio promueve
    uno mejor, cambia de par **solo si no tiene posición ni órdenes abiertas**: nunca abandona una
-   posición. Si no hay ninguno promovido, sigue en paper hasta que lo haya. Mismos topes (20 €, 7 días)
+   posición. Si no hay ninguno promovido, sigue en paper hasta que lo haya. Mismos topes (100 €, 7 días)
    y mismos límites de pérdida.
 5. **Seguimiento:** el tablero muestra la tarjeta "Dinero real". El detalle está en
    `state\real_trades.jsonl` (vueltas reales) y `state\orders.jsonl` (cada orden, con hash

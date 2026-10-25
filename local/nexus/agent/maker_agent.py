@@ -145,7 +145,7 @@ def calibration(auth, trades_path=None, real_path=None, now=None):
     paper = [t for t in evidence.load(trades_path or paths.state("trades.jsonl"), since=since)
              if t.get("strategy") == STRATEGY["tag"]]
     real = [t for t in evidence.load(real_path or paths.state(REAL_TRADES), since=since, min_model=0)]
-    def ret(t):                                      # % del monto de la vuelta: paper usa 40 €, real 20 €
+    def ret(t):                                      # % del monto de la vuelta (paper y real usan montos distintos)
         return t["pnl"] / (t.get("notional") or 40.0) * 100
 
     out = {}
@@ -317,6 +317,42 @@ def desk_symbols(auth, saved):
     return sorted(set(real_symbols(auth)) | set(pending))
 
 
+def n_real_pairs(auth, syms):
+    """Entre cuántos pares se reparte el capital: los autorizados o, en modo automático, los del
+    escritorio (si se suma otro promovido, rotate() rearma con el reparto nuevo, siempre sin posición)."""
+    if (auth or {}).get("auto"):
+        return max(1, len(syms))
+    return max(1, len((auth or {}).get("symbols") or syms))
+
+
+def real_notional(auth, cfg, balances, books, n_pairs):
+    """Monto por par del dinero real: el capital autorizado, sin pasar lo que de verdad hay en la cuenta
+    (USDT libre + en órdenes + lo invertido en las posiciones, con 2% de margen para que MEXC no rechace
+    por saldo), repartido entre los pares y sin pasar el máximo por posición de la config de riesgo.
+    Con `authorize --todo` el capital autorizado es el tope (100 €): se opera todo lo que haya y las
+    ganancias se reinvierten. Contar lo invertido evita que un reinicio con una posición abierta achique
+    las compras (25-oct: 9,15 en vez de 20 tras reiniciar comprado en ZRO)."""
+    from . import live
+    usdt = sum(float(b.get("free") or 0) + float(b.get("locked") or 0) for b in balances if b.get("asset") == "USDT")
+    avail = usdt + sum(bk.pos_cost for bk in books.values())
+    cap = float((auth or {}).get("capital_eur") or live.MAX_CAPITAL_EUR)
+    return round(min(min(cap, avail * 0.98) / n_pairs, cfg["risk"]["max_position_eur"]), 2)
+
+
+def resize(desk, cfg, balances):
+    """Cada 10 min, con el saldo ya leído: el monto por par sigue al capital de la cuenta (ganancias
+    reinvertidas, depósitos nuevos, pérdidas). Solo en libros sin posición: nunca a mitad de una vuelta
+    (la compra puesta se re-cotiza sola con el monto nuevo)."""
+    auth = live_auth()
+    if not auth or balances is None:
+        return
+    new = real_notional(auth, cfg, balances, desk.books, n_real_pairs(auth, list(desk.books)))
+    for bk in desk.books.values():
+        if bk.state == "flat" and not bk.unknown and abs(bk.notional - new) >= 0.01:
+            log.info("real %s: monto por vuelta %.2f -> %.2f", bk.sym, bk.notional, new)
+            bk.notional = new
+
+
 def build_desk(cfg, client, maker, taker):
     """Libros con DINERO REAL (Fase 6), solo si hay autorización local vigente del dueño o quedó una
     posición/orden real de antes (hay que seguir gestionándola aunque la autorización venza)."""
@@ -342,12 +378,7 @@ def build_desk(cfg, client, maker, taker):
     lmaker, ltaker = verified_fees(client, {**cfg, "symbols": syms})
     rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
     olog, books = live.OrderLog(), {}
-    # el capital autorizado se reparte entre los pares del escritorio (en modo automático, entre los
-    # promovidos que haya ahora: si se suma otro, rotate() rearma con el reparto nuevo, siempre sin posición)
-    auto = (auth or {}).get("auto")
-    n_pairs = max(1, len(syms) if auto else len((auth or {}).get("symbols") or syms))
-    notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR) / n_pairs,
-                   cfg["risk"]["max_position_eur"])
+    notional = 1.0                                   # se fija abajo con el saldo real de la cuenta
     for s in syms:
         try:
             rules = live.Rules(trader.exchange_info(s), s)
@@ -365,16 +396,7 @@ def build_desk(cfg, client, maker, taker):
     if not books:
         return None
     desk = live.Desk(trader, client, rgate, books, olog)
-    # Capital disponible = USDT (libre + en órdenes) + lo invertido en las posiciones guardadas. Si se
-    # contara solo el USDT libre, un reinicio con una posición abierta achicaba las compras siguientes
-    # (25-oct: 9,15 en vez de 20 tras reiniciar comprado en ZRO).
-    usdt = sum(float(b.get("free") or 0) + float(b.get("locked") or 0)
-               for b in acc.get("balances", []) if b.get("asset") == "USDT")
-    avail = usdt + sum(bk.pos_cost for bk in books.values())
-    if avail * 0.98 < notional:                         # comprar con lo que hay, no acumular rechazos
-        log.warning("real: capital disponible %.2f menor que el autorizado %.2f: se compra por %.2f",
-                    avail, notional, avail * 0.98)
-        notional = round(avail * 0.98, 2)
+    notional = real_notional(auth, cfg, acc.get("balances", []), books, n_real_pairs(auth, syms))
     for bk in books.values():
         bk.notional = notional
         bk.save_cb = desk.save
@@ -466,7 +488,7 @@ def run():
                 desk.step(cfg["stale_data_s"])
                 if time.time() - last_bal >= 600:
                     last_bal = time.time()
-                    desk.check_balances()
+                    resize(desk, cfg, desk.check_balances())
             lab.step()
             if desk:                                 # el par real se atiende de nuevo tras el laboratorio:
                 desk.step(cfg["stale_data_s"])       # menos tiempo fuera del libro entre re-cotizaciones

@@ -30,7 +30,9 @@ from ..live_paper_maker import Book
 log = logging.getLogger("nexus.live")
 AUTH_FILE, STATE_FILE, ORDERS_LOG, REAL_TRADES = "live_auth.json", "live_books.json", "orders.jsonl", "real_trades.jsonl"
 UNBLOCK_FILE = "live_unblock.json"                # pedido humano de desbloqueo (authorize --desbloquear)
-CALIBRATION_MAX_EUR, MAX_DAYS = 20.0, 7          # Fase 6a: tope de capital y de vigencia de una autorización
+# Tope de capital y de vigencia de una autorización. 100 € = el capital del dueño; con `--todo` se opera
+# siempre todo lo que haya en la subcuenta hasta ese tope (pedido del dueño, 25-oct-2026: antes 20 €).
+MAX_CAPITAL_EUR, MAX_DAYS = 100.0, 7
 MAX_AUTO_PAIRS = 3                               # modo automático: hasta 3 pares promovidos a la vez
 MAX_REJECTS, UNKNOWN_BLOCK_S, BALANCE_TOL_USDT = 5, 120, 0.5
 EXIT_SLIP_PCT, EXIT_REPRICE_S = 0.5, 3   # salida forzada: límite agresivo hasta 0,5% bajo el bid, re-precio cada 3 s
@@ -48,7 +50,7 @@ def authorization(now=None):
     auto = a.get("auto") or 0
     if not a.get("symbols") and not (isinstance(auto, int) and 1 <= auto <= MAX_AUTO_PAIRS):
         return None
-    if not 0 < float(a.get("capital_eur", 0)) <= CALIBRATION_MAX_EUR or a["expires"] - a.get("ts", 0) > MAX_DAYS * 86400:
+    if not 0 < float(a.get("capital_eur", 0)) <= MAX_CAPITAL_EUR or a["expires"] - a.get("ts", 0) > MAX_DAYS * 86400:
         return None
     return a
 
@@ -497,14 +499,16 @@ class Desk:
         save_state(STATE_FILE, other | {s: b.to_dict() for s, b in self.books.items()})
 
     def check_balances(self):
-        """Cada 10 min: el saldo del exchange tiene que coincidir con lo que creemos tener."""
+        """Cada 10 min: el saldo del exchange tiene que coincidir con lo que creemos tener. Devuelve los
+        saldos (o None si no se pudieron leer) para recalcular el monto por par."""
         try:
             bal = self.trader.account().get("balances", [])
         except Exception as e:                               # noqa: BLE001
             log.warning("real: no se pudo leer el saldo (%s)", type(e).__name__)
-            return
+            return None
         for bk in self.books.values():
             bk.check_balance(bal, bk.bid)
+        return bal
 
     def unblock_requests(self):
         req = paths.state(UNBLOCK_FILE)

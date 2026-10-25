@@ -12,7 +12,7 @@ permisos de la clave en el exchange, los fondos depositados, la confirmación es
 | ID | Regla | Mecanismo | Verificación | Estado |
 |---|---|---|---|---|
 | R-01 | Capital acotado físicamente | Subcuenta o cuenta con solo el capital autorizado; clave **sin retiro** y con lista blanca de IP | `nexus.check_keys` sale con código 2 si la cuenta permite retiros; el modo real no arranca si la cuenta informa retiros y el dueño no confirmó en `authorize` que la clave no los tiene; ningún módulo contiene endpoints de retiro | `test_ordenes_solo_en_el_cliente_de_trading_y_retiros_en_ninguna_parte`, `test_agente_activa_el_modo_real_solo_con_autorizacion` | ✅ (la subcuenta y la IP las configura el dueño) |
-| R-02 | Trading real solo con autorización humana explícita, acotada y con vencimiento | El repositorio nunca habilita el modo real (`live: false`, impuesto por el CI). Solo lo habilita `python -m nexus.agent.authorize`, que escribe el dueño **en la PC** con una frase exacta: capital ≤ 20 €, pares y vencimiento ≤ 7 días. En **modo automático** (`--auto N`, N ≤ 3) el dueño no fija los pares: el agente opera los N pares **promovidos** por el laboratorio con mejor cota inferior fuera de muestra, con el mismo capital repartido y los mismos límites; cambia de par solo cuando no tiene posición ni órdenes abiertas, y nunca abandona una posición. Vencida o revocada, no abre posiciones (las abiertas salen normal). Las órdenes solo existen en `exchanges/mexc_trade.py` | `test_autorizacion_topes_frase_y_revocar`, `test_modo_auto_valida_tope_de_pares_y_no_mezcla_con_pares`, `test_modo_auto_opera_los_promovidos_y_cambia_de_par_solo_sin_posicion`, `test_sin_autorizacion_no_entra_pero_sale`, `test_agente_rechaza_live` | ✅ |
+| R-02 | Trading real solo con autorización humana explícita, acotada y con vencimiento | El repositorio nunca habilita el modo real (`live: false`, impuesto por el CI). Solo lo habilita `python -m nexus.agent.authorize`, que escribe el dueño **en la PC** con una frase exacta: capital ≤ 100 € (o `--todo`: siempre todo lo que haya en la subcuenta, hasta 100 €, con las ganancias reinvertidas), pares y vencimiento ≤ 7 días. En **modo automático** (`--auto N`, N ≤ 3) el dueño no fija los pares: el agente opera los N pares **promovidos** por el laboratorio con mejor cota inferior fuera de muestra, con el mismo capital repartido y los mismos límites; cambia de par solo cuando no tiene posición ni órdenes abiertas, y nunca abandona una posición. Vencida o revocada, no abre posiciones (las abiertas salen normal). Las órdenes solo existen en `exchanges/mexc_trade.py` | `test_autorizacion_topes_frase_y_revocar`, `test_todo_el_capital_sigue_al_saldo_y_se_reparte`, `test_modo_auto_valida_tope_de_pares_y_no_mezcla_con_pares`, `test_modo_auto_opera_los_promovidos_y_cambia_de_par_solo_sin_posicion`, `test_sin_autorizacion_no_entra_pero_sale`, `test_agente_rechaza_live` | ✅ |
 | R-03 | El riesgo es independiente y tiene veto | Las estrategias (`Book`) piden permiso a `Gate` → `RiskManager`; no importan clientes de exchange | `test_estrategias_no_importan_clientes_de_exchange`, `test_veto_de_riesgo_cancela_compra` | ✅ |
 | R-04 | Límites inmutables en ejecución y fuera del alcance de estrategias e IA | Límites en `agent.yaml`; el CI rechaza valores por encima de la línea base; las rutas protegidas ponen el PR en rojo; el PC no activa cambios protegidos sin `--aprobar` local | `test_gate.py`, `protected_paths.py`, `test_cambios_protegidos_requieren_aprobacion_local` | ✅ |
 | R-05 | No operar con estado de orden desconocido | Error de red al enviar o cancelar ⇒ el par no envía nada hasta consultar la orden por su ID; al arrancar concilia la orden guardada, cancela órdenes propias huérfanas y compara el saldo; cada 10 min compara saldo y posición; si no coincide, el par queda bloqueado hasta revisión humana | `test_corte_de_red_al_enviar_bloquea_hasta_conciliar`, `test_al_arrancar_concilia_orden_guardada_huerfanas_y_saldo` | ✅ |
@@ -47,12 +47,15 @@ Aprobados por el dueño el 24-oct-2026 ("dale"), en reemplazo de "≥4 semanas".
   - Ningún halt permanente.
   - R-05, R-06, R-08, R-10 y R-16 implementadas.
   - **Autorización explícita del dueño** (clave de MEXC solo de trading, sin retiro, con IP fija).
-- **Excepción de calibración (Fase 6a-c):** el dueño puede autorizar hasta 20 € reales ANTES de cumplir
+- **Excepción de calibración (Fase 6a-c):** el dueño puede autorizar dinero real ANTES de cumplir
   los criterios de paper (`authorize --calibracion`) para medir los llenados reales contra el modelo
   de paper en el mismo par. Mismos límites de riesgo (2 €/día, 4 €/semana, 8 € total), máximo 7
-  días por autorización, renovable solo por el dueño. No promueve a 6b por sí sola: para pasar a
-  100 € se exige lo de abajo. Incorporada al fusionar el PR de la Fase 6 (aprobación del dueño).
-- **De 6a a 6b (100 €):** una semana con 20 € reales y PnL real, conciliado con el exchange, > 0.
+  días por autorización, renovable solo por el dueño. Incorporada al fusionar el PR de la Fase 6
+  (aprobación del dueño).
+- **Capital (decisión del dueño, 25-oct-2026):** se invierte siempre todo el capital disponible en la
+  subcuenta, hasta 100 € (su capital), sin esperar la semana con 20 € que exigía el paso 6a → 6b. Los
+  límites de pérdida no cambian y son los que acotan el riesgo. Más de 100 € exige una semana con PnL
+  real, conciliado con el exchange, > 0, y una nueva aprobación del dueño.
 - **Retroceso automático:** PnL neto de 7 días < 0 ⇒ halt de la estrategia (`losing_days_window`);
   drawdown de 8 € ⇒ halt total.
 
@@ -63,6 +66,7 @@ Aprobados por el dueño el 24-oct-2026 ("dale"), en reemplazo de "≥4 semanas".
 | 24-oct-2026 | Reglas R-01 a R-21, Fase 2, límites para 100 € | "sí a todo" |
 | 24-oct-2026 | Actualizador: un agente detenido no bloquea su arreglo (PR 11) | merge del dueño + APRUEBO en el PC |
 | 24-oct-2026 | Criterios acelerados de R-15 y entrada gradual 20 € → 100 € | "dale" |
+| 25-oct-2026 | Invertir siempre todo el capital disponible (hasta 100 €), en lugar de 20 € fijos | "quiero que inviertas siempre todo el capital disponible" + merge + APRUEBO en el PC |
 
 ## Categorías de acciones
 

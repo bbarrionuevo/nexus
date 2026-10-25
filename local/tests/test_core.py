@@ -515,6 +515,23 @@ def test_cobertura_con_inventario_limitado_se_bloquea_y_rebalancea():
     assert libre.can("buy") and libre.can("sell") and libre.transfer == 1.0
 
 
+def test_cobertura_modelo_4_capital_y_riesgo_del_inventario():
+    from nexus.live_paper_hedge import HedgedPair, Side, to_markdown
+    s = Side("buy")
+    s.quote(1.0, 1000, own=25)
+    s.quote(1.0, 10, own=25)                                      # los demás cancelaron: quedan 10 adelante
+    assert s.queue == 35 and not s.hit(1.0, 30, True) and s.hit(1.0, 5, True)
+    hp = HedgedPair("IOSTUSDT", notional=25, taker_b_pct=0.1, min_edge_pct=0.05, lots=1)
+    hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.002, now=0)
+    hp.on_books(0.990, 10, 1.000, 10, 0.950, 0.952, now=60)      # la moneda cae 5% en Binance
+    m = hp.mark(1440)
+    assert m["capital_eur"] == 100 and m["inventory_eur"] == round(50 * (0.951 / 1.001 - 1), 4)
+    assert m["model"] == 4 and m["net_pct_day"] == 0.0
+    md = to_markdown({"ts": 1_800_000_000, "elapsed_min": 60, "notional": 25, "lots": 1, "taker_b_pct": 0.1,
+                      "errors": 0, "pairs": [m]})
+    assert "Capital por par: 100 €" in md and "riesgo de precio" in md
+
+
 def test_resumen_de_cobertura_en_espanol():
     from nexus.live_paper_hedge import HedgedPair, to_markdown
     hp = HedgedPair("IOSTUSDT", notional=25, lots=1)

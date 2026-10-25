@@ -69,12 +69,12 @@ def latency_ms(client, sym="BTCUSDT", n=5):
 
 
 def run(client=None, symbols=(), clock=None, now=None):
-    from .agent.live import CALIBRATION_MAX_EUR, authorization
+    from .agent.live import MAX_CAPITAL_EUR, authorization
     from .exchanges.mexc import MexcReadOnly
     client = client or MexcReadOnly()
     now = now or time.time()
     auth = authorization(now)
-    capital = float((auth or {}).get("capital_eur") or CALIBRATION_MAX_EUR)
+    capital = float((auth or {}).get("capital_eur") or MAX_CAPITAL_EUR)
     r = {"ts": now, "auth": auth, "keys": client.has_keys, "problems": []}
     bal = {}
     if not client.has_keys:
@@ -114,7 +114,11 @@ def run(client=None, symbols=(), clock=None, now=None):
         # capital = USDT + lo invertido en los pares reales (con una posición abierta el USDT baja)
         held = sum(bal.get(x.get("base"), 0.0) * (x.get("bid") or 0.0) for x in r["symbols"] if x["sym"] in real)
         r["account"]["in_positions_usdt"] = round(held, 4)
-        if bal.get("USDT", 0.0) + held < capital * 0.95:
+        r["account"]["capital_usdt"] = round(bal.get("USDT", 0.0) + held, 4)
+        if auth.get("todo"):                        # --todo: se opera lo que haya; solo alarma si no alcanza
+            if r["account"]["capital_usdt"] < 5:
+                r["problems"].append(f"capital en la cuenta {r['account']['capital_usdt']:.2f} USDT: no alcanza para operar")
+        elif bal.get("USDT", 0.0) + held < capital * 0.95:
             r["problems"].append(f"capital en la cuenta {bal.get('USDT', 0.0) + held:.2f} USDT menor que el autorizado {capital:g}")
     r["ready"] = bool(auth) and not r["problems"] and all(x["ok"] for x in r["symbols"] if x["sym"] in real)
     paths.write_json_atomic(paths.state("preflight.json"), r)

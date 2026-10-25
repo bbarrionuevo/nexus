@@ -272,7 +272,7 @@ function renderState(d) {
   else statusPill("agent", "good", "Agente en marcha · " + ago(age));
   const lv = st.live;
   if (d.kill_switch) statusPill("mode", "warning", "KILL activo: no abre posiciones");
-  else if (lv && lv.auth) statusPill("mode", "warning", `DINERO REAL · hasta ${num(lv.auth.capital_eur)} € · vence ${hhmm(lv.auth.expires)}`);
+  else if (lv && lv.auth) statusPill("mode", "warning", `DINERO REAL · ${lv.auth.todo ? "todo el capital" : "hasta " + num(lv.auth.capital_eur) + " €"} · vence ${hhmm(lv.auth.expires)}`);
   else if (lv) statusPill("mode", "warning", "Dinero real sin autorización: solo cierra lo abierto");
   $("realcard").hidden = !lv;
   if (lv) {
