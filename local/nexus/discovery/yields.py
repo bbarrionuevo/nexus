@@ -92,6 +92,10 @@ def bitget_events(days=14, now=None):
 
 
 DEFI_CHAINS = {"Ethereum", "Arbitrum", "Base", "Optimism", "Polygon", "Avalanche", "BSC", "Solana"}
+# Protocolos de préstamo consolidados (años en producción, auditados, TVL de miles de millones). El resto
+# suelen ser "dólares sintéticos" o protocolos nuevos: pagan más porque arriesgan más (depeg, contratos).
+BLUECHIP = {"aave-v3", "compound-v3", "morpho-blue", "morpho-v1", "spark", "sparklend", "sky-lending",
+            "maker-dsr", "fluid-lending", "euler-v2", "kamino-lend", "venus-core-pool"}
 
 
 def defi_stable_pools(raw, min_tvl=20e6, top=12):
@@ -107,10 +111,12 @@ def defi_stable_pools(raw, min_tvl=20e6, top=12):
             out.append({"project": p.get("project"), "chain": p.get("chain"), "symbol": p.get("symbol"),
                         "tvl_musd": round(float(p["tvlUsd"]) / 1e6, 1), "apy_base": round(base, 2),
                         "apy_reward": round(float(p.get("apyReward") or 0), 2),
-                        "apy_30d_mean": round(float(p.get("apyMean30d") or 0), 2)})
+                        "apy_30d_mean": round(float(p.get("apyMean30d") or 0), 2),
+                        "bluechip": p.get("project") in BLUECHIP})
         except (TypeError, ValueError):
             continue
-    return sorted(out, key=lambda x: -x["apy_base"])[:top]
+    out.sort(key=lambda x: -x["apy_base"])
+    return [x for x in out if x["bluechip"]][:top] + [x for x in out if not x["bluechip"]][:top]
 
 
 def defi_yields():

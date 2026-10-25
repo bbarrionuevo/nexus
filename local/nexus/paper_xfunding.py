@@ -39,20 +39,25 @@ def step(state, cross, history, now=None):
     now = now or time.time()
     state.setdefault("open", {})
     state.setdefault("closed", [])
-    live = {x["base"]: x for x in cross}
+    live = {(x["base"], x["short"], x["long"]): x for x in cross}
     for key, p in list(state["open"].items()):
+        last24 = 0.0
         for leg, sign in (("short", 1), ("long", -1)):
             for ts, r in history(p[f"{leg}_ex"], p[f"{leg}_symbol"]):
                 if ts > p[f"{leg}_last"]:
                     p["funding"] += sign * p["notional"] * r      # el corto cobra la tasa; el largo la paga
                     p[f"{leg}_last"] = ts
                     p["settlements"] += 1
-        x = live.get(p["base"])
-        if x and x["short"] == p["short_ex"] and x["long"] == p["long_ex"] and x.get("short_px") and x.get("long_px"):
-            p["mark"] = mark(p, x["short_px"], x["long_px"])
-        r = (x or {}).get("realized")
-        if r is not None and r[1] < 0:                            # dejó de pagar: se cierra
-            state["closed"].append({**p, "closed": now, "result": p.get("mark") or mark(p, p["short_entry"], p["long_entry"])})
+                if ts > p["opened"] and ts > now - 86400:
+                    last24 += sign * r
+        x = live.get((p["base"], p["short_ex"], p["long_ex"]))     # misma moneda y MISMOS exchanges
+        prices = (x["short_px"], x["long_px"]) if x and x.get("short_px") and x.get("long_px") else \
+            (p.get("last_short_px", p["short_entry"]), p.get("last_long_px", p["long_entry"]))
+        p["last_short_px"], p["last_long_px"] = prices
+        p["mark"] = mark(p, *prices)
+        # Se cierra solo por lo que cobraron SUS patas: un día completo abierta y las últimas 24 h negativas.
+        if now - p["opened"] >= 86400 and last24 < 0:
+            state["closed"].append({**p, "closed": now, "result": p["mark"]})
             del state["open"][key]
     for x in candidates(cross):
         key = f"{x['base']}:{x['short']}/{x['long']}"
