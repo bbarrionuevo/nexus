@@ -22,7 +22,10 @@ resultados. Antes de actuar, leé `docs/REGLAS.md`: esas reglas mandan.
 - Escribir la frase de aprobación de `update.py --aprobar` ni la de `risk --rearmar`. Esas
   confirmaciones son **del dueño, a mano**: es el control que impide que una IA cambie límites o
   el actualizador sin que él lo vea. No las automatices (ni con `echo` ni con tuberías).
-- Cambiar `live`, límites de riesgo, permisos de claves o activar operaciones reales.
+- Cambiar `live`, límites de riesgo, permisos de claves o activar operaciones reales. En particular,
+  **nunca ejecutes `python -m nexus.agent.authorize`** (ni con `--revocar`): la autorización para
+  operar con dinero real la escribe el dueño a mano. Tampoco escribas en el archivo `KILL` salvo que
+  el dueño te lo pida en el chat en ese momento.
 - Editar archivos del despliegue para "arreglar" algo: los cambios se hacen por PR a `main`.
 - Mostrar o copiar secretos en el chat, en logs o en la rama `pc-sesion`.
 

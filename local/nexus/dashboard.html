@@ -79,6 +79,11 @@ ul.plain { margin: 0; padding-left: 18px; }
   </header>
 
   <div class="grid">
+    <section class="card" id="realcard" hidden>
+      <h2>Dinero real <span class="muted" id="real-sub"></span></h2>
+      <div class="tablewrap"><table id="realbooks"></table></div>
+      <div class="note" id="real-note"></div>
+    </section>
     <section class="card w8">
       <div class="tiles">
         <div class="tile hero"><div class="label" id="hero-label">Estrategia vigente (paper)</div><div class="value" id="hero">—</div><div class="secondary" id="hero-sub"></div></div>
@@ -262,7 +267,23 @@ function renderState(d) {
   else if (age > 600) statusPill("agent", "critical", "Agente detenido · último dato hace " + ago(age));
   else if (age > 120) statusPill("agent", "warning", "Agente demorado · " + ago(age));
   else statusPill("agent", "good", "Agente en marcha · " + ago(age));
+  const lv = st.live;
   if (d.kill_switch) statusPill("mode", "warning", "KILL activo: no abre posiciones");
+  else if (lv && lv.auth) statusPill("mode", "warning", `DINERO REAL · hasta ${num(lv.auth.capital_eur)} € · vence ${hhmm(lv.auth.expires)}`);
+  else if (lv) statusPill("mode", "warning", "Dinero real sin autorización: solo cierra lo abierto");
+  $("realcard").hidden = !lv;
+  if (lv) {
+    const rr = lv.real || {}, rk = lv.risk || {};
+    setText("real-sub", `${num(rr.n)} vueltas · ${eur(rr.total)} · ${nf(1).format(rr.days || 0)} días`);
+    table("realbooks", [{ h: "Par", f: r => r.sym }, { h: "Estado", f: r => r.blocked ? ["BLOQUEADO", "down"] : r.unknown ? ["conciliando", "secondary"] : r.state === "long" ? "comprado" : "esperando" },
+      { h: "Orden", f: r => r.order ? (r.order === "BUY" ? "compra puesta" : "venta puesta") : "—" },
+      { h: "Posición", num: true, f: r => num(r.pos_qty, 2) }, { h: "Residuo", num: true, f: r => num(r.dust, 2) },
+      { h: "PnL real", num: true, f: r => [eur(r.pnl_eur, 3), signCls(r.pnl_eur)] }, { h: "Vueltas", num: true, f: r => num(r.roundtrips) },
+      { h: "Motivo", f: r => r.blocked || "" }], lv.books || []);
+    setText("real-note", `Riesgo real: hoy ${eur(rk.pnl_day)} · semana ${eur(rk.pnl_week)} · total ${eur(rk.pnl_total)}` +
+      (lv.risk_block ? ` · bloqueo: ${lv.risk_block}` : "") + (lv.kill_level ? ` · KILL nivel ${lv.kill_level}` : "") +
+      ` · para pasar a 100 €: ${rr.pass_6b ? "✓ una semana positiva" : "falta una semana con PnL real > 0"}. Montos de las órdenes en USDT.`);
+  }
   const up = d.update || {};
   setText("meta", `versión ${st.version || "—"} · actualización: ${up.result || "—"}${up.reasons ? " (" + up.reasons.join("; ") + ")" : ""} · ${new Date().toLocaleTimeString("es-AR")}`);
 

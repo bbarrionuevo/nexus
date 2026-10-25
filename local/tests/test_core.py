@@ -311,13 +311,23 @@ def test_mexc_solo_lectura_y_comisiones():
     assert parse_fee({"x": 1}) is None
 
 
-def test_no_existe_codigo_de_ordenes_reales():
-    """Hasta la Fase 6 autorizada, ningún módulo puede contener endpoints de órdenes o retiros."""
+def test_ordenes_solo_en_el_cliente_de_trading_y_retiros_en_ninguna_parte():
+    """Fase 6: los endpoints de órdenes existen SOLO en exchanges/mexc_trade.py, que solo importa el
+    agente real. Retiros, transferencias, margen y futuros no existen en ningún módulo."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1] / "nexus"
-    banned = ("/api/v3/order\"", "/order'", "AddOrder", "capital/withdraw", "newOrder", "/0/private/Withdraw")
-    hits = [f"{p.name}:{b}" for p in root.rglob("*.py") for b in banned if b in p.read_text(encoding="utf-8")]
+    order = ("/api/v3/order", "/api/v3/openOrders", "AddOrder", "newOrder")
+    never = ("withdraw", "Withdraw", "/capital/transfer", "sub-account", "/margin", "/futures", "universalTransfer")
+    hits = [f"{p.relative_to(root)}:{b}" for p in root.rglob("*.py") for b in order
+            if b in p.read_text(encoding="utf-8") and p.name != "mexc_trade.py"]
     assert hits == []
+    endpoints = ("capital/withdraw", "/0/private/Withdraw", "/sapi/v1/capital/withdraw", "/api/v3/capital/transfer")
+    assert [f"{p.name}:{b}" for p in root.rglob("*.py") for b in endpoints if b in p.read_text(encoding="utf-8")] == []
+    src = (root / "exchanges" / "mexc_trade.py").read_text(encoding="utf-8")
+    assert [b for b in never if b in src] == []
+    importers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if "mexc_trade" in p.read_text(encoding="utf-8")
+                       and p.name != "mexc_trade.py")
+    assert importers == ["agent/maker_agent.py"]
 
 
 def test_estrategias_no_importan_clientes_de_exchange():

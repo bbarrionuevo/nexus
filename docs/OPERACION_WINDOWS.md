@@ -58,6 +58,50 @@ Se actualiza solo: el estado del agente cada 5 segundos y las oportunidades cada
   de 30 minutos después de actualizarse). Cuando se instala una versión nueva, el tablero se
   reinicia solo con el código nuevo. Su log está en `logs\dashboard.log`.
 
+## Dinero real (Fase 6a)
+El repositorio nunca activa el modo real: lo activás **vos en la PC** con una autorización que vence
+(máximo 20 € y 7 días). Hasta entonces el agente opera solo en paper.
+
+1. **Subcuenta en MEXC (recomendado, R-01).** Creá una subcuenta "nexus" y pasale solo el capital
+   autorizado (20 USDT). Así, pase lo que pase, el agente no puede tocar más que eso.
+2. **Clave de API en esa subcuenta:**
+   - Permisos: **Spot: ver y operar**. **Sin retiro**, sin futuros y sin margen.
+   - Vinculada a la IP pública de la PC (`irm https://ifconfig.me`). Si tu IP cambia, la clave deja de
+     funcionar: el agente no puede operar ese par, se bloquea y te avisa (actualizás la IP en MEXC).
+3. **Pegala en el `.env`** reemplazando la de solo lectura (`MEXC_API_KEY` y `MEXC_SECRET_KEY`) y
+   verificá, sin que se muestren las claves:
+   ```powershell
+   cd $env:USERPROFILE\nexus\local; ..\.venv\Scripts\python -m nexus.check_keys
+   ```
+4. **Autorizá** (pide confirmar que la clave no tiene retiro y escribir una frase exacta):
+   ```powershell
+   ..\.venv\Scripts\python -m nexus.agent.authorize --capital 20 --dias 7 --pares XXXUSDT --calibracion
+   Stop-ScheduledTask nexus-agente; Start-ScheduledTask nexus-agente
+   ```
+   `XXXUSDT` es el par que elijamos con la evidencia del laboratorio (te lo indico en el informe).
+   `--calibracion` permite empezar antes de cumplir los criterios de paper (excepción de REGLAS.md).
+   Sin esa opción, solo autoriza si la evidencia cumple todo R-15.
+5. **Seguimiento:** el tablero muestra la tarjeta "Dinero real". El detalle está en
+   `state\real_trades.jsonl` (vueltas reales) y `state\orders.jsonl` (cada orden, con hash
+   encadenado). El mismo par sigue también en paper, para comparar lo simulado contra lo real.
+
+| Acción | Comando |
+|---|---|
+| Dejar de abrir posiciones reales | `..\.venv\Scripts\python -m nexus.agent.authorize --revocar` |
+| Cancelar todas las órdenes en MEXC | `Set-Content $env:LOCALAPPDATA\nexus\KILL 2` |
+| Cancelar todo y vender a mercado | `Set-Content $env:LOCALAPPDATA\nexus\KILL 3` |
+| Ver la autorización vigente | `..\.venv\Scripts\python -m nexus.agent.authorize --estado` |
+| Desbloquear un par tras revisarlo en MEXC | `..\.venv\Scripts\python -m nexus.agent.authorize --desbloquear XXXUSDT` |
+| Rearmar tras un halt del dinero real | `..\.venv\Scripts\python -m nexus.agent.risk --rearmar --real` |
+
+**Si un par queda BLOQUEADO** (saldo distinto de lo esperado, orden ajena o rechazos seguidos):
+1. El agente no vuelve a operar ese par por su cuenta.
+2. Revisá en MEXC las órdenes y el saldo de esa moneda. Si no querés que quede nada, vendelo a mano.
+3. Corré `--desbloquear`: lo que haya de esa moneda queda como residuo no gestionado y el par arranca de cero.
+
+Los límites de riesgo del dinero real se llevan aparte del paper (`state\risk_real.json`): 2 € por
+día, 4 € por semana y 8 € en total (halt que solo levantás vos).
+
 ## Cómo se actualiza solo
 Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
 todas estas condiciones:
