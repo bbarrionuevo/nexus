@@ -553,3 +553,23 @@ def test_ordenes_por_minuto_en_el_reporte_no_crecen(tmp_path):
         r.record_order()
         t[0] += 10                                             # 20 órdenes en 200 s: ~6 por minuto
     assert r.snapshot()["orders_last_min"] <= 6 and len(r.s["orders"]) <= 7
+
+
+def test_cobertura_elige_pares_por_persistencia_y_conserva_los_ganadores(tmp_path):
+    import json
+    from nexus.live_paper_hedge import pick_symbols
+    now = 1_800_000_000
+    disc = tmp_path / "discovery.jsonl"
+    rows = [{"ts": now - 3600 * i, "hedge_mexc_binance": [
+        {"pair": "TFUELUSDT", "net_pct": 1.0}, {"pair": "ATMUSDT", "net_pct": 0.9 if i % 2 else 0.05},
+        {"pair": "MANTAUSDC", "net_pct": 1.1}, {"pair": "TFUELUSDT", "net_pct": 0.8}]} for i in range(10)]
+    rows.append({"ts": now - 5 * 86400, "hedge_mexc_binance": [{"pair": "VIEJOUSDT", "net_pct": 3.0}]})
+    disc.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    hist = tmp_path / "live_paper_hedge.jsonl"
+    snaps = [{"elapsed_min": 330, "pairs": [{"sym": "QUICKUSDT", "net_eur": 4.1}, {"sym": "LUNAUSDT", "net_eur": -0.1}]},
+             {"elapsed_min": 5, "pairs": [{"sym": "DCRUSDT", "net_eur": 0.2}]},
+             {"elapsed_min": 330, "pairs": [{"sym": "DCRUSDT", "net_eur": 0.7}, {"sym": "QUICKUSDT", "net_eur": 1.0}]}]
+    hist.write_text("\n".join(json.dumps(r) for r in snaps) + "\n")
+    got = pick_symbols(disc, hist, n=4, keep=2, now=now)
+    assert got == ["QUICKUSDT", "DCRUSDT", "TFUELUSDT", "ATMUSDT"]     # ganadores primero; sin USDC ni viejos
+    assert pick_symbols(tmp_path / "no", tmp_path / "no", now=now) == []

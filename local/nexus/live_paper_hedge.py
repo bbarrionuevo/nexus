@@ -186,6 +186,43 @@ def to_markdown(snap):
     return "\n".join(md) + "\n"
 
 
+def pick_symbols(discovery_path, history_path, n=16, keep=4, min_edge_pct=0.1, days=2.0, now=None):
+    """Pares para la corrida: los que más seguido dejan margen cubierto según el escáner (el bid de
+    MEXC queda debajo del de Binance más la comisión; últimos `days` días, solo USDT: el capital está en
+    USDT) y los `keep` que más ganaron en corridas anteriores. Antes la lista era fija y dejaba afuera
+    pares con margen casi permanente (TFUEL, ATM, AT, HOME, PUNDIX, AWE, INIT el 25-oct)."""
+    from collections import Counter, defaultdict
+    now = now or time.time()
+    seen = Counter()
+    try:
+        with open(discovery_path, encoding="utf-8") as f:
+            for line in f:
+                r = json.loads(line)
+                if r.get("ts", now) < now - days * 86400:
+                    continue
+                for x in {x["pair"] for x in r.get("hedge_mexc_binance") or []
+                          if x["net_pct"] > min_edge_pct and x["pair"].endswith("USDT")}:
+                    seen[x] += 1
+    except OSError:
+        pass
+    won = defaultdict(float)
+    try:
+        last = {}
+        with open(history_path, encoding="utf-8") as f:
+            for line in f:
+                r = json.loads(line)
+                if last and r["elapsed_min"] < last["elapsed_min"]:   # terminó una corrida: su última foto
+                    for p in last["pairs"]:
+                        won[p["sym"]] += p.get("net_eur", p.get("pnl_eur", 0))
+                last = r
+        for p in (last or {}).get("pairs", []):
+            won[p["sym"]] += p.get("net_eur", p.get("pnl_eur", 0))
+    except OSError:
+        pass
+    best = [s for s, v in sorted(won.items(), key=lambda kv: -kv[1]) if v > 0][:keep]
+    return list(dict.fromkeys(best + [s for s, _ in seen.most_common(n)]))[:n]
+
+
 def run(syms, minutes, out, taker_b_pct=0.1, lots=None, notional=40.0, rebalance_h=12.0, dump_s=300):
     """Libros en lote (2 pedidos por ciclo) + operaciones por par. Rebalanceo manual cada rebalance_h."""
     s = requests.Session()
@@ -239,5 +276,10 @@ def run(syms, minutes, out, taker_b_pct=0.1, lots=None, notional=40.0, rebalance
 
 if __name__ == "__main__":
     a = sys.argv
-    run(a[2].split(","), float(a[3]), a[1], *(float(x) for x in a[4:5]),
+    syms = a[2].split(",")
+    if syms == ["auto"]:                         # elegir por persistencia del margen (data/discovery.jsonl)
+        import os
+        syms = pick_symbols(os.path.join(os.path.dirname(a[1]), "discovery.jsonl"), a[1])
+        print("pares elegidos:", ",".join(syms), file=sys.stderr, flush=True)   # stdout va a /dev/null
+    run(syms, float(a[3]), a[1], *(float(x) for x in a[4:5]),
         *(int(x) for x in a[5:6]), *(float(x) for x in a[6:7]))

@@ -3,7 +3,7 @@ on:
   schedule: [{cron: "29 */6 * * *"}]
   workflow_dispatch:
     inputs:
-      symbols: {default: "IOSTUSDT,QUICKUSDT,DCRUSDT,TREEUSDT,PORTOUSDT,CYBERUSDT,ANIMEUSDT,LUNAUSDT,IDUSDT,AMPUSDT,POLYXUSDT,OPENUSDT,IMXUSDT"}
+      symbols: {default: "auto"}   # auto = los de margen más persistente en el escáner + los que más ganaron
       minutes: {default: "330"}
 permissions: {contents: write}
 concurrency: research-hedge
@@ -19,7 +19,7 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -r local/requirements.txt
       # Casi continuo: 5,5 h cada 6 h. 1 lote de 25 € por lado (100 € por par) y rebalanceo manual cada 12 h.
-      - run: cd local && python -m nexus.live_paper_hedge ../datawt/data/live_paper_hedge.jsonl "${{ inputs.symbols || 'IOSTUSDT,QUICKUSDT,DCRUSDT,TREEUSDT,PORTOUSDT,CYBERUSDT,ANIMEUSDT,LUNAUSDT,IDUSDT,AMPUSDT,POLYXUSDT,OPENUSDT,IMXUSDT' }}" ${{ inputs.minutes || 330 }} 0.1 1 25 > /dev/null
+      - run: cd local && python -m nexus.live_paper_hedge ../datawt/data/live_paper_hedge.jsonl "${{ inputs.symbols || 'auto' }}" ${{ inputs.minutes || 330 }} 0.1 1 25 > /dev/null
       - run: cat datawt/data/live_paper_hedge.md >> $GITHUB_STEP_SUMMARY
       - run: |
           cd datawt
