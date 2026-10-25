@@ -9,7 +9,8 @@
   Qué hace: instala Git/Python si faltan (winget), clona main, crea el entorno virtual, corre los
   tests (si fallan, no instala), crea %LOCALAPPDATA%\nexus (estado, logs, .env privado) y registra
   dos tareas programadas: "nexus-agente" (al iniciar sesión, se reinicia sola) y
-  "nexus-mantenimiento" (cada 30 min: actualización segura + latido a GitHub).
+  "nexus-mantenimiento" (cada 30 min: actualización segura + latido a GitHub). El mantenimiento crea
+  además "nexus-dashboard" (tablero local de solo lectura en http://localhost:8765).
 #>
 param(
   [string]$Dir = "$env:USERPROFILE\nexus",
@@ -95,6 +96,7 @@ if (-not $KeepSleep) {
 Start-ScheduledTask -TaskName "nexus-agente"
 Write-Host ""
 Write-Host "Instalado en $Dir (modo paper). Datos y logs en $NexusHome"
+Write-Host "Tablero:     http://localhost:8765   (disponible en unos minutos; acceso directo en el escritorio)"
 Write-Host "Estado:      Get-Content $NexusHome\state\status.json"
 Write-Host "Parar todo:  New-Item $NexusHome\KILL   (el agente deja de abrir posiciones)"
 Write-Host "Claves:      notepad $EnvFile   y luego:  $Py -m nexus.check_keys  (desde $Dir\local)"
