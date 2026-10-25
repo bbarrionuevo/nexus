@@ -1,5 +1,34 @@
 {
- "open": {},
+ "open": {
+  "JCT:KuCoin/Bitget": {
+   "base": "JCT",
+   "opened": 1792889494.7311144,
+   "notional": 50.0,
+   "short_ex": "KuCoin",
+   "long_ex": "Bitget",
+   "short_symbol": "JCTUSDTM",
+   "long_symbol": "JCTUSDT",
+   "short_entry": 0.0066445,
+   "long_entry": 0.006615,
+   "short_last": 1792889494.7311144,
+   "long_last": 1792889494.7311144,
+   "funding": 0.0,
+   "fees": 0.24,
+   "settlements": 0,
+   "realized_at_open": [
+    1.725,
+    92.1,
+    1.0,
+    6.8
+   ],
+   "mark": {
+    "funding": 0.0,
+    "basis": 0.0,
+    "fees": 0.24,
+    "net": -0.24
+   }
+  }
+ },
  "closed": [
   {
    "base": "IRYS",
@@ -38,11 +67,11 @@
   }
  ],
  "summary": {
-  "ts": 1792887213.1777976,
-  "open": 0,
+  "ts": 1792889494.7311144,
+  "open": 1,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": 0,
-  "total_eur": -0.14
+  "open_net_eur": -0.24,
+  "total_eur": -0.38
  }
 }

@@ -1,4 +1,4 @@
-# Radar de oportunidades — 2026-10-25 00:13 UTC
+# Radar de oportunidades — 2026-10-25 00:51 UTC
 
 Datos públicos en vivo. Cada oportunidad es **a verificar** (comisiones reales, cupos, tiempos y normativa) antes de poner dinero. La columna clave es la *persistencia*: lo que se repite.
 
@@ -9,7 +9,7 @@ Datos públicos en vivo. Cada oportunidad es **a verificar** (comisiones reales,
 | oficial (prex) | 1,538.00 | xapo | 1.0002 | okexp2p | 1,641.00 | +6.70 | **+6.68** |
 | MEP (AL30) | 1,563.45 | xapo | 1.0002 | okexp2p | 1,641.00 | +4.96 | **+4.94** |
 
-Referencias: oficial 1550 · blue (compra) 1545 · MEP 1563.45 · cripto USDT {'ask': 1648.946, 'bid': 1637, 'variation': 0.26, 'timestamp': 1792887136}
+Referencias: oficial 1550 · blue (compra) 1545 · MEP 1563.45 · cripto USDT {'ask': 1648.995, 'bid': 1637, 'variation': 0.26, 'timestamp': 1792889416}
 
 A verificar antes de operar: cupo de dólares de tu banco, si la plataforma acepta tus dólares por transferencia y cuánto tarda, impuestos, y la normativa vigente (restricciones cruzadas).
 
@@ -30,7 +30,7 @@ Mejor rulo **dentro del país**: dólar oficial → USDT en xapo → pesos en ok
 
 ### Vuelta internacional (usa tus cuentas del exterior)
 
-USD afuera → USDT en Kraken a 0.99868 (+0,26%) → vender en **okexp2p** a 1,641.00 ARS → dólar oficial en **prex** a 1,538.00 → giro al exterior: **+6.56% bruto por vuelta**.
+USD afuera → USDT en Kraken a 0.99867 (+0,26%) → vender en **okexp2p** a 1,641.00 ARS → dólar oficial en **prex** a 1,538.00 → giro al exterior: **+6.56% bruto por vuelta**.
 Neto por vuelta según el monto (giro supuesto: 40 USD fijos + 0.3%): 1,000 USD: **+2.16%** · 5,000 USD: **+5.36%** · 10,000 USD: **+5.76%**
 Con dólar MEP (automatizable por API de un broker): bruto +4.83% · 1,000 USD: +0.43% · 5,000 USD: +3.63% · 10,000 USD: +4.03%
 
@@ -40,27 +40,27 @@ Automatizable: comprar USDT en Kraken, enviarlo y venderlo por pesos (APIs). Man
 
 | plataforma | mejor compra (bid) | mejor venta (ask) | bruto % | neto % (2 x 0,2% comisión) |
 |---|---|---|---|---|
-| eldoradop2p | 1,630.00 | 1,659.30 | +1.80 | +1.40 |
+| eldoradop2p | 1,630.00 | 1,658.50 | +1.75 | +1.35 |
 | kucoinp2p | 1,636.00 | 1,646.00 | +0.61 | +0.21 |
 | lemoncashp2p | 1,640.00 | 1,649.00 | +0.55 | +0.15 |
-| bitgetp2p | 1,640.21 | 1,647.39 | +0.44 | +0.04 |
-| binancep2p | 1,640.50 | 1,645.50 | +0.30 | -0.10 |
-| bingxp2p | 1,639.51 | 1,643.20 | +0.23 | -0.17 |
+| bitgetp2p | 1,640.30 | 1,647.99 | +0.47 | +0.07 |
+| binancep2p | 1,640.00 | 1,646.00 | +0.37 | -0.03 |
+| bingxp2p | 1,639.69 | 1,643.20 | +0.21 | -0.19 |
 | okexp2p | 1,641.00 | 1,644.00 | +0.18 | -0.22 |
-| bybitp2p | 1,639.55 | 1,642.00 | +0.15 | -0.25 |
+| bybitp2p | 1,639.51 | 1,641.00 | +0.09 | -0.31 |
 
 ### Aviso P2P cubierto al instante en una app (por llenado)
 
 | plataforma | estrategia | precio del aviso | cubre en | precio | neto % |
 |---|---|---|---|---|---|
-| eldoradop2p | aviso de VENTA en P2P, compra en app | 1,659.30 | bitsoalpha | 1,648.94 | +0.43 |
+| eldoradop2p | aviso de VENTA en P2P, compra en app | 1,658.50 | bitsoalpha | 1,648.99 | +0.38 |
 | eldoradop2p | aviso de COMPRA en P2P, venta en app | 1,630.00 | fiwind | 1,637.00 | +0.23 |
 | kucoinp2p | aviso de COMPRA en P2P, venta en app | 1,636.00 | fiwind | 1,637.00 | -0.14 |
-| lemoncashp2p | aviso de VENTA en P2P, compra en app | 1,649.00 | bitsoalpha | 1,648.94 | -0.20 |
-| bitgetp2p | aviso de VENTA en P2P, compra en app | 1,647.39 | bitsoalpha | 1,648.94 | -0.29 |
-| bingxp2p | aviso de COMPRA en P2P, venta en app | 1,639.51 | fiwind | 1,637.00 | -0.35 |
-| bybitp2p | aviso de COMPRA en P2P, venta en app | 1,639.55 | fiwind | 1,637.00 | -0.36 |
-| kucoinp2p | aviso de VENTA en P2P, compra en app | 1,646.00 | bitsoalpha | 1,648.94 | -0.38 |
+| lemoncashp2p | aviso de VENTA en P2P, compra en app | 1,649.00 | bitsoalpha | 1,648.99 | -0.20 |
+| bitgetp2p | aviso de VENTA en P2P, compra en app | 1,647.99 | bitsoalpha | 1,648.99 | -0.26 |
+| bybitp2p | aviso de COMPRA en P2P, venta en app | 1,639.51 | fiwind | 1,637.00 | -0.35 |
+| bingxp2p | aviso de COMPRA en P2P, venta en app | 1,639.69 | fiwind | 1,637.00 | -0.36 |
+| binancep2p | aviso de VENTA en P2P, compra en app | 1,646.00 | bitsoalpha | 1,648.99 | -0.38 |
 
 ## 3. Diferencia de funding entre exchanges (delta neutral, sin contado)
 
@@ -68,40 +68,40 @@ Fuentes: {'Bitget': 857, 'KuCoin': 696, 'HTX': 391, 'OKX': 507, 'Gate': 1061, 'M
 
 | moneda | corto en (APR) | largo en (APR) | diferencia APR % ahora | REAL últimos días: total % · APR % · días + | costo % | días para cubrir costo | intervalos conocidos |
 |---|---|---|---|---|---|---|---|
-| PONS | Gate (159.0) | MEXC (5.5) | **153.5** | -0.21 · -11 · 43% (6.8 d) | 0.14 | 0.3 | no |
-| BLEND | OKX (-51.3) | KuCoin (-198.2) | **146.9** | +0.12 · +7 · 43% (6.8 d) | 0.22 | 0.5 | sí |
-| CT | MEXC (-8.1) | KuCoin (-118.9) | **110.8** | +0.37 · +20 · 86% (6.8 d) | 0.16 | 0.5 | no |
-| SOON | OKX (111.3) | Bitget (11.0) | **100.4** | +0.26 · +14 · 100% (6.8 d) | 0.22 | 0.8 | sí |
-| DOS | Bitget (11.0) | Gate (-85.2) | **96.1** | -0.02 · -1 · 57% (6.8 d) | 0.22 | 0.8 | sí |
-| AKE | KuCoin (94.6) | Bitget (11.0) | **83.7** | +0.27 · +14 · 57% (6.8 d) | 0.24 | 1.0 | sí |
-| DOOD | OKX (-33.0) | Gate (-113.9) | **80.9** | +0.42 · +23 · 71% (6.7 d) | 0.2 | 0.9 | sí |
-| ZORA | OKX (-134.5) | KuCoin (-205.0) | **70.5** | -0.08 · -4 · 14% (6.8 d) | 0.22 | 1.1 | sí |
-| AAOI | OKX (75.9) | Gate (5.5) | **70.5** | — | 0.2 | 1.0 | sí |
-| Q | Bitget (11.0) | KuCoin (-58.0) | **69.0** | — | 0.24 | 1.3 | sí |
-| F | Bitget (11.0) | KuCoin (-53.2) | **64.2** | — | 0.24 | 1.4 | sí |
-| SOXL | OKX (59.1) | Gate (0.0) | **59.1** | — | 0.2 | 1.2 | sí |
-| CHIP | Bitget (11.0) | OKX (-44.7) | **55.7** | — | 0.22 | 1.4 | sí |
-| MUU | MEXC (53.3) | Gate (0.0) | **53.3** | — | 0.14 | 1.0 | no |
-| COIN | OKX (52.8) | Bitget (0.0) | **52.8** | — | 0.22 | 1.5 | sí |
+| JCT | KuCoin (294.3) | Bitget (11.0) | **283.4** | +1.73 · +92 · 100% (6.8 d) | 0.24 | 0.3 | sí |
+| BLEND | OKX (-120.9) | KuCoin (-259.7) | **138.8** | +0.12 · +7 · 43% (6.8 d) | 0.22 | 0.6 | sí |
+| CT | OKX (-6.2) | KuCoin (-131.2) | **124.9** | -0.59 · -32 · 43% (6.8 d) | 0.22 | 0.6 | sí |
+| DOOD | OKX (-22.7) | Gate (-128.8) | **106.1** | +0.42 · +23 · 71% (6.7 d) | 0.2 | 0.7 | sí |
+| SOON | OKX (111.7) | Bitget (11.0) | **100.7** | +0.26 · +14 · 100% (6.8 d) | 0.22 | 0.8 | sí |
+| PONS | Gate (103.1) | MEXC (5.5) | **97.7** | -0.21 · -11 · 43% (6.8 d) | 0.14 | 0.5 | no |
+| AKE | KuCoin (99.2) | Bitget (11.0) | **88.3** | +0.27 · +14 · 57% (6.8 d) | 0.24 | 1.0 | sí |
+| AAOI | OKX (77.0) | Bitget (2.4) | **74.6** | +0.13 · +7 · 57% (6.7 d) | 0.22 | 1.1 | sí |
+| F | Bitget (11.0) | KuCoin (-60.2) | **71.2** | — | 0.24 | 1.2 | sí |
+| AGT | Gate (195.6) | MEXC (126.4) | **69.2** | — | 0.14 | 0.7 | sí |
+| ZORA | OKX (-145.7) | KuCoin (-206.5) | **60.8** | — | 0.22 | 1.3 | sí |
+| BIGTIME | Bitget (11.0) | OKX (-48.6) | **59.6** | — | 0.22 | 1.3 | sí |
+| CHIP | Bitget (11.0) | OKX (-45.7) | **56.6** | — | 0.22 | 1.4 | sí |
+| XMR | Hyperliquid (62.6) | KuCoin (11.0) | **51.6** | — | 0.21 | 1.5 | sí |
+| COIN | OKX (50.4) | Bitget (0.0) | **50.4** | — | 0.22 | 1.6 | sí |
 
-**Extremos** (alguna pata > 300% APR: tokens nuevos o squeezes; pueden darse vuelta en horas, alto riesgo): AXIS 2212.3% (Bitget/MEXC), BIRB 1889.5% (KuCoin/Gate), ANIME 1206.5% (KuCoin/Hyperliquid), LA 1158.9% (Bitget/Gate), IN 1092.6% (MEXC/Gate), ORDER 895.3% (MEXC/Gate), TREE 494.1% (Bitget/Gate), ALT 402.5% (Bitget/Gate)
+**Extremos** (alguna pata > 300% APR: tokens nuevos o squeezes; pueden darse vuelta en horas, alto riesgo): T 2856.9% (Bitget/Gate), ARK 669.3% (MEXC/Gate), IRYS 634.5% (OKX/KuCoin), ALT 597.2% (Bitget/Gate), BIRB 560.9% (Bitget/Gate), ORDER 528.4% (OKX/MEXC), AXIS 485.3% (MEXC/OKX), ANIME 455.7% (Gate/Bitget)
 
-**Persistencia** (últimas 3 corridas, diferencia ≥ 20% APR): BLEND 3/3 (prom. 178.9%), Q 3/3 (prom. 114.4%), DOOD 3/3 (prom. 110.5%), CT 3/3 (prom. 112.8%), SOON 3/3 (prom. 100.2%), SOXL 3/3 (prom. 80.5%), AKE 3/3 (prom. 89.7%), ZORA 3/3 (prom. 78.8%), MUU 3/3 (prom. 66.1%), CHIP 3/3 (prom. 65.0%), AAOI 3/3 (prom. 69.7%), PROS 2/3 (prom. 197.6%)
+**Persistencia** (últimas 4 corridas, diferencia ≥ 20% APR): BLEND 4/4 (prom. 168.9%), DOOD 4/4 (prom. 109.4%), CT 4/4 (prom. 115.8%), SOON 4/4 (prom. 100.3%), AKE 4/4 (prom. 89.3%), ZORA 4/4 (prom. 74.3%), CHIP 4/4 (prom. 62.9%), AAOI 4/4 (prom. 70.9%), Q 3/4 (prom. 114.4%), SOXL 3/4 (prom. 80.5%), MUU 3/4 (prom. 66.1%), F 3/4 (prom. 65.0%)
 
 ### Funding más alto (para carry con contado o como pata corta)
 
 | exchange | moneda | APR % | intervalo h | volumen 24 h USD |
 |---|---|---|---|---|
-| KuCoin | JCT | 324.1 | 4.0 | 11,199,958 |
-| MEXC | JCT | 246.2 | 4.0 | 9,433,591 |
-| KuCoin | READY | 186.6 | 4.0 | 1,828,342 |
-| Gate | PONS | 159.0 | 4.0 | 1,462,617 |
-| OKX | UP | 141.4 | 4.0 | 1,059,478 |
-| KuCoin | AGT | 120.0 | 4.0 | 2,936,986 |
-| KuCoin | STAR | 116.9 | 4.0 | 1,629,714 |
-| OKX | SOON | 111.3 | 4.0 | 5,897,688 |
-| MEXC | AGT | 110.6 | 4.0 | 6,229,470 |
-| KuCoin | NES | 103.4 | 4.0 | 1,855,635 |
+| KuCoin | JCT | 294.3 | 4.0 | 11,436,388 |
+| KuCoin | READY | 267.4 | 4.0 | 1,828,344 |
+| MEXC | JCT | 237.6 | 4.0 | 9,600,531 |
+| Gate | AGT | 195.6 | 4.0 | 4,633,938 |
+| KuCoin | AGT | 187.2 | 4.0 | 2,808,824 |
+| Gate | JCT | 168.6 | 4.0 | 24,298,297 |
+| MEXC | AGT | 126.4 | 4.0 | 6,357,813 |
+| OKX | SOON | 111.7 | 4.0 | 5,853,782 |
+| KuCoin | STAR | 106.2 | 4.0 | 1,629,982 |
+| Gate | PONS | 103.1 | 4.0 | 1,471,229 |
 
 ## 4. Préstamo de stablecoins (sin riesgo de precio; riesgo del exchange)
 
@@ -109,17 +109,35 @@ Fuentes: {'Bitget': 857, 'KuCoin': 696, 'HTX': 391, 'OKX': 507, 'Gate': 1061, 'M
 |---|---|---|---|
 | Bitfinex | USD | 10.97 | tasa FRR diaria x 365; varía cada hora |
 | Bitfinex | USDT | 9.43 | tasa FRR diaria x 365; varía cada hora |
-| Binance | USDT | 6.55 | Simple Earn flexible; el máximo suele ser solo para el primer tramo |
+| Binance | USDT | 6.49 | Simple Earn flexible; el máximo suele ser solo para el primer tramo |
 | OKX | USDT | 3.5 | préstamo simple, tasa estimada |
+
+### DeFi: stablecoins en protocolos grandes (sin pérdida impermanente, TVL ≥ 20 M USD)
+
+APY base = intereses o comisiones reales; los premios en tokens van aparte (se pueden cortar). Riesgo: contratos y depeg. Sirve para la plata que no está trabajando.
+
+| protocolo | red | pool | TVL M USD | APY base % | premios % | APY medio 30 d % |
+|---|---|---|---|---|---|---|
+| axis | Ethereum | SUSDX | 52.1 | 15.03 | 0.0 | 19.09 |
+| apyx-protocol | Ethereum | APXUSD | 152.3 | 12.98 | 0.0 | 12.97 |
+| saturn | Ethereum | SUSDAT | 45.7 | 12.9 | 0.0 | 12.74 |
+| aave-v3 | Ethereum | USDC | 54.8 | 12.32 | 1.77 | 5.99 |
+| re | Ethereum | REUSDE | 30.1 | 11.8 | 0.0 | 11.84 |
+| unitas-usdu | BSC | SUSDU | 38.8 | 11.58 | 0.0 | 11.6 |
+| tori-finance | Ethereum | STRUSD | 63.5 | 10.0 | 0.0 | 10.44 |
+| midas-rwa | Ethereum | USDC | 29.0 | 8.17 | 0.0 | 7.58 |
+| pareto-credit | Ethereum | USDC | 131.5 | 8.06 | 0.0 | 8.01 |
+| bitway-earn | BSC | USDT | 22.0 | 8.0 | 0.0 | 8.0 |
 
 ## 5. Eventos: launchpools y promociones
 
 Sin launchpools activos de MEXC en este momento.
 ## 6. Paper de diferencias de funding (cobros reales desde la apertura simulada)
 
-50 € por pata · abiertas 0 · cerradas 1 · **total -0.1400 €** (realizado -0.1400, abierto +0.0000)
+50 € por pata · abiertas 1 · cerradas 1 · **total -0.3800 €** (realizado -0.1400, abierto -0.2400)
 
 | posición | abierta | días | cobros | funding € | base € | comisiones € | neto € |
 |---|---|---|---|---|---|---|---|
+| JCT:KuCoin/Bitget | 10-25 00:51 | 0.0 | 0 | +0.0000 | +0.0000 | 0.2400 | -0.2400 |
 | IRYS (cerrada) | 10-24 22:47 | 0.0 | 1 | +0.0000 | +0.0000 | 0.1400 | -0.1400 |
 
