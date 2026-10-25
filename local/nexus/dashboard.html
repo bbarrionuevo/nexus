@@ -104,6 +104,9 @@ ul.plain { margin: 0; padding-left: 18px; }
     <section class="card w4">
       <h2>Resultado por clima <span class="muted">vigente · control</span></h2>
       <div class="tablewrap"><table id="regimes"></table></div>
+      <h2 style="margin-top:14px">Elegir pares por evidencia <span class="muted">fuera de muestra</span></h2>
+      <div class="tablewrap"><table id="selection"></table></div>
+      <div class="note">Promovido = par elegido con sus vueltas anteriores. Si no le gana a "explorando", elegir por evidencia no sirve.</div>
     </section>
 
     <section class="card w8">
@@ -288,7 +291,12 @@ function renderState(d) {
   drawChart(d.curves);
   const lab = st.lab || [];
   setText("lab-count", `${lab.length} pares · pausados: ${lab.filter(b => b.paused).length}`);
+  table("selection", [{ h: "Selección", f: r => r[0] }, { h: "Vueltas", num: true, f: r => num(r[1].n) },
+    { h: "Total", num: true, f: r => [eur(r[1].total), signCls(r[1].total)] }, { h: "Media", num: true, f: r => [eur(r[1].mean, 4), signCls(r[1].mean)] }],
+    Object.entries(ev.selection || {}), "Se llena cuando el laboratorio promueva pares.");
   table("lab", [{ h: "Par", f: r => r.sym }, { h: "Estado", f: r => r.paused ? ["pausado", "secondary"] : r.state === "long" ? "comprado" : "esperando" },
+    { h: "Selección", f: r => r.sel === "promovido" ? ["★ promovido", "up"] : "explorando" },
+    { h: "Puntaje", num: true, f: r => r.score == null ? "—" : [nf(4).format(r.score), signCls(r.score)] },
     { h: "PnL", num: true, f: r => [eur(r.pnl_eur), signCls(r.pnl_eur)] }, { h: "Vueltas", num: true, f: r => num(r.roundtrips) },
     { h: "Stops", num: true, f: r => num(r.stops) }, { h: "Vol %/min", num: true, f: r => r.vol_1m_pct == null ? "—" : nf(3).format(r.vol_1m_pct) },
     { h: "Tendencia", num: true, f: r => r.er == null ? "—" : nf(2).format(r.er) },

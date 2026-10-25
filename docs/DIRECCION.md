@@ -29,6 +29,12 @@ el sobreajuste a datos pasados y no depender de que una sola estrategia sirva pa
 
 ## Etapas
 1. (25-oct) Registro de clima + grupo de control + informe por clima. Sin cambiar la operación.
-2. Con 3-5 días de datos: condiciones de cada estrategia definidas con evidencia hacia adelante.
-3. Asignador entre estrategias y destino por defecto en préstamo de stablecoins.
+   (25-oct) Modelo de llenado 3: la orden se llena solo si el volumen cubre la cola Y la orden
+   entera. El modelo 2 inventaba vueltas en pares de un tick de spread con colas largas.
+2. (25-oct) Asignador de pares del laboratorio (`nexus/allocator.py`): conserva los pares con cota
+   inferior positiva y explora con el resto; cada vuelta queda marcada "promovido"/"explorando" al
+   entrar, así la selección se mide fuera de muestra. Con 3-5 días de datos: condiciones de cada
+   estrategia definidas con evidencia hacia adelante.
+3. Si "promovido" le gana a "explorando" fuera de muestra: los libros operados pasan a ser los mejores
+   promovidos. Asignador entre estrategias y destino por defecto en préstamo de stablecoins.
 4. Dinero real según R-15: 20 € una semana, luego 100 €, sumando pares y exchanges.

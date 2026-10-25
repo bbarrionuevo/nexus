@@ -79,6 +79,16 @@ def by_regime(trades):
                 for c, v in cats.items()} for d, cats in out.items()}
 
 
+def by_selection(trades):
+    """Laboratorio por estado de selección al ENTRAR (promovido / explorando, ver allocator.py).
+    "promovido" es fuera de muestra: la promoción se decidió con vueltas anteriores."""
+    d = defaultdict(list)
+    for t in trades:
+        if t.get("lab"):
+            d[t.get("sel") or "sin dato"].append(t["pnl"])
+    return {k: stats(v) for k, v in sorted(d.items())}
+
+
 def daily(trades):
     d = defaultdict(float)
     for t in trades:
@@ -124,6 +134,7 @@ def evaluate(path, now=None, strategy=None):
             "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit),
             "excluded_old_model": excluded, "strategy": strategy,
             "previous": stats([t["pnl"] for t in valid if t not in trades]) if strategy else None,
+            "selection": by_selection(trades),
             "regimes": {"vigente": by_regime(trades),
                         "control": by_regime([t for t in valid if t.get("strategy") == "control"])}}
 

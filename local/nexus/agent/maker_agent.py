@@ -26,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-from .. import evidence, paths
+from .. import allocator, evidence, paths
 from ..exchanges.mexc import MexcReadOnly, parse_fee
 from ..live_paper_maker import Book
 from .risk import RiskManager
@@ -304,6 +304,7 @@ class Lab:
         self.control = {}                                     # mismo par, misma estrategia SIN filtro de volatilidad
         self.paused = {s: t for s, t in paths.read_json(paths.state("lab_paused.json"), {}).items()
                        if t > time.time()}
+        self.alloc = paths.read_json(paths.state("allocator.json"), {})   # promociones (explorar/explotar)
 
     def is_paused(self, sym):
         return self.paused.get(sym, 0) > time.time()
@@ -333,17 +334,33 @@ class Lab:
                   stop_pct=self.base["stop_pct"], min_edge_pct=self.base["min_edge_pct"],
                   max_hold_s=self.base["max_hold_min"] * 60,
                   on_closed=(lambda e: self.on_closed(e, CONTROL_TAG)) if control else self.on_closed,
-                  max_vol_1m_pct=None if control else self.base.get("max_vol_1m_pct"), context=MARKET.snapshot)
+                  max_vol_1m_pct=None if control else self.base.get("max_vol_1m_pct"),
+                  context=lambda: MARKET.snapshot() | {"sel": allocator.status(self.alloc, sym)})
         key = f"{sym}#{CONTROL_TAG}" if control else sym
         if key in self.saved:
             bk.load(self.saved[key])
         return bk
 
+    def promote(self, now=None):
+        """Califica los pares con sus vueltas y devuelve los promovidos que se conservan (explotar)."""
+        now = now or time.time()
+        if not self.cfg.get("allocator", True):
+            return []
+        c = self.cfg
+        sc = allocator.scores(evidence.load(paths.state("trades.jsonl")), STRATEGY["tag"], now,
+                              c.get("score_window", 60), c.get("score_min_n", 20), c.get("score_days", 7))
+        paused = {s for s in self.paused if self.is_paused(s)}
+        self.alloc, keep = allocator.decide(self.alloc, sc, now, c.get("keep_max", 6), exclude=self.main | paused)
+        save_state("allocator.json", self.alloc)
+        return keep
+
     def reselect(self):
-        picked = select_lab(self.client, self.cfg, self.main | {s for s in self.paused if self.is_paused(s)})
+        promoted = self.promote()
+        picked = select_lab(self.client, self.cfg, self.main | set(promoted) |
+                            {s for s in self.paused if self.is_paused(s)})
         keep = {s for s, b in self.books.items() if b.state == "long"} | \
             {s for s, b in self.control.items() if b.state == "long"}   # no se abandonan posiciones
-        names = [s for s, _ in picked]
+        names = promoted + [s for s, _ in picked][:max(0, self.cfg["max_symbols"] - len(promoted))]
         for s in list(self.books):
             if s not in names and s not in keep:
                 self.saved[s] = self.books.pop(s).to_dict()
@@ -357,7 +374,7 @@ class Lab:
                 self.control[s] = self._book(s, control=True)
         self.order = list(self.books)
         self.selected_at = time.time()
-        log.info("laboratorio: %s", picked)
+        log.info("laboratorio: promovidos %s · explorando %s", promoted, [s for s in names if s not in promoted])
 
     def step(self):
         if not self.cfg.get("enabled"):
@@ -409,7 +426,9 @@ class Lab:
         out = []
         for b in self.books.values():
             c = self.control.get(b.sym)
+            sc = (self.alloc.get("scores") or {}).get(b.sym) or {}
             out.append(b.mark() | {"paused": self.is_paused(b.sym), "vol_1m_pct": b.vol_1m(), "er": b.trend()[0],
+                                   "sel": allocator.status(self.alloc, b.sym), "score": sc.get("score"),
                                    "control": {"pnl_eur": c.mark()["pnl_eur"], "roundtrips": c.rt} if c else None})
         return out
 
