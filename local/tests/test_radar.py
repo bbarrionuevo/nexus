@@ -115,3 +115,17 @@ def test_rulo_por_tamano_y_conversion_local():
     assert [c["platform"] for c in conv] == ["barato", "belo", "fiwind"]
     loops = local_loops(conv, {"USDT": ("okexp2p", 1641), "USDC": ("lemon", 1639)}, [("oficial", 1550)])
     assert loops[0]["convert_at"] == "barato" and abs(loops[0]["net_pct"] - (1641 / (1550 * 1.015) - 1) * 100) < 1e-3
+
+
+def test_market_making_estable_prioriza_actividad_y_descuenta_comisiones():
+    from nexus.discovery.stable_mm import analyze, is_candidate, usd_rates
+    assert is_candidate("USDT", "ARS") and is_candidate("USDC", "USDT") and is_candidate("EUR", "USDT")
+    assert not is_candidate("BTC", "USDT") and not is_candidate("USDT", "BTC")
+    rows = [("Binance", "USDTARS", "USDT", "ARS", 1640.0, 1645.0, 1.0, 1640e6, 100_000),
+            ("Binance", "EURIUSDC", "EURI", "USDC", 1.10, 1.105, 0.0001, 6000, 50),          # ancho pero sin actividad
+            ("Binance", "USDCUSDT", "USDC", "USDT", 0.9998, 0.9999, 0.0001, 1e9, 500_000)]
+    assert abs(usd_rates({("USDT", "ARS"): (1640.0, 1645.0)})["ARS"] - 1 / 1642.5) < 1e-12
+    res = analyze(rows)
+    assert res[0]["symbol"] == "USDTARS" and abs(res[0]["vol_usd_24h"] - 1640e6 / 1642.5) < 2
+    usdc = next(x for x in res if x["symbol"] == "USDCUSDT")
+    assert usdc["net_pct"][0.0] > 0 > usdc["net_pct"][0.075]                                  # solo con comisión cero
