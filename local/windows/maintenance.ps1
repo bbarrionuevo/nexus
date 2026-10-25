@@ -38,4 +38,18 @@ try {
 } catch {
   Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: no se pudo verificar el tablero: $_"
 }
+# Latido cada 5 min (comandos de seguridad remotos, chequeo previo y estado para la sesión de Claude).
+try {
+  if (-not (Get-ScheduledTask -TaskName "nexus-latido" -ErrorAction SilentlyContinue)) {
+    $S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+      -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -MultipleInstances IgnoreNew
+    $A = New-ScheduledTaskAction -Execute "powershell.exe" `
+      -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Dir\local\windows\latido.ps1`""
+    $T = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+    Register-ScheduledTask -TaskName "nexus-latido" -Action $A -Trigger $T -Settings $S -Force | Out-Null
+    Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: se creó la tarea del latido (5 min)"
+  }
+} catch {
+  Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: no se pudo crear el latido: $_"
+}
 & $Py "$Dir\local\windows\report_status.py" *>> "$env:NEXUS_HOME\logs\status.log"
