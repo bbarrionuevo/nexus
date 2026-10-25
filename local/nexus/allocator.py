@@ -45,11 +45,14 @@ def scores(trades, strategy, now, window=60, min_n=20, days=7):
     return out
 
 
-def decide(state, sc, now, keep_max=6, exclude=()):
+def decide(state, sc, now, keep_max=6, exclude=(), eval_max=3, eval_min_n=5):
     """Actualiza las promociones con los puntajes nuevos y devuelve (estado, pares a conservar).
     Un par se promueve con puntaje > 0 y deja de estarlo cuando su puntaje ya no es positivo o se
     quedó sin vueltas recientes. Los excluidos (pausados, operados) siguen calificándose pero no
-    ocupan lugar en el laboratorio."""
+    ocupan lugar en el laboratorio.
+    También se conservan hasta `eval_max` pares EN EVALUACIÓN (media > 0 con al menos `eval_min_n`
+    vueltas pero todavía sin las necesarias para la cota): sin esto, al re-elegir (o al reiniciar por
+    una actualización) se soltaba un par prometedor antes de juntar evidencia suficiente."""
     promoted = dict(state.get("promoted") or {})
     history = list(state.get("history") or [])
     for sym, v in sc.items():
@@ -63,7 +66,11 @@ def decide(state, sc, now, keep_max=6, exclude=()):
             del promoted[sym]
             history.append({"ts": now, "sym": sym, "event": "descartado", "score": v.get("score"), "n": v.get("n", 0)})
     keep = sorted((s for s in promoted if s not in set(exclude)), key=lambda s: -sc[s]["score"])[:keep_max]
-    return {"ts": now, "promoted": promoted, "scores": sc, "history": history[-200:]}, keep
+    evaluating = sorted((s for s, v in sc.items() if s not in promoted and s not in set(exclude)
+                         and v["score"] is None and v["n"] >= eval_min_n and (v.get("mean") or 0) > 0),
+                        key=lambda s: -(sc[s].get("mean") or 0))[:eval_max]
+    return {"ts": now, "promoted": promoted, "evaluating": evaluating, "scores": sc,
+            "history": history[-200:]}, keep + evaluating
 
 
 def recommend(state, top=3):

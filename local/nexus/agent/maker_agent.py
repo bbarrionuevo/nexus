@@ -488,7 +488,8 @@ class Lab:
         sc = allocator.scores(evidence.load(paths.state("trades.jsonl")), STRATEGY["tag"], now,
                               c.get("score_window", 60), c.get("score_min_n", 20), c.get("score_days", 7))
         paused = {s for s in self.paused if self.is_paused(s)}
-        self.alloc, keep = allocator.decide(self.alloc, sc, now, c.get("keep_max", 6), exclude=self.main | paused)
+        self.alloc, keep = allocator.decide(self.alloc, sc, now, c.get("keep_max", 6), exclude=self.main | paused,
+                                            eval_max=c.get("eval_max", 3), eval_min_n=c.get("eval_min_n", 5))
         save_state("allocator.json", self.alloc)
         return keep
 
@@ -514,7 +515,8 @@ class Lab:
                 self.control[s] = self._book(s, control=True)
         self.order = list(self.books)
         self.selected_at = time.time()
-        log.info("laboratorio: promovidos %s · explorando %s", promoted, [s for s in names if s not in promoted])
+        log.info("laboratorio: conservados (promovidos/en evaluación/gemelos) %s · explorando %s", promoted,
+                 [s for s in names if s not in promoted])
 
     def step(self):
         if not self.cfg.get("enabled"):
