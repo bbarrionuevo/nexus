@@ -192,9 +192,11 @@ def to_markdown(res, hist):
         md += ["### DeFi: stablecoins en protocolos grandes (sin pérdida impermanente, TVL ≥ 20 M USD)", "",
                "APY base = intereses o comisiones reales; los premios en tokens van aparte (se pueden cortar). "
                "Riesgo: contratos y depeg. Sirve para la plata que no está trabajando.", "",
-               "| protocolo | red | pool | TVL M USD | APY base % | premios % | APY medio 30 d % |", "|---|---|---|---|---|---|---|"]
-        md += [f"| {x['project']} | {x['chain']} | {x['symbol']} | {x['tvl_musd']} | {x['apy_base']} | {x['apy_reward']} | "
-               f"{x['apy_30d_mean']} |" for x in res["defi"][:10]]
+               "| protocolo | tipo | red | pool | TVL M USD | APY base % | premios % | APY medio 30 d % |",
+               "|---|---|---|---|---|---|---|---|"]
+        defi = [x for x in res["defi"] if x.get("bluechip")][:6] + [x for x in res["defi"] if not x.get("bluechip")][:5]
+        md += [f"| {x['project']} | {'consolidado' if x.get('bluechip') else 'nuevo / sintético'} | {x['chain']} | {x['symbol']} | "
+               f"{x['tvl_musd']} | {x['apy_base']} | {x['apy_reward']} | {x['apy_30d_mean']} |" for x in defi]
         md.append("")
     lp = res.get("launchpools") or []
     ev = res.get("events") or []

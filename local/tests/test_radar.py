@@ -82,8 +82,11 @@ def test_paper_de_diferencias_abre_solo_lo_que_ya_pago_y_acumula_cobros():
     st = px.step(st, cross, lambda ex, sym: hist.get((ex, sym), []), now=NOW + 5 * 3600)
     p = st["open"]["IRYS:MEXC/OKX"]
     assert p["settlements"] == 2 and abs(p["funding"] - 50 * 0.0003) < 1e-12
-    cross[0]["realized"] = (-0.5, -20.0, 0.3, 6.8)                                 # dejó de pagar
+    cross[0] = cross[0] | {"short": "Gate", "realized": (-0.5, -20.0, 0.3, 6.8)}      # otra combinación: no la cierra
     st = px.step(st, cross, lambda ex, sym: hist.get((ex, sym), []), now=NOW + 6 * 3600)
+    assert "IRYS:MEXC/OKX" in st["open"]
+    hist[("MEXC", "IRYS_USDT")] += [(NOW + 20 * 3600, -0.001)]                     # SUS patas dejan de pagar
+    st = px.step(st, cross, lambda ex, sym: hist.get((ex, sym), []), now=NOW + 25 * 3600)
     assert st["open"] == {} and st["closed"][0]["base"] == "IRYS" and "IRYS (cerrada)" in px.to_markdown(st)
 
 
@@ -143,4 +146,4 @@ def test_defi_solo_stablecoins_grandes_sin_perdida_impermanente():
         {"project": "z", "chain": "Ethereum", "symbol": "USDT", "tvlUsd": 5e6, "apyBase": 30,
          "stablecoin": True, "ilRisk": "no"}]}                                                # TVL chico: fuera
     out = defi_stable_pools(raw)
-    assert [x["project"] for x in out] == ["aave-v3"] and out[0]["tvl_musd"] == 300.0
+    assert [x["project"] for x in out] == ["aave-v3"] and out[0]["tvl_musd"] == 300.0 and out[0]["bluechip"]
