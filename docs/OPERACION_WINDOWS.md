@@ -76,8 +76,11 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
 4. **Autorizá** (pide confirmar que la clave no tiene retiro y escribir una frase exacta):
    ```powershell
    ..\.venv\Scripts\python -m nexus.agent.authorize --capital 20 --dias 7 --pares XXXUSDT --calibracion
-   Stop-ScheduledTask nexus-agente; Start-ScheduledTask nexus-agente
    ```
+   **No hace falta reiniciar**: el agente toma la autorización solo en menos de un minuto. Si alguna
+   vez querés reiniciarlo, usá el reinicio controlado (guarda el estado y cancela sus órdenes):
+   `New-Item $env:LOCALAPPDATA\nexus\state\RESTART`. Hay un solo agente por PC: si quedara uno
+   huérfano, el bucle lo detiene al arrancar y un lock impide que dos operen a la vez.
    `XXXUSDT` es el par que elijamos con la evidencia del laboratorio (te lo indico en el informe).
    `--calibracion` permite empezar antes de cumplir los criterios de paper (excepción de REGLAS.md).
    Sin esa opción, solo autoriza si la evidencia cumple todo R-15.

@@ -9,6 +9,14 @@ $Py = "$Dir\.venv\Scripts\python.exe"
 $Log = "$env:NEXUS_HOME\logs\runner.log"
 function Note($msg) { try { Add-Content $Log "$(Get-Date -Format s) [pid $PID] $msg" } catch {} }
 Note "bucle iniciado"
+# Un solo agente: si quedó uno huérfano (Stop-ScheduledTask detiene este bucle pero no el proceso de
+# Python), se detiene antes de lanzar otro. El 25-oct uno huérfano operó la cuenta real a la vez que el
+# nuevo. El agente además toma un lock exclusivo y no arranca si hay otro (defensa doble).
+try {
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like "*nexus.agent.maker_agent*" } |
+    ForEach-Object { Note "se detiene un agente huérfano (pid $($_.ProcessId))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch { Note "no se pudo revisar agentes huérfanos: $_" }
 try {
   while ($true) {
     $env:NEXUS_VERSION = (git -C $Dir rev-parse --short HEAD)

@@ -461,3 +461,39 @@ def test_reglas_rechazan_pares_no_operables():
     with pytest.raises(ValueError):
         live.Rules({"symbols": [INFO["symbols"][0] | {"orderTypes": ["LIMIT", "MARKET"]}]}, "XUSDT")
     assert live.Rules({"symbols": [INFO["symbols"][0] | {"status": "1"}]}, "XUSDT").min_quote == 1.0
+
+
+def test_un_solo_agente_por_pc(monkeypatch):
+    import nexus.agent.maker_agent as ma
+    held = ma.single_instance()
+    assert held is not None and ma.single_instance() is None       # un segundo proceso no puede
+    monkeypatch.setattr(ma, "run", lambda: (_ for _ in ()).throw(AssertionError("no debía operar")))
+    ma.main(wait_if_busy=0)                                         # sale sin operar
+    held.close()
+    again = ma.single_instance()
+    assert again is not None                                        # liberado al cerrar
+    again.close()
+
+
+def test_monto_real_cuenta_lo_invertido_en_la_posicion(monkeypatch):
+    import time
+    from nexus import paths
+    from nexus.agent import live
+    import nexus.agent.maker_agent as ma
+    import nexus.exchanges.mexc_trade as mt
+    cfg = ma.load_config()
+    fake = FakeMexc()
+    fake.has_keys = True
+    fake.book_ticker = lambda s: {"bidPrice": "1.74", "bidQty": "5", "askPrice": "1.745", "askQty": "5"}
+    fake.trade_fee = lambda s: {"makerCommission": 0, "takerCommission": 0.0005}
+    fake.balances = {"X": 11.49, "USDT": 9.34}                      # 20 USDT ya están en la posición
+    monkeypatch.setattr(mt, "MexcTrader", lambda: fake)
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": time.time(), "expires": time.time() + 3600,
+                                                           "capital_eur": 20, "symbols": ["XUSDT"],
+                                                           "sin_retiro_confirmado": True})
+    paths.write_json_atomic(paths.state(live.STATE_FILE), {"XUSDT": {"model": "real", "state": "long", "pos_qty": 11.49,
+                                                                     "pos_cost": 19.98, "rt_qty": 11.49, "rt_cost": 19.98,
+                                                                     "entry": 1.739, "qty": 11.49, "seq": 4}})
+    desk = ma.build_desk(cfg, fake, 0.0, 0.05)
+    bk = desk.books["XUSDT"]
+    assert bk.notional == 20 and bk.state == "long" and not bk.blocked and bk.seq == 4
