@@ -74,13 +74,38 @@ def check_mexc(c):
             "comision_maker_taker_pct": fees}
 
 
+def key_warnings(r):
+    """Problemas de los permisos de una clave de Binance (vacío = bien para la cobertura)."""
+    w = []
+    if r.get("enableWithdrawals"):
+        w.append("LA CLAVE PERMITE RETIROS: desactivalo ya en Binance (R-01). La cobertura no se activa así")
+    if not r.get("enableSpotAndMarginTrading"):
+        w.append("la clave no tiene trading spot: la cobertura no puede operar")
+    if r.get("enableInternalTransfer") or r.get("permitsUniversalTransfer"):
+        w.append("la clave permite transferencias: no hacen falta, conviene sacarlas (mínimo permiso)")
+    if r.get("enableFutures") or r.get("enableMargin") or r.get("enablePortfolioMarginTrading"):
+        w.append("la clave permite futuros o margen: no hacen falta, conviene sacarlos")
+    if not r.get("ipRestrict"):
+        w.append("la clave no está limitada a la IP de la PC: conviene limitarla")
+    return w
+
+
 def check_binance(c):
     acc = c._get("/api/v3/account", signed=True)
     rates = acc.get("commissionRates") or {}
-    return {"canTrade": acc.get("canTrade"), "canWithdraw": acc.get("canWithdraw"),
-            "permissions": acc.get("permissions"), "activos_con_saldo": _nonzero(acc.get("balances", [])),
-            "comision_maker_taker_pct": (float(rates["maker"]) * 100, float(rates["taker"]) * 100)
-            if rates else None}
+    out = {"canTrade": acc.get("canTrade"), "canWithdraw": acc.get("canWithdraw"),
+           "permissions": acc.get("permissions"), "activos_con_saldo": _nonzero(acc.get("balances", [])),
+           "comision_maker_taker_pct": (float(rates["maker"]) * 100, float(rates["taker"]) * 100)
+           if rates else None}
+    try:
+        r = c.api_restrictions()
+        out["permisos_de_la_clave"] = {"retiros": r.get("enableWithdrawals"), "trading_spot": r.get("enableSpotAndMarginTrading"),
+                                       "transferencias": bool(r.get("enableInternalTransfer") or r.get("permitsUniversalTransfer")),
+                                       "ip_limitada": r.get("ipRestrict")}
+        out["avisos"] = key_warnings(r) or ["permisos correctos para la cobertura"]
+    except Exception as e:                                           # noqa: BLE001
+        out["permisos_de_la_clave"] = f"sin dato ({type(e).__name__})"
+    return out
 
 
 def check_kraken(c):
@@ -132,8 +157,14 @@ def run(exchanges=EXCHANGES, out=print, check_clock=True):
             out(f"{name}: ERROR {describe_error(e)}")
             code = max(code, 1)
             continue
+        avisos = r.pop("avisos", None)
         out(f"{name}: OK {r}")
-        if r.get("canWithdraw"):
+        for a in avisos or []:
+            out(f"  {name}: {a}")
+        perms = r.get("permisos_de_la_clave")
+        if isinstance(perms, dict) and perms.get("retiros"):
+            code = max(code, 2)                          # la clave misma permite retirar: R-01 roto
+        elif r.get("canWithdraw") and not (isinstance(perms, dict) and perms.get("retiros") is False):
             out(f"  ADVERTENCIA R-01 ({name}): la cuenta informa retiros habilitados. Puede ser un dato de la "
                 "cuenta y no de la clave: confirmá en la web que la clave NO tenga permiso de retiro.")
             code = max(code, 2)

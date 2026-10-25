@@ -231,6 +231,8 @@ def test_el_agente_arma_la_cobertura_y_reserva_su_usdt(monkeypatch):
     b.account = lambda: {"canTrade": True, "canWithdraw": False,
                          "balances": [{"asset": a, "free": str(v), "locked": "0"} for a, v in b.balances.items()]}
     b.exchange_info = lambda s: BINFO
+    perms = {"enableReading": True, "enableSpotAndMarginTrading": True, "enableWithdrawals": True, "ipRestrict": True}
+    b.api_restrictions = lambda: perms
     monkeypatch.setattr(mt, "MexcTrader", lambda: m)
     monkeypatch.setattr(bt, "BinanceTrader", lambda: b)
 
@@ -242,6 +244,8 @@ def test_el_agente_arma_la_cobertura_y_reserva_su_usdt(monkeypatch):
     now = time.time()
     paths.write_json_atomic(paths.state(hedge_live.HEDGE_AUTH), {"ts": now, "expires": now + 3600, "symbols": ["XUSDT"],
                                                                  "lot_usdt": 10, "sin_retiro_confirmado": True})
+    assert ma.build_hedge_desk(cfg, Data()) is None                       # R-01: la clave permite retiros
+    perms["enableWithdrawals"] = False
     desk = ma.build_hedge_desk(cfg, Data())
     desk.step()
     assert sorted(o["side"] for o in m.orders.values()) == ["BUY", "SELL"] and desk.status()["pairs"][0]["sym"] == "XUSDT"
@@ -266,3 +270,12 @@ def test_desbloqueo_humano_de_la_cobertura(h):
     desk.step()
     assert p.blocked is None and not paths.state(hedge_live.HEDGE_UNBLOCK).exists()
     assert sorted(o["side"] for o in m.orders.values() if o["status"] == "NEW") == ["BUY", "SELL"]
+
+
+def test_avisos_de_permisos_de_la_clave_de_binance():
+    from nexus.check_keys import key_warnings
+    ok = {"enableSpotAndMarginTrading": True, "ipRestrict": True}
+    assert key_warnings(ok) == []
+    w = key_warnings(ok | {"enableWithdrawals": True, "permitsUniversalTransfer": True, "ipRestrict": False})
+    assert any("RETIROS" in x for x in w) and any("transferencias" in x for x in w) and any("IP" in x for x in w)
+    assert any("trading spot" in x for x in key_warnings({"ipRestrict": True}))

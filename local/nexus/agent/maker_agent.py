@@ -493,8 +493,15 @@ def build_hedge_desk(cfg, client):
         acc = binance.account()
         if acc.get("canTrade") is False:
             raise RuntimeError("la clave de Binance no tiene permiso de trading spot")
-        if acc.get("canWithdraw") and not (auth or {}).get("sin_retiro_confirmado"):
-            raise RuntimeError("R-01: Binance informa retiros y el dueño no confirmó que la clave no los tenga")
+        # R-01 verificado, no confiado: Binance dice qué permisos tiene la clave de verdad
+        from ..check_keys import key_warnings
+        perms = binance.api_restrictions()
+        if perms.get("enableWithdrawals"):
+            raise RuntimeError("R-01: la clave de Binance PERMITE RETIROS. Desactivalo en Binance")
+        if not perms.get("enableSpotAndMarginTrading"):
+            raise RuntimeError("la clave de Binance no tiene trading spot habilitado")
+        for w in key_warnings(perms):
+            log.warning("clave de Binance: %s", w)
     except Exception as e:                                           # noqa: BLE001
         log.error("COBERTURA NO ACTIVADA: %s", e)
         return None
