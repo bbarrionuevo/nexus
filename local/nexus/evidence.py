@@ -16,8 +16,10 @@ MIN_DAYS, MIN_TRADES, MIN_POS_DAYS, EXTRA_FEE_PCT = 7, 300, 5, 0.02
 # Versión del modelo de llenado. 2 = ya no se llenan órdenes con operaciones previas a la orden
 # (defecto 3, 24-oct-2026). 3 = la orden se llena recién cuando el volumen operado a su precio cubre
 # la cola de adelante MÁS la orden entera (defecto 4, 25-oct-2026: antes bastaba con pasar la cola por
-# una unidad). Las vueltas de modelos anteriores quedan en el diario pero no cuentan.
-FILL_MODEL = 3
+# una unidad). 4 = la cola de adelante nunca supera lo visible en nuestro nivel: si los demás cancelan,
+# avanzamos (defecto 5, 25-oct-2026: el real se llenaba justo cuando el nivel se vaciaba antes de una
+# baja y el paper no). Las vueltas de modelos anteriores quedan en el diario pero no cuentan.
+FILL_MODEL = 4
 
 
 def load(path, since=None, min_model=FILL_MODEL):

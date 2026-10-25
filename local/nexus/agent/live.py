@@ -35,6 +35,7 @@ MAX_AUTO_PAIRS = 3                               # modo automático: hasta 3 par
 MAX_REJECTS, UNKNOWN_BLOCK_S, BALANCE_TOL_USDT = 5, 120, 0.5
 EXIT_SLIP_PCT, EXIT_REPRICE_S = 0.5, 3   # salida forzada: límite agresivo hasta 0,5% bajo el bid, re-precio cada 3 s
 ONLINE = ("1", "ENABLED", "TRADING")
+DEPTH_LEVELS = 5                                 # niveles del libro que se piden para verlo sin nuestra orden
 ENDED = ("FILLED", "CANCELED", "PARTIALLY_CANCELED", "REJECTED", "EXPIRED")
 
 
@@ -148,6 +149,30 @@ class LiveBook(Book):
                 setattr(self, k, d[k])
         self.px, self.queue = None, None
         return True
+
+    def market(self, depth):
+        """(bid, bidQty, ask, askQty) del mercado SIN nuestra propia orden, desde /api/v3/depth.
+        bookTicker la incluye: cuando los demás se iban de nuestro nivel, el libro veía "el mejor bid es
+        mi precio", no se movía, y la orden quedaba sola arriba hasta que la llenaban justo antes de que
+        el precio bajara (25-oct: 15 de 21 vueltas reales salieron al precio de entrada, 1 stop; el gemelo
+        en paper, que no está en el libro, se corría y ganaba). Así el real ve el mismo libro que el paper.
+        Si el nivel muestra menos que lo que nos queda, la foto todavía no incluye nuestra orden: no se
+        descuenta."""
+        o = self.order
+        half_tick, half_lot = 0.5 * 10 ** -self.rules.price_dp, 0.5 * 10 ** -self.rules.qty_dp
+        own = (o["side"], o["px"], max(o["qty"] - o["exec_qty"], 0.0)) if o and o.get("px") else None
+
+        def best(levels, side):
+            for p, q in levels:
+                p, q = float(p), float(q)
+                if own and own[0] == side and abs(p - own[1]) < half_tick and q >= own[2] - half_lot:
+                    q -= own[2]
+                if q > half_lot:
+                    return p, q
+            return None, None
+        b, bq = best(depth.get("bids") or [], "BUY")
+        a, aq = best(depth.get("asks") or [], "SELL")
+        return b, bq, a, aq
 
     def mark(self):
         return super().mark() | {"real": True, "pos_qty": self.pos_qty, "dust": self.dust, "blocked": self.blocked,
@@ -497,8 +522,10 @@ class Desk:
         self.unblock_requests()
         for s, bk in self.books.items():
             try:
-                bt = self.client.book_ticker(s)
-                bk.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
+                b, bq, a, aq = bk.market(self.client._get("/api/v3/depth", {"symbol": s, "limit": DEPTH_LEVELS}))
+                if b is None or a is None:
+                    raise ValueError("libro vacío sin nuestra orden")
+                bk.on_book(b, bq, a, aq)
                 self.last_ok[s] = time.time()
             except Exception as e:                           # noqa: BLE001
                 log.warning("real %s: error de ciclo (%s)", s, type(e).__name__)
