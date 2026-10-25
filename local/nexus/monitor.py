@@ -105,7 +105,8 @@ def digest(pc, research_md=None, now=None):
         L += ["", f"**Actualización:** {up.get('result')} {up.get('version') or up.get('candidate') or ''} "
                   f"{'· ' + '; '.join(up.get('reasons', [])) if up.get('reasons') else ''}"]
     if research_md:
-        L += ["", "<details><summary>Investigación automática (últimas 24 h)</summary>", "", research_md, "</details>"]
+        L += ["", "<details><summary>Radar de oportunidades e investigación automática</summary>", "", research_md,
+              "</details>"]
     return "\n".join(L)
 
 
@@ -139,6 +140,11 @@ class Issues:
         c = self.r.get(f"{self.base}/issues/{number}/comments", params={"per_page": 100}).json()
         return c[-1]["body"] if c else ""
 
+    def commented_on(self, number, day):
+        """True si el issue ya tiene un comentario del día `day` (AAAA-MM-DD, UTC)."""
+        c = self.r.get(f"{self.base}/issues/{number}/comments", params={"per_page": 100}).json()
+        return any(str(x.get("created_at", "")).startswith(day) for x in c)
+
     def comment(self, number, body):
         self.r.post(f"{self.base}/issues/{number}/comments", json={"body": body})
 
@@ -168,11 +174,17 @@ def run_watchdog(pc_path, ci_conclusion=None):
     print(body)
 
 
-def run_digest(pc_path, research_path=None):
+def run_digest(pc_path, research_path=None, once_per_day=False):
+    """Publica el informe. once_per_day (corridas programadas): si ya hay uno de hoy, no repite; así
+    puede haber una hora de respaldo por si GitHub saltea la primera (pasó el 25-oct)."""
     research = Path(research_path).read_text(encoding="utf-8") if research_path and Path(research_path).exists() else None
     text = digest(_load(pc_path), research)
     gh = Issues()
     issue = gh.ensure(DIGEST_TITLE, "Informe diario automático de nexus (un comentario por día).")
+    import time as _t
+    if once_per_day and gh.commented_on(issue["number"], _t.strftime("%Y-%m-%d", _t.gmtime())):
+        print("Ya hay informe de hoy: no se repite.")
+        return
     gh.comment(issue["number"], text)
     print(text)
 
@@ -181,4 +193,5 @@ if __name__ == "__main__":
     if sys.argv[1] == "watchdog":
         run_watchdog(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
     elif sys.argv[1] == "digest":
-        run_digest(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
+        run_digest(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None,
+                   once_per_day=os.environ.get("NEXUS_DIGEST_ONCE") == "1")

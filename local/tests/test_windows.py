@@ -603,3 +603,28 @@ def test_evidencia_por_version_de_estrategia(tmp_path):
     ev = evidence.evaluate(p, strategy="v3")
     assert ev["overall"]["n"] == 2 and ev["previous"]["n"] == 1 and ev["strategy"] == "v3"
     assert evidence.evaluate(p)["overall"]["n"] == 3
+
+
+def test_informe_diario_no_se_repite_el_mismo_dia(tmp_path, monkeypatch):
+    import json
+    import time as _t
+    from nexus import monitor
+    posted = []
+
+    class FakeIssues:
+        def ensure(self, title, body):
+            return {"number": 1}
+
+        def commented_on(self, number, day):
+            return day == _t.strftime("%Y-%m-%d", _t.gmtime())
+
+        def comment(self, number, body):
+            posted.append(body)
+
+    monkeypatch.setattr(monitor, "Issues", FakeIssues)
+    pc = tmp_path / "pc.json"
+    pc.write_text(json.dumps({"status": {}}))
+    monitor.run_digest(pc, None, once_per_day=True)
+    assert posted == []                                        # ya había uno hoy: la corrida de respaldo no repite
+    monitor.run_digest(pc, None, once_per_day=False)
+    assert len(posted) == 1                                    # a mano siempre publica
