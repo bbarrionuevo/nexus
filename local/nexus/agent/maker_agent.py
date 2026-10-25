@@ -26,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-from .. import allocator, evidence, paths
+from .. import allocator, evidence, paths, selector
 from ..exchanges.mexc import MexcReadOnly, parse_fee
 from ..live_paper_maker import Book
 from .risk import RiskManager
@@ -166,15 +166,52 @@ def books_snapshot(gate, desk):
 
 
 def rotate(desk, cfg, client, maker, taker):
-    """Modo automático: si los pares promovidos cambiaron, se rearma el escritorio real, pero SOLO
-    cuando todos sus libros están sin posición ni órdenes (nunca se abandona una posición)."""
-    want = set(real_symbols())
-    idle = all(b.state == "flat" and not b.order and not b.unknown for b in desk.books.values())
-    if want == set(desk.books) or not idle:
+    """Si el selector cambió las combinaciones (par, variante) del dinero real, se rearma el escritorio,
+    pero SOLO cuando ningún libro tiene posición ni estado desconocido (nunca se abandona una posición).
+    Una compra puesta sin llenar no impide el cambio: el cierre del escritorio la cancela (antes se
+    exigía "sin órdenes" y, como casi siempre hay una compra puesta, el cambio casi nunca ocurría)."""
+    want = real_choices()
+    have = {s: getattr(b, "strategy", None) for s, b in desk.books.items()}
+    idle = all(b.state == "flat" and not b.unknown and b.pos_qty * (b.bid or b.entry or 0) < b.rules.min_quote
+               for b in desk.books.values())
+    if want == have or not idle:
         return desk
-    log.info("real: cambian los pares %s -> %s", sorted(desk.books), sorted(want))
+    log.info("real: cambian las combinaciones %s -> %s", have, want)
     desk.shutdown()
     return build_desk(cfg, client, maker, taker)
+
+
+def variant_spec(cfg, tag):
+    """Parámetros de una variante para operarla en real: la vigente usa la config base, el control no
+    filtra volatilidad y las demás vienen de lab.variants."""
+    if tag in (None, STRATEGY["tag"]):
+        return {}
+    if tag == CONTROL_TAG:
+        return {"max_vol_1m_pct": None}
+    return dict(((cfg.get("lab") or {}).get("variants") or {}).get(tag) or {})
+
+
+def real_variants(cfg):
+    return {STRATEGY["tag"], CONTROL_TAG} | set(((cfg.get("lab") or {}).get("variants") or {}))
+
+
+def selector_tick(cfg, desk, now=None):
+    """Cada 5 min: puntúa las combinaciones del laboratorio, descarta las que el real perdió y elige
+    de nuevo (nexus/selector.py). Lo usa real_choices(); rotate() aplica el cambio sin posición."""
+    from .live import REAL_TRADES
+    now = now or time.time()
+    since = now - selector.DAYS * 86400
+    paper = evidence.load(paths.state("trades.jsonl"), since=since)
+    real = evidence.load(paths.state(REAL_TRADES), since=since, min_model=0)
+    auth = live_auth()
+    capital = sum(b.notional for b in desk.books.values()) if desk else float((auth or {}).get("capital_eur") or 0)
+    st = selector.update(paths.read_json(paths.state("selector.json"), {}), selector.combo_scores(paper, now), auth,
+                         now, real, paper, capital, STRATEGY["tag"], real_variants(cfg))
+    for h in st["history"][-5:]:
+        if h["ts"] == now:
+            log.warning("selector: %s %s %s (%s)", h["event"], h["sym"], h["strategy"], h.get("why") or h.get("score"))
+    save_state("selector.json", st)
+    return st
 
 
 def live_wanted():
@@ -298,15 +335,28 @@ def save_state(name, data, tries=5):
     return False
 
 
-def real_symbols(auth=None):
-    """Pares que el dinero real puede operar ahora: los autorizados a mano y, en modo automático
-    (`authorize --auto N`), los N promovidos del laboratorio con mejor cota inferior fuera de muestra."""
+def real_choices(auth=None, max_age_s=1800):
+    """{par: variante} que el dinero real puede operar ahora, según el selector (nexus/selector.py):
+    con pares fijos, la mejor variante de cada par autorizado; en modo automático (`--auto N`), las N
+    mejores combinaciones del laboratorio. Si el selector todavía no corrió (o su estado es viejo): los
+    pares autorizados con la vigente, o los N promovidos por el asignador."""
     auth = live_auth() if auth is None else auth
     if not auth:
-        return []
+        return {}
+    st = paths.read_json(paths.state("selector.json"), {})
+    if time.time() - (st.get("ts") or 0) < max_age_s:
+        ch = {s: c["strategy"] for s, c in (st.get("choices") or {}).items()}
+        if auth.get("auto"):
+            return dict(list(ch.items())[:auth["auto"]])
+        return {s: t for s, t in ch.items() if s in (auth.get("symbols") or [])}
     picks = [r["sym"] for r in allocator.recommend(paths.read_json(paths.state("allocator.json"), {}),
                                                     top=auth.get("auto") or 0)] if auth.get("auto") else []
-    return list(dict.fromkeys(list(auth.get("symbols") or []) + picks))
+    return {s: STRATEGY["tag"] for s in dict.fromkeys(list(auth.get("symbols") or []) + picks)}
+
+
+def real_symbols(auth=None):
+    """Pares que el dinero real puede operar ahora (ver real_choices)."""
+    return list(real_choices(auth))
 
 
 def desk_symbols(auth, saved):
@@ -359,6 +409,7 @@ def build_desk(cfg, client, maker, taker):
     from . import live
     auth = live.authorization()
     saved = paths.read_json(paths.state(live.STATE_FILE), {})
+    choices = real_choices(auth)
     syms = desk_symbols(auth, saved)
     if not syms:
         return None
@@ -385,13 +436,19 @@ def build_desk(cfg, client, maker, taker):
         except Exception as e:                                       # noqa: BLE001
             log.error("real %s: sin reglas del par (%s): no se opera", s, e)
             continue
+        tag = choices.get(s) or STRATEGY["tag"]                 # un par con posición guardada: la vigente
+        spec = variant_spec(cfg, tag)
         bk = live.LiveBook(s, trader, rules, olog, save=lambda: None, notional=notional, maker=lmaker, taker=ltaker,
                            stop_pct=cfg["stop_pct"], min_edge_pct=cfg["min_edge_pct"],
-                           max_hold_s=cfg["max_hold_min"] * 60, gate=rgate, on_closed=live.journal_real,
-                           max_vol_1m_pct=cfg.get("max_vol_1m_pct"), context=MARKET.snapshot)
+                           max_hold_s=cfg["max_hold_min"] * 60, gate=rgate,
+                           on_closed=lambda e, t=tag: live.journal_real(e | {"strategy": t}),
+                           max_vol_1m_pct=spec.get("max_vol_1m_pct", cfg.get("max_vol_1m_pct")),
+                           min_imbalance=spec.get("min_imbalance"), improve_ticks=spec.get("improve_ticks", 0),
+                           price_dp=rules.price_dp, context=MARKET.snapshot)
         if s in saved:
             bk.load(saved[s])
-        bk.entry_allowed = lambda s=s: s in real_symbols()
+        bk.strategy = tag
+        bk.entry_allowed = lambda s=s, t=tag: real_choices().get(s) == t
         books[s] = rgate.books[s] = bk
     if not books:
         return None
@@ -461,6 +518,7 @@ def run():
             bk.load(saved[x])
         gate.books[x] = bk
     lab = Lab(client, cfg, maker, taker)
+    selector_tick(cfg, None)
     desk = build_desk(cfg, client, maker, taker)
     version = os.environ.get("NEXUS_VERSION", "desconocida")
     log.info("arranque version=%s simbolos=%s home=%s", version, cfg["symbols"], paths.home())
@@ -469,8 +527,14 @@ def run():
     errors, last_status = [], 0.0
     log.info("comisiones maker=%s taker=%s; estado cargado: %s", maker, taker,
              {x: b.state for x, b in gate.books.items()})
-    last_eval, ev, last_bal, last_desk = 0.0, {}, time.time(), time.time()
+    last_eval, ev, last_bal, last_desk, last_sel = 0.0, {}, time.time(), time.time(), time.time()
     while True:
+        if time.time() - last_sel >= 300:
+            last_sel = time.time()
+            try:
+                selector_tick(cfg, desk)
+            except Exception:                        # noqa: BLE001
+                log.exception("selector: no se pudo actualizar (se sigue con la elección anterior)")
         if desk is None and time.time() - last_desk >= 60 and live_wanted():
             last_desk = time.time()                  # p. ej. MEXC no respondía al arrancar con una posición real
             desk = build_desk(cfg, client, maker, taker)

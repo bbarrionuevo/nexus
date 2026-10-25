@@ -99,7 +99,9 @@ def build():
             "kill_text": redact(kill.read_text(encoding="utf-8", errors="ignore")[:120]) if kill.exists() else None,
             "trades_tail": trades_tail(), "real": real_block(),
             "remote": paths.read_json(paths.state("remote.json"), {}).get("done", {}),
-            "allocator": {"promoted": alloc.get("promoted"), "history": (alloc.get("history") or [])[-10:]}}
+            "allocator": {"promoted": alloc.get("promoted"), "history": (alloc.get("history") or [])[-10:]},
+            "selector": {k: v[-10:] if k == "history" else v
+                         for k, v in paths.read_json(paths.state("selector.json"), {}).items()}}
 
 
 def housekeeping(repo_dir, now=None):
