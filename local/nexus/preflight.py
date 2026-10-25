@@ -27,7 +27,8 @@ def symbol_check(client, sym, notional):
     except Exception as e:                                           # noqa: BLE001
         return out | {"ok": False, "problems": [f"sin exchangeInfo ({type(e).__name__})"]}
     types = info.get("orderTypes") or []
-    out.update(status=info.get("status"), order_types=types, price_dp=info.get("quotePrecision"),
+    out.update(base=info.get("baseAsset"), status=info.get("status"), order_types=types,
+               price_dp=info.get("quotePrecision"),
                qty_dp=info.get("baseAssetPrecision"), min_quote=float(info.get("quoteAmountPrecision") or 0))
     if str(info.get("status")) not in ONLINE or info.get("isSpotTradingAllowed") is False:
         out["problems"].append(f"par no operable (status {info.get('status')})")
@@ -75,6 +76,7 @@ def run(client=None, symbols=(), clock=None, now=None):
     auth = authorization(now)
     capital = float((auth or {}).get("capital_eur") or CALIBRATION_MAX_EUR)
     r = {"ts": now, "auth": auth, "keys": client.has_keys, "problems": []}
+    bal = {}
     if not client.has_keys:
         r["problems"].append("no hay clave de MEXC en .env")
     else:
@@ -86,8 +88,6 @@ def run(client=None, symbols=(), clock=None, now=None):
                             "other_assets": sorted(a for a, v in bal.items() if v > 0 and a != "USDT")}
             if acc.get("canTrade") is False:
                 r["problems"].append("la clave no tiene permiso de trading")
-            if auth and bal.get("USDT", 0.0) < capital * 0.95:
-                r["problems"].append(f"saldo USDT {bal.get('USDT', 0.0):.2f} menor que el capital autorizado {capital:g}")
         except Exception as e:                                       # noqa: BLE001
             from .check_keys import describe_error
             r["problems"].append(f"la clave no responde: {describe_error(e)}")
@@ -102,6 +102,12 @@ def run(client=None, symbols=(), clock=None, now=None):
     r["latency"] = latency_ms(client)
     syms = list(dict.fromkeys(list((auth or {}).get("symbols") or []) + list(symbols)))
     r["symbols"] = [symbol_check(client, s, capital) for s in syms]
+    if auth and r.get("account"):
+        # capital = USDT + lo invertido en los pares autorizados (con una posición abierta el USDT baja)
+        held = sum(bal.get(x.get("base"), 0.0) * (x.get("bid") or 0.0) for x in r["symbols"] if x["sym"] in auth["symbols"])
+        r["account"]["in_positions_usdt"] = round(held, 4)
+        if bal.get("USDT", 0.0) + held < capital * 0.95:
+            r["problems"].append(f"capital en la cuenta {bal.get('USDT', 0.0) + held:.2f} USDT menor que el autorizado {capital:g}")
     r["ready"] = bool(auth) and not r["problems"] and all(x["ok"] for x in r["symbols"] if x["sym"] in auth["symbols"])
     paths.write_json_atomic(paths.state("preflight.json"), r)
     return r

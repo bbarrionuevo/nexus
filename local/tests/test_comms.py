@@ -141,3 +141,26 @@ def test_comandos_llegan_por_issues_del_duenio_con_etiqueta(tmp_path, monkeypatc
     assert seen["url"].endswith("/repos/duenio/nexus/issues") and seen["params"]["creator"] == "duenio"
     assert remote.fetch(tmp_path, get=lambda u, p: {"message": "rate limit"}) == []
     assert remote.fetch(tmp_path, get=lambda u, p: (_ for _ in ()).throw(ConnectionError())) == []
+
+
+def test_preflight_cuenta_lo_invertido_en_la_posicion():
+    from nexus import paths, preflight
+    from nexus.agent import live
+
+    class Comprado(FakeClient):
+        def account(self):
+            return {"canTrade": True, "canWithdraw": False, "accountType": "SPOT",
+                    "balances": [{"asset": "USDT", "free": "9.5", "locked": "0"}, {"asset": "X", "free": "11.4", "locked": "0"}]}
+
+        def _get(self, path, params=None, signed=False):
+            return {"symbols": [s | {"baseAsset": "X"} for s in super()._get(path, params, signed)["symbols"]]}
+    now = time.time()
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": now, "expires": now + 3600, "capital_eur": 20,
+                                                           "symbols": ["XUSDT"]})
+    r = preflight.run(Comprado(), clock=lambda n: 100)
+    assert r["ready"] and r["account"]["in_positions_usdt"] == 11.4          # 9,5 + 11,4 ≥ 20: no es alarma
+    class Vacio(Comprado):
+        def account(self):
+            return {"canTrade": True, "canWithdraw": False, "balances": [{"asset": "USDT", "free": "9.5", "locked": "0"}]}
+    r = preflight.run(Vacio(), clock=lambda n: 100)
+    assert not r["ready"] and "capital en la cuenta 9.50" in r["problems"][0]
