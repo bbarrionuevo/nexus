@@ -78,6 +78,10 @@ def digest(pc, research_md=None, now=None):
                 f"{names.get(k, k)} {v['n']} vueltas {v['total']:+.2f} €" for k, v in kinds.items())]
             if ev.get("excluded_old_model"):
                 L.append(f"(Excluidas {ev['excluded_old_model']} vueltas del modelo de llenado anterior, con sesgo.)")
+            prev = ev.get("previous") or {}
+            if ev.get("strategy"):
+                L.append(f"Estrategia vigente: **{ev['strategy']}** (los criterios se miden solo con ella). "
+                         f"Versiones anteriores: {prev.get('n', 0)} vueltas, {prev.get('total', 0):+.2f} €.")
         per = ev.get("per_symbol") or {}
         if per:
             rows = sorted(per.items(), key=lambda kv: (kv[1].get("n", 0) >= 30, kv[1].get("mean") or -9),

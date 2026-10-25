@@ -147,3 +147,13 @@ def test_defi_solo_stablecoins_grandes_sin_perdida_impermanente():
          "stablecoin": True, "ilRisk": "no"}]}                                                # TVL chico: fuera
     out = defi_stable_pools(raw)
     assert [x["project"] for x in out] == ["aave-v3"] and out[0]["tvl_musd"] == 300.0 and out[0]["bluechip"]
+
+
+def test_paper_de_funding_una_posicion_por_moneda():
+    from nexus import paper_xfunding as px
+    base = {"short_symbol": "a", "long_symbol": "b", "short_px": 1.0, "long_px": 1.0, "cost_pct": 0.16,
+            "realized": (1.1, 59.0, 1.0, 6.8)}
+    cross = [base | {"base": "JCT", "short": "MEXC", "long": "Bitget"}, base | {"base": "JCT", "short": "KuCoin", "long": "Bitget"},
+             base | {"base": "LA", "short": "Bitget", "long": "Gate"}]
+    st = px.step({}, cross, lambda ex, sym: [], now=NOW)
+    assert sorted(p["base"] for p in st["open"].values()) == ["JCT", "LA"]
