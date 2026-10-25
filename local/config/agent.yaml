@@ -9,6 +9,9 @@ stop_pct: 1.0                  # stop a mercado al caer 1% bajo la entrada
 min_edge_pct: 0.0              # margen mínimo sobre entrada+comisiones para vender como maker
 max_hold_min: 30               # tenencia máxima; luego sale al bid (taker)
 poll_seconds: 1.0
+max_vol_1m_pct: 0.3            # no comprar si la volatilidad del precio supera 0,3%/min (25-oct: 6-7% de
+                               # stops por debajo; 24% y -21 € por encima de 0,5%/min)
+strategy_tag: "v3-vol0.3"      # versión de la estrategia: la evidencia de R-15 se mide por versión
 stale_data_s: 20               # sin datos frescos por 20 s => se cancela la compra pendiente
 
 # Laboratorio: mide en paper (sin riesgo ni capital) pares de MEXC elegidos solos cada pocas horas.
@@ -22,6 +25,8 @@ lab:
   per_loop: 12                 # pares de laboratorio sondeados por ciclo (en paralelo; ~13 pedidos/s)
   pause_window: 15             # si las últimas 15 vueltas de un par pierden en promedio...
   pause_hours: 24              # ...se pausa 24 h y no se vuelve a elegir
+  fast_pause_stops: 3          # o antes: 3 stops dentro de las últimas 6 vueltas
+  fast_pause_window: 6
 
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).

@@ -134,10 +134,14 @@ def feed(bk, trades, seen):
                 bk.on_trade(float(t["price"]), float(t["qty"]), t["isBuyerMaker"])
 
 
+STRATEGY = {"tag": None}                                       # versión de la estrategia (agent.yaml)
+
+
 def journal(entry):
     """Agrega una vuelta cerrada al diario (una línea JSON). Tolerante a bloqueos breves.
-    `model` marca la versión del modelo de llenado: la evidencia solo cuenta la vigente."""
-    line = json.dumps(entry | {"model": evidence.FILL_MODEL}) + "\n"
+    `model` marca la versión del modelo de llenado y `strategy` la de la estrategia: cada versión
+    tiene que probarse por sí misma (la evidencia de una no cuenta para otra)."""
+    line = json.dumps(entry | {"model": evidence.FILL_MODEL, "strategy": STRATEGY["tag"]}) + "\n"
     for _ in range(5):
         try:
             with open(paths.state("trades.jsonl"), "a", encoding="utf-8") as f:
@@ -190,6 +194,7 @@ def main():
     paths.load_env()
     setup_logging()
     cfg = load_config()
+    STRATEGY["tag"] = cfg.get("strategy_tag")
     client = MexcReadOnly()
     maker, taker = verified_fees(client, cfg)
     risk = RiskManager(cfg["risk"])
@@ -198,7 +203,7 @@ def main():
     for x in cfg["symbols"]:
         bk = Book(x, notional=cfg["risk"]["max_position_eur"], maker=maker, taker=taker, stop_pct=cfg["stop_pct"],
                   min_edge_pct=cfg["min_edge_pct"], max_hold_s=cfg["max_hold_min"] * 60, gate=gate,
-                  on_closed=lambda e: journal(e | {"lab": False}))
+                  on_closed=lambda e: journal(e | {"lab": False}), max_vol_1m_pct=cfg.get("max_vol_1m_pct"))
         if x in saved:
             bk.load(saved[x])
         gate.books[x] = bk
@@ -229,7 +234,7 @@ def main():
             if time.time() - last_eval >= 300:
                 last_eval = time.time()
                 try:
-                    ev = evidence.evaluate(paths.state("trades.jsonl"))
+                    ev = evidence.evaluate(paths.state("trades.jsonl"), strategy=STRATEGY["tag"])
                     ev.pop("daily", None)
                 except Exception:
                     log.exception("no se pudo evaluar la evidencia")
@@ -252,6 +257,7 @@ class Lab:
         self.books, self.seen, self.order, self.i, self.selected_at = {}, {}, [], 0, 0.0
         self.saved = paths.read_json(paths.state("lab_books.json"), {})
         self.recent = {}                                      # últimas vueltas por par (pausa)
+        self.recent_kinds = {}                                # tipos de cierre recientes (pausa rápida)
         self.paused = {s: t for s, t in paths.read_json(paths.state("lab_paused.json"), {}).items()
                        if t > time.time()}
 
@@ -259,12 +265,17 @@ class Lab:
         return self.paused.get(sym, 0) > time.time()
 
     def on_closed(self, e):
-        """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio."""
+        """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio, o antes si
+        acumula muchos stops seguidos de cerca (CHOMP perdió 12,7 € en 15 vueltas antes de pausarse)."""
         journal(e | {"lab": True})
         n = self.cfg.get("pause_window", 15)
         dq = self.recent.setdefault(e["sym"], deque(maxlen=n))
         dq.append(e["pnl"])
-        if len(dq) == n and sum(dq) < 0:
+        kinds = self.recent_kinds.setdefault(e["sym"], deque(maxlen=self.cfg.get("fast_pause_window", 6)))
+        kinds.append(e.get("kind"))
+        fast = sum(k == "stop" for k in kinds) >= self.cfg.get("fast_pause_stops", 3)
+        if (len(dq) == n and sum(dq) < 0) or fast:
+            kinds.clear()
             self.paused[e["sym"]] = time.time() + self.cfg.get("pause_hours", 24) * 3600
             dq.clear()
             save_state("lab_paused.json", self.paused)
@@ -274,7 +285,8 @@ class Lab:
     def _book(self, sym):
         bk = Book(sym, notional=self.base["risk"]["max_position_eur"], maker=self.maker, taker=self.taker,
                   stop_pct=self.base["stop_pct"], min_edge_pct=self.base["min_edge_pct"],
-                  max_hold_s=self.base["max_hold_min"] * 60, on_closed=self.on_closed)
+                  max_hold_s=self.base["max_hold_min"] * 60, on_closed=self.on_closed,
+                  max_vol_1m_pct=self.base.get("max_vol_1m_pct"))
         if sym in self.saved:
             bk.load(self.saved[sym])
         return bk

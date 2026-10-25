@@ -83,9 +83,12 @@ def criteria(trades, now=None):
     ]
 
 
-def evaluate(path, now=None):
-    trades = load(path)
-    excluded = len(load(path, min_model=0)) - len(trades)
+def evaluate(path, now=None, strategy=None):
+    """Criterios sobre las vueltas del modelo de llenado vigente y, si se indica, de UNA versión de la
+    estrategia. Las demás vueltas válidas se resumen aparte en `previous` (no cuentan)."""
+    valid = load(path)
+    trades = [t for t in valid if strategy is None or t.get("strategy") == strategy]
+    excluded = len(load(path, min_model=0)) - len(valid)
     by_sym = defaultdict(list)
     for t in trades:
         by_sym[t["sym"]].append(t)
@@ -96,7 +99,8 @@ def evaluate(path, now=None):
             "per_symbol": per_sym,
             "criteria": [{"name": n, "ok": ok, "detail": d} for n, ok, d in crit],
             "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit),
-            "excluded_old_model": excluded}
+            "excluded_old_model": excluded, "strategy": strategy,
+            "previous": stats([t["pnl"] for t in valid if t not in trades]) if strategy else None}
 
 
 if __name__ == "__main__":

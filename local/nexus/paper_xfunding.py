@@ -63,8 +63,9 @@ def step(state, cross, history, now=None):
         key = f"{x['base']}:{x['short']}/{x['long']}"
         if len(state["open"]) >= MAX_POSITIONS:
             break
-        if key in state["open"] or any(c["base"] == x["base"] and now - c["closed"] < 86400 for c in state["closed"]):
-            continue
+        if key in state["open"] or any(p["base"] == x["base"] for p in state["open"].values()) or \
+                any(c["base"] == x["base"] and now - c["closed"] < 86400 for c in state["closed"]):
+            continue                                              # una posición por moneda (no duplicar riesgo)
         fees = 2 * NOTIONAL * x["cost_pct"] / 100                  # entrada + salida, ambas patas
         state["open"][key] = {"base": x["base"], "opened": now, "notional": NOTIONAL, "short_ex": x["short"],
                               "long_ex": x["long"], "short_symbol": x["short_symbol"], "long_symbol": x["long_symbol"],

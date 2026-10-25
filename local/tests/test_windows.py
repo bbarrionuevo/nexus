@@ -232,6 +232,8 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
     monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
     monkeypatch.delenv("MEXC_API_KEY", raising=False)
     monkeypatch.setattr(ma.time, "sleep", lambda s: None)
+    base_cfg = ma.load_config
+    monkeypatch.setattr(ma, "load_config", lambda: {**base_cfg(), "max_vol_1m_pct": None})   # compra en el 2º sondeo
     for run_n, restart_at in ((1, 6), (2, 30)):
         bt_n, tr_n = {}, {}                                   # sondeos por par y por método (pedidos en paralelo)
 
@@ -562,3 +564,42 @@ def test_actualizador_tests_colgados_cuentan_como_fallo(monkeypatch):
     monkeypatch.setattr(upd.subprocess, "run", colgado)
     ok, out = upd.run_tests(timeout=5)
     assert not ok and "5 s" in out
+
+
+def test_filtro_de_volatilidad_y_pausa_rapida(tmp_path, monkeypatch):
+    from nexus.agent.maker_agent import Lab
+    from nexus.live_paper_maker import Book
+    t = [0.0]
+    bk = Book("X", notional=40, maker=0.0, taker=0.08, now=lambda: t[0], max_vol_1m_pct=0.3)
+    for i in range(12):                                        # precio quieto: volatilidad ~0
+        t[0] = i * 2.0
+        bk.on_book(1.0, 1, 1.002, 1)
+    assert bk.px == 1.0                                        # cotiza
+    for i in range(12, 24):                                    # saltos de 1% cada 2 s: muy volátil
+        t[0] = i * 2.0
+        p = 1.0 + (0.01 if i % 2 else 0.0)
+        bk.on_book(p, 1, p + 0.002, 1)
+    assert bk.vol_1m() > 0.3 and bk.px is None                 # deja de comprar
+    fresh = Book("Y", now=lambda: 0.0, max_vol_1m_pct=0.3)
+    fresh.on_book(1.0, 1, 1.002, 1)
+    assert fresh.px is None                                    # sin datos suficientes no entra
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"pause_window": 15, "fast_pause_stops": 3, "fast_pause_window": 6},
+           "stop_pct": 1.0, "min_edge_pct": 0.0, "max_hold_min": 30, "risk": {"max_position_eur": 40}}
+    lab = Lab(FakeMexc(), cfg, 0.0, 0.08)
+    for kind, pnl in (("stop", -0.4), ("maker", 0.05), ("stop", -0.4), ("stop", -0.4)):
+        lab.on_closed({"sym": "CHOMPUSDT", "pnl": pnl, "kind": kind, "ts": 1})
+    assert lab.is_paused("CHOMPUSDT")                          # 3 stops en 4 vueltas: pausa sin esperar 15
+
+
+def test_evidencia_por_version_de_estrategia(tmp_path):
+    import json
+    from nexus import evidence
+    p = tmp_path / "trades.jsonl"
+    rows = [{"ts": 1, "sym": "A", "pnl": -0.5, "model": 2, "strategy": None},
+            {"ts": 2, "sym": "A", "pnl": 0.1, "model": 2, "strategy": "v3"},
+            {"ts": 3, "sym": "A", "pnl": 0.2, "model": 2, "strategy": "v3"}]
+    p.write_text("\n".join(json.dumps(r) for r in rows))
+    ev = evidence.evaluate(p, strategy="v3")
+    assert ev["overall"]["n"] == 2 and ev["previous"]["n"] == 1 and ev["strategy"] == "v3"
+    assert evidence.evaluate(p)["overall"]["n"] == 3
