@@ -30,6 +30,7 @@ lab:
   # Asignador (explorar/explotar, ver nexus/allocator.py). Reglas fijadas de antemano: NO se ajustan
   # mirando resultados. Se conservan hasta keep_max pares con cota inferior > 0 (media − desvío/√n)
   # sobre sus últimas score_window vueltas de los últimos score_days días (mínimo score_min_n).
+  rank: edge                   # explorar primero: spread % × llenados posibles por hora (cola vs. volumen)
   allocator: true
   keep_max: 6
   score_window: 60

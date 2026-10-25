@@ -122,8 +122,9 @@ def digest(pc, research_md=None, now=None):
                  or "ninguno todavía: no hay pares con evidencia suficiente.")]
         cal = ev.get("calibration") or {}
         if cal:
-            L += ["", "### Calibración: mismo par, paper contra real", "| par | horas | paper: vueltas · por hora · media | "
-                  "real: vueltas · por hora · media |", "|---|---|---|---|"]
+            L += ["", "### Calibración: mismo par, paper contra real (media en % del monto de la vuelta)",
+                  "| par | horas | paper: vueltas · por hora · media % | real: vueltas · por hora · media % |",
+                  "|---|---|---|---|"]
             for s, c in cal.items():
                 p, r = c["paper"], c["real"]
                 L.append(f"| {s} | {c['hours']} | {p.get('n', 0)} · {p.get('per_hour')} · {p.get('mean')} | "

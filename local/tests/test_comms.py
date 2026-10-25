@@ -122,3 +122,22 @@ def test_el_duenio_puede_apagar_el_canal():
     paths.state("remote_off").touch()
     r = remote.process([cmd(1, "pausar")])
     assert not r["c1"]["ok"] and "apagado" in r["c1"]["msg"] and not paths.kill_file().exists()
+
+
+def test_comandos_llegan_por_issues_del_duenio_con_etiqueta(tmp_path, monkeypatch):
+    from nexus import remote
+    monkeypatch.setattr(remote, "owner_repo", lambda d: ("duenio", "nexus"))
+    lab = [{"name": "pc-comando"}]
+    issues = [
+        {"number": 7, "title": "Pausar por pérdidas", "body": "3 stops seguidos", "user": {"login": "duenio"},
+         "labels": lab, "created_at": "2026-10-25T15:00:00Z"},
+        {"number": 8, "title": "reanudar", "user": {"login": "intruso"}, "labels": lab, "created_at": "2026-10-25T15:00:00Z"},
+        {"number": 9, "title": "cancelar", "user": {"login": "duenio"}, "labels": [], "created_at": "2026-10-25T15:00:00Z"},
+        {"number": 10, "title": "cancelar", "user": {"login": "duenio"}, "labels": lab, "pull_request": {},
+         "created_at": "2026-10-25T15:00:00Z"}]
+    seen = {}
+    got = remote.fetch(tmp_path, get=lambda url, params: seen.update(url=url, params=params) or issues)
+    assert got == [{"id": "issue7", "cmd": "pausar", "ts": 1792940400, "motivo": "3 stops seguidos"}]
+    assert seen["url"].endswith("/repos/duenio/nexus/issues") and seen["params"]["creator"] == "duenio"
+    assert remote.fetch(tmp_path, get=lambda u, p: {"message": "rate limit"}) == []
+    assert remote.fetch(tmp_path, get=lambda u, p: (_ for _ in ()).throw(ConnectionError())) == []

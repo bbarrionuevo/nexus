@@ -108,10 +108,21 @@ día, 4 € por semana y 8 € en total (halt que solo levantás vos).
   real), chequeo previo y resultado de los comandos remotos. Nunca incluye claves.
 - **Chequeo previo** cada 30 minutos: clave, permiso de trading, saldo USDT, reloj, latencia y reglas
   de cada par. A mano: `..\.venv\Scripts\python -m nexus.preflight XXXUSDT`.
-- **Comandos de seguridad** (rama `pc-comandos`): la sesión de Claude puede pedir **pausar** (no abrir
-  posiciones), **cancelar** (cancelar órdenes reales), **reanudar** (solo lo que pausó ella) y
+- **Comandos de seguridad** (issues abiertos con la etiqueta `pc-comando`, creados con tu cuenta):
+  la sesión de Claude puede pedir **pausar** (no abrir posiciones), **cancelar** (cancelar órdenes
+  reales), **reanudar** (solo lo que pausó ella) y
   **diagnóstico**. No puede autorizar, desbloquear, rearmar, vender a mercado ni cambiar límites.
   Un KILL tuyo nunca lo quita. Para apagar el canal: `New-Item $env:LOCALAPPDATA\nexus\state\remote_off`.
+
+### Cuándo la sesión de Claude pausa (reglas fijadas de antemano)
+Solo **pausa** (no abre posiciones nuevas) o **cancela órdenes**. Nunca vende, nunca reanuda algo que
+vos pausaste y siempre te avisa del motivo. Lo hace si en el latido ve cualquiera de estas cosas:
+- Un par real **bloqueado** o en **estado desconocido** por más de 10 minutos.
+- Rechazos del exchange que se repiten (clave, IP, reloj o saldo) o el chequeo previo falla.
+- La calibración muestra que el real **pierde** mientras el gemelo en paper gana en el mismo período,
+  con al menos 10 vueltas reales: el modelo de paper no representa la realidad de ese par.
+- El latido muestra errores de datos sostenidos o el agente sin actualizar su estado.
+Reanuda (solo lo que pausó) cuando la causa desapareció, y te lo informa.
 
 ## Cómo se actualiza solo
 Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen

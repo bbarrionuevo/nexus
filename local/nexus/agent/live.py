@@ -32,6 +32,8 @@ AUTH_FILE, STATE_FILE, ORDERS_LOG, REAL_TRADES = "live_auth.json", "live_books.j
 UNBLOCK_FILE = "live_unblock.json"                # pedido humano de desbloqueo (authorize --desbloquear)
 CALIBRATION_MAX_EUR, MAX_DAYS = 20.0, 7          # Fase 6a: tope de capital y de vigencia de una autorización
 MAX_REJECTS, UNKNOWN_BLOCK_S, BALANCE_TOL_USDT = 5, 120, 0.5
+EXIT_SLIP_PCT, EXIT_REPRICE_S = 0.5, 3   # salida forzada: límite agresivo hasta 0,5% bajo el bid, re-precio cada 3 s
+ONLINE = ("1", "ENABLED", "TRADING")
 ENDED = ("FILLED", "CANCELED", "PARTIALLY_CANCELED", "REJECTED", "EXPIRED")
 
 
@@ -94,8 +96,10 @@ class Rules:
         self.price_dp, self.qty_dp = int(s["quotePrecision"]), int(s["baseAssetPrecision"])
         self.min_quote = max(float(s.get("quoteAmountPrecision") or 0), 1.0)
         types = s.get("orderTypes") or []
-        if "LIMIT_MAKER" not in types or "MARKET" not in types or s.get("isSpotTradingAllowed") is False:
-            raise ValueError(f"{symbol}: el par no admite LIMIT_MAKER y MARKET en spot")
+        if "LIMIT_MAKER" not in types or "LIMIT" not in types or s.get("isSpotTradingAllowed") is False:
+            raise ValueError(f"{symbol}: el par no admite LIMIT_MAKER y LIMIT en spot")
+        if "status" in s and str(s["status"]) not in ONLINE:
+            raise ValueError(f"{symbol}: par no operable (status {s['status']})")
 
     def qty(self, x):
         f = 10 ** self.qty_dp
@@ -163,10 +167,10 @@ class LiveBook(Book):
             return
         if lvl >= 2:                                          # R-16 nivel 2 y 3
             self.bid, self.ask = b, a
-            if self.order and self.order["type"] != "MARKET":
-                self._cancel()
-            elif lvl == 3 and self.state == "long" and not self.order:
+            if lvl == 3 and self.state == "long":
                 self._close(b, self.taker, "kill")
+            elif self.order:
+                self._cancel()
             return
         if self.state == "flat" and not self.entry_allowed():  # autorización vencida o revocada
             self.bid, self.ask, self.px = b, a, None
@@ -187,7 +191,7 @@ class LiveBook(Book):
         side = "BUY" if self.state == "flat" else "SELL"
         o, want = self.order, None if self.px is None else self.rules.px(self.px, side)
         if o:
-            if o["type"] == "MARKET":
+            if o.get("kind"):                                 # salida forzada en curso: la maneja _close
                 return
             if want is None or o["side"] != side or abs(o["px"] - want) > 1e-12:
                 self._cancel()                                # la nueva va en el próximo ciclo
@@ -319,16 +323,22 @@ class LiveBook(Book):
             self._finish(o.get("kind") or "maker")
 
     def _close(self, px, fee, kind):
-        """Stop, tiempo máximo o KILL 3: vender a mercado lo que haya (Book llama acá)."""
+        """Stop, tiempo máximo o KILL 3 (Book llama acá): vender ya lo que haya con una orden LÍMITE
+        agresiva, hasta EXIT_SLIP_PCT bajo el bid. Es como una orden a mercado pero con tope de
+        deslizamiento: en un libro finito una orden a mercado puede vender muy abajo. Lo que no se
+        llene se vuelve a poner al bid nuevo cada EXIT_REPRICE_S segundos."""
         if self.order:
-            if self.order["type"] == "MARKET" or not self._cancel():
+            if self.order.get("kind") and self.now() - self.order["ts"] < EXIT_REPRICE_S:
+                return
+            if not self._cancel():
                 return
         if self.state != "long":
             return
         qty = self.rules.qty(self.pos_qty)
         if qty * px < self.rules.min_quote:
             return self._finish(kind)
-        if self._new("SELL", "MARKET", qty, None, kind=kind):
+        limit = self.rules.px(px * (1 - EXIT_SLIP_PCT / 100), "BUY")      # redondea hacia abajo
+        if self._new("SELL", "LIMIT", qty, limit, kind=kind):
             self._sync()
 
     def _finish(self, kind):
@@ -362,7 +372,7 @@ class LiveBook(Book):
             cid = (self.unknown or self.order)["cid"]
             self.unknown = {"cid": cid, "since": self.now() - UNKNOWN_BLOCK_S / 2, "misses": 1}
             self._resolve_unknown()
-            if self.order and not self.unknown and self.order["type"] != "MARKET":
+            if self.order and not self.unknown:
                 self._cancel()
         try:
             for o in self.trader.open_orders(self.sym):
@@ -412,7 +422,7 @@ class LiveBook(Book):
 
     def shutdown(self):
         """Reinicio controlado: no dejar órdenes límite puestas sin nadie que las vigile."""
-        if self.order and not self.unknown and self.order["type"] != "MARKET":
+        if self.order and not self.unknown:
             self._cancel()
         self.save_cb()
 

@@ -301,6 +301,21 @@ def test_laboratorio_elige_pares_razonables():
     assert [s for s, _ in select_lab(FakeMexc(), LAB, {"BONKUSDT"})] == ["AAAUSDT", "BBBUSDT"]
 
 
+def test_laboratorio_explora_primero_donde_la_cola_deja_llenar():
+    """Mismo volumen y spread: gana el par cuya cola del mejor bid es corta frente a lo que se opera."""
+    from nexus.agent.maker_agent import select_lab
+
+    class Colas(FakeMexc):
+        def _get(self, path, params=None, signed=False):
+            if path == "/api/v3/ticker/24hr":
+                return [{"symbol": s, "quoteVolume": "480000"} for s in ("LARGAUSDT", "CORTAUSDT", "ANCHAUSDT")]
+            return [{"symbol": "LARGAUSDT", "bidPrice": "1.000", "askPrice": "1.003", "bidQty": "200000"},
+                    {"symbol": "CORTAUSDT", "bidPrice": "1.000", "askPrice": "1.003", "bidQty": "60"},
+                    {"symbol": "ANCHAUSDT", "bidPrice": "1.000", "askPrice": "1.010", "bidQty": "200000"}]
+    assert [s for s, _ in select_lab(Colas(), LAB, set())] == ["CORTAUSDT", "ANCHAUSDT", "LARGAUSDT"]
+    assert [s for s, _ in select_lab(Colas(), LAB | {"rank": "volume"}, set())][0] in ("LARGAUSDT", "CORTAUSDT", "ANCHAUSDT")
+
+
 def test_laboratorio_registra_vueltas_sin_tocar_el_riesgo(tmp_path, monkeypatch):
     import json
     from nexus import paths

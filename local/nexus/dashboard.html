@@ -284,7 +284,7 @@ function renderState(d) {
     setText("real-note", `Riesgo real: hoy ${eur(rk.pnl_day)} · semana ${eur(rk.pnl_week)} · total ${eur(rk.pnl_total)}` +
       (lv.risk_block ? ` · bloqueo: ${lv.risk_block}` : "") + (lv.kill_level ? ` · KILL nivel ${lv.kill_level}` : "") +
       ` · para pasar a 100 €: ${rr.pass_6b ? "✓ una semana positiva" : "falta una semana con PnL real > 0"}. Montos de las órdenes en USDT.` +
-      Object.entries((st.evidence || {}).calibration || {}).map(([s, c]) => ` · ${s} paper ${num(c.paper.n)} vueltas (${nf(1).format(c.paper.per_hour)}/h, media ${eur(c.paper.mean, 4)}) vs real ${num(c.real.n)} (${nf(1).format(c.real.per_hour)}/h, media ${eur(c.real.mean, 4)})`).join(""));
+      Object.entries((st.evidence || {}).calibration || {}).map(([s, c]) => ` · ${s} paper ${num(c.paper.n)} vueltas (${nf(1).format(c.paper.per_hour)}/h, media ${pct(c.paper.mean, 3)}) vs real ${num(c.real.n)} (${nf(1).format(c.real.per_hour)}/h, media ${pct(c.real.mean, 3)})`).join(""));
   }
   const up = d.update || {};
   setText("meta", `versión ${st.version || "—"} · actualización: ${up.result || "—"}${up.reasons ? " (" + up.reasons.join("; ") + ")" : ""} · ${new Date().toLocaleTimeString("es-AR")}`);
