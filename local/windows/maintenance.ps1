@@ -38,6 +38,18 @@ try {
 } catch {
   Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: no se pudo verificar el tablero: $_"
 }
+# Mantenimiento cada 10 min (antes 30): si una actualización espera a que el agente quede sin posiciones,
+# la ventana sin operar baja de hasta 30 min a hasta 10 (25-oct: 1 h sin entradas con dinero real).
+try {
+  $mt = Get-ScheduledTask -TaskName "nexus-mantenimiento" -ErrorAction Stop
+  if ($mt.Triggers[0].Repetition.Interval -ne "PT10M") {
+    $T = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10) -RepetitionInterval (New-TimeSpan -Minutes 10)
+    Set-ScheduledTask -TaskName "nexus-mantenimiento" -Trigger $T | Out-Null
+    Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: ahora corre cada 10 min"
+  }
+} catch {
+  Add-Content "$env:NEXUS_HOME\logs\runner.log" "$(Get-Date -Format s) mantenimiento: no se pudo cambiar su frecuencia: $_"
+}
 # Latido cada 5 min (comandos de seguridad remotos, chequeo previo y estado para la sesión de Claude).
 try {
   if (-not (Get-ScheduledTask -TaskName "nexus-latido" -ErrorAction SilentlyContinue)) {

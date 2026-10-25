@@ -129,6 +129,13 @@ def digest(pc, research_md=None, now=None):
                 p, r = c["paper"], c["real"]
                 L.append(f"| {s} | {c['hours']} | {p.get('n', 0)} · {p.get('per_hour')} · {p.get('mean')} | "
                          f"{r.get('n', 0)} · {r.get('per_hour')} · {r.get('mean')} |")
+        var = ev.get("variants") or {}
+        if var:
+            L += ["", "### Variantes en el laboratorio (últimas 24 h, mismos pares y datos)",
+                  "| variante | vueltas | total € | media € | IC95 desde |", "|---|---|---|---|---|"]
+            for k, x in var.items():
+                mark = " (vigente)" if k == ev.get("strategy") else ""
+                L.append(f"| {k}{mark} | {x.get('n', 0)} | {x.get('total', 0):+.2f} | {x.get('mean')} | {x.get('ci95_low')} |")
         sel = ev.get("selection") or {}
         if sel:
             L += ["", "### Selección de pares por evidencia (laboratorio, fuera de muestra)",

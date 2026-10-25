@@ -105,3 +105,37 @@ def test_conserva_pares_prometedores_hasta_juntar_evidencia():
           "E": {"score": None, "n": 9, "mean": 0.05}, "F": {"score": None, "n": 6, "mean": 0.3}}
     st, keep = decide({}, sc, NOW, keep_max=6, exclude={"F"}, eval_max=3, eval_min_n=5)
     assert keep == ["A", "B", "E"] and st["evaluating"] == ["B", "E"] and set(st["promoted"]) == {"A"}
+
+
+def test_filtro_de_desbalance_del_libro():
+    from nexus.live_paper_maker import Book
+    b = Book("X", notional=10, min_imbalance=0.6)
+    b.on_book(1.0, 10, 1.001, 90)                              # 10% del tamaño compra: no entra
+    assert b.px is None
+    b.on_book(1.0, 70, 1.001, 30)                              # 70%: entra al bid
+    assert b.px == 1.0
+    b.on_book(1.0, 20, 1.001, 80)                              # vuelve a dominar la venta: cancela
+    assert b.px is None
+
+
+def test_variantes_del_laboratorio_y_su_comparacion(tmp_path, monkeypatch):
+    from nexus import evidence, paths
+    from nexus.agent.maker_agent import Lab
+    from tests.test_windows import LAB, FakeMexc
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"variants": {"v4": {"max_vol_1m_pct": None, "min_imbalance": 0.0}}},
+           "stop_pct": 1.0, "min_edge_pct": 0.0, "max_hold_min": 30, "risk": {"max_position_eur": 40}}
+    lab = Lab(FakeMexc(), cfg, 0.0, 0.08)
+    for _ in range(8):
+        lab.step()
+    lab.save()
+    keys = set(json.loads(paths.state("lab_books.json").read_text()))
+    assert {"AAAUSDT", "AAAUSDT#control", "AAAUSDT#v4"} <= keys
+    rows = [json.loads(x) for x in paths.state("trades.jsonl").read_text().splitlines()]
+    assert {"control", "v4"} <= {r["strategy"] for r in rows}
+    st = {b["sym"]: b for b in lab.status()}
+    assert "v4" in st["AAAUSDT"]["arms"]
+    var = evidence.by_variant([r | {"model": evidence.FILL_MODEL} for r in rows])
+    assert set(var) >= {"control", "v4"} and all(v["n"] > 0 for v in var.values())
+    old = [{"ts": 1, "sym": "A", "pnl": 1.0, "lab": True, "strategy": "v4"}]
+    assert evidence.by_variant(old, now=1 + 25 * 3600) == {}                  # fuera de la ventana de 24 h

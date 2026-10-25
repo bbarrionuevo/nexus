@@ -497,3 +497,23 @@ def test_monto_real_cuenta_lo_invertido_en_la_posicion(monkeypatch):
     desk = ma.build_desk(cfg, fake, 0.0, 0.05)
     bk = desk.books["XUSDT"]
     assert bk.notional == 20 and bk.state == "long" and not bk.blocked and bk.seq == 4
+
+
+def test_capital_real_se_reparte_entre_los_pares_autorizados(monkeypatch):
+    import time
+    from nexus import paths
+    from nexus.agent import live
+    import nexus.agent.maker_agent as ma
+    import nexus.exchanges.mexc_trade as mt
+    info2 = {"symbols": INFO["symbols"] + [INFO["symbols"][0] | {"symbol": "YUSDT", "baseAsset": "Y"}]}
+    fake = FakeMexc()
+    fake.has_keys = True
+    fake.exchange_info = lambda s: info2
+    fake.book_ticker = lambda s: {"bidPrice": "1.0", "bidQty": "5", "askPrice": "1.001", "askQty": "5"}
+    fake.trade_fee = lambda s: {"makerCommission": 0, "takerCommission": 0.0005}
+    monkeypatch.setattr(mt, "MexcTrader", lambda: fake)
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": time.time(), "expires": time.time() + 3600,
+                                                           "capital_eur": 20, "symbols": ["XUSDT", "YUSDT"],
+                                                           "sin_retiro_confirmado": True})
+    desk = ma.build_desk(ma.load_config(), fake, 0.0, 0.05)
+    assert sorted(desk.books) == ["XUSDT", "YUSDT"] and {b.notional for b in desk.books.values()} == {10.0}
