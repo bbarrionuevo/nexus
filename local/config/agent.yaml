@@ -36,6 +36,8 @@ lab:
   score_window: 60
   score_min_n: 20
   score_days: 7
+  eval_max: 3                  # también se conservan hasta 3 pares EN EVALUACIÓN: media > 0 con al menos
+  eval_min_n: 5                # 5 vueltas, para que lleguen al mínimo de la cota sin que se los suelte
 
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).

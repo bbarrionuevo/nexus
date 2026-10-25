@@ -96,3 +96,12 @@ def test_calibracion_compara_paper_y_real_del_mismo_par(tmp_path):
     assert c["X"]["paper"]["mean"] == 0.1                                            # (0,05 + 0,03) / 2 / 40 € en %
     assert ma.calibration(None) is None
     ma.STRATEGY["tag"] = None
+
+
+def test_conserva_pares_prometedores_hasta_juntar_evidencia():
+    from nexus.allocator import decide
+    sc = {"A": {"score": 0.02, "n": 40, "mean": 0.03}, "B": {"score": None, "n": 11, "mean": 0.12},
+          "C": {"score": None, "n": 4, "mean": 0.2}, "D": {"score": None, "n": 8, "mean": -0.01},
+          "E": {"score": None, "n": 9, "mean": 0.05}, "F": {"score": None, "n": 6, "mean": 0.3}}
+    st, keep = decide({}, sc, NOW, keep_max=6, exclude={"F"}, eval_max=3, eval_min_n=5)
+    assert keep == ["A", "B", "E"] and st["evaluating"] == ["B", "E"] and set(st["promoted"]) == {"A"}
