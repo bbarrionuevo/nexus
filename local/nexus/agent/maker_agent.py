@@ -314,11 +314,6 @@ def build_desk(cfg, client, maker, taker):
     rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
     olog, books = live.OrderLog(), {}
     notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR), cfg["risk"]["max_position_eur"])
-    usdt = sum(float(b.get("free") or 0) for b in acc.get("balances", []) if b.get("asset") == "USDT")
-    if usdt and usdt * 0.98 < notional:                 # comprar con lo que hay, no acumular rechazos
-        log.warning("real: saldo USDT %.2f menor que el capital autorizado %.2f: se compra por %.2f",
-                    usdt, notional, usdt * 0.98)
-        notional = round(usdt * 0.98, 2)
     for s in syms:
         try:
             rules = live.Rules(trader.exchange_info(s), s)
@@ -336,7 +331,18 @@ def build_desk(cfg, client, maker, taker):
     if not books:
         return None
     desk = live.Desk(trader, client, rgate, books, olog)
+    # Capital disponible = USDT (libre + en órdenes) + lo invertido en las posiciones guardadas. Si se
+    # contara solo el USDT libre, un reinicio con una posición abierta achicaba las compras siguientes
+    # (25-oct: 9,15 en vez de 20 tras reiniciar comprado en ZRO).
+    usdt = sum(float(b.get("free") or 0) + float(b.get("locked") or 0)
+               for b in acc.get("balances", []) if b.get("asset") == "USDT")
+    avail = usdt + sum(bk.pos_cost for bk in books.values())
+    if avail * 0.98 < notional:                         # comprar con lo que hay, no acumular rechazos
+        log.warning("real: capital disponible %.2f menor que el autorizado %.2f: se compra por %.2f",
+                    avail, notional, avail * 0.98)
+        notional = round(avail * 0.98, 2)
     for bk in books.values():
+        bk.notional = notional
         bk.save_cb = desk.save
         try:
             px = float(client.book_ticker(bk.sym)["bidPrice"])
@@ -347,9 +353,42 @@ def build_desk(cfg, client, maker, taker):
     return desk
 
 
-def main():
+def single_instance(path=None):
+    """Un solo agente por PC. El 25-oct, un Stop-ScheduledTask detuvo el bucle de PowerShell pero no el
+    proceso de Python: ese agente huérfano tomó la autorización y operó la cuenta real a la vez que el
+    nuevo (IDs repetidos, rechazos 30004/30005). Lock del sistema operativo sobre state/agent.lock: lo
+    libera el sistema si el proceso muere. Devuelve el archivo (mantenerlo abierto) o None si ya hay otro."""
+    f = open(path or paths.state("agent.lock"), "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    paths.state("agent.pid").write_text(str(os.getpid()))
+    return f
+
+
+def main(wait_if_busy=60):
     paths.load_env()
     setup_logging()
+    lock = single_instance()
+    if lock is None:
+        log.error("ya hay otro agente de nexus corriendo en esta PC: este se cierra sin operar")
+        time.sleep(wait_if_busy)
+        return
+    try:
+        run()
+    finally:
+        lock.close()
+
+
+def run():
     cfg = load_config()
     STRATEGY["tag"] = cfg.get("strategy_tag")
     client = MexcReadOnly()
