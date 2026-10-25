@@ -66,6 +66,7 @@ def collect():
     lend, lerr = _safe(yields.lending, errors, "préstamos") or ([], {})
     errors.update(lerr)
     res["lending"] = lend
+    res["defi"] = _safe(yields.defi_yields, errors, "DefiLlama") or []
     res["launchpools"] = _safe(yields.mexc_launchpools, errors, "MEXC launchpool") or []
     res["events"] = _safe(yields.bitget_events, errors, "Bitget anuncios") or []
     res["errors"] = errors
@@ -186,6 +187,14 @@ def to_markdown(res, hist):
         md += ["## 4. Préstamo de stablecoins (sin riesgo de precio; riesgo del exchange)", "",
                "| dónde | activo | APR % | nota |", "|---|---|---|---|"]
         md += [f"| {x['venue']} | {x['asset']} | {x['apr_pct']} | {x['note']} |" for x in res["lending"]]
+        md.append("")
+    if res.get("defi"):
+        md += ["### DeFi: stablecoins en protocolos grandes (sin pérdida impermanente, TVL ≥ 20 M USD)", "",
+               "APY base = intereses o comisiones reales; los premios en tokens van aparte (se pueden cortar). "
+               "Riesgo: contratos y depeg. Sirve para la plata que no está trabajando.", "",
+               "| protocolo | red | pool | TVL M USD | APY base % | premios % | APY medio 30 d % |", "|---|---|---|---|---|---|---|"]
+        md += [f"| {x['project']} | {x['chain']} | {x['symbol']} | {x['tvl_musd']} | {x['apy_base']} | {x['apy_reward']} | "
+               f"{x['apy_30d_mean']} |" for x in res["defi"][:10]]
         md.append("")
     lp = res.get("launchpools") or []
     ev = res.get("events") or []
