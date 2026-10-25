@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792900800.0,
-   "long_last": 1792900800.0,
-   "funding": 0.03415,
+   "short_last": 1792915200.0,
+   "long_last": 1792915200.0,
+   "funding": 0.07039999999999999,
    "fees": 0.24,
-   "settlements": 2,
+   "settlements": 4,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,13 +22,41 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0341,
+    "funding": 0.0704,
     "basis": 0.2446,
     "fees": 0.24,
-    "net": 0.0388
+    "net": 0.075
    },
    "last_short_px": 0.0061188,
    "last_long_px": 0.006124
+  },
+  "JCT:MEXC/Bitget": {
+   "base": "JCT",
+   "opened": 1792928509.8344328,
+   "notional": 50.0,
+   "short_ex": "MEXC",
+   "long_ex": "Bitget",
+   "short_symbol": "JCT_USDT",
+   "long_symbol": "JCTUSDT",
+   "short_entry": 0.007408,
+   "long_entry": 0.00741,
+   "short_last": 1792928509.8344328,
+   "long_last": 1792928509.8344328,
+   "funding": 0.0,
+   "fees": 0.16,
+   "settlements": 0,
+   "realized_at_open": [
+    1.111,
+    59.3,
+    1.0,
+    6.8
+   ],
+   "mark": {
+    "funding": 0.0,
+    "basis": 0.0,
+    "fees": 0.16,
+    "net": -0.16
+   }
   }
  },
  "closed": [
@@ -69,11 +97,11 @@
   }
  ],
  "summary": {
-  "ts": 1792903927.0466866,
-  "open": 1,
+  "ts": 1792928509.8344328,
+  "open": 2,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": 0.0388,
-  "total_eur": -0.1012
+  "open_net_eur": -0.085,
+  "total_eur": -0.225
  }
 }
