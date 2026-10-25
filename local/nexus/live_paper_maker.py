@@ -77,6 +77,13 @@ class Book:
 
     def on_book(self, b, bq, a, aq):
         self.bid, self.bq, self.ask, self.aq = b, bq, a, aq
+        # modelo 4: la cola de ADELANTE nunca supera lo visible en nuestro nivel. Si los demás cancelan,
+        # avanzamos (antes se suponía que nadie cancelaba y el paper esquivaba justo las compras que en
+        # real se llenan cuando el nivel se vacía y el precio está por bajar).
+        if self.px is not None and self.queue is not None:
+            ref, lvl = (b, bq) if self.state == "flat" else (a, aq)
+            if ref is not None and lvl is not None and abs(ref - self.px) < 1e-12:
+                self.queue = min(self.queue, lvl)
         if b > 0 and a > 0:
             self.mids.append((self.now(), (a + b) / 2))
         if self.state == "flat":

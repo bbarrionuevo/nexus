@@ -218,6 +218,26 @@ def test_regresion_defecto4_pasar_la_cola_por_poco_no_llena_la_orden_entera():
     assert not s.hit(10.0, 1001, True) and s.hit(10.0, 3, True)
 
 
+def test_regresion_defecto5_la_cola_avanza_si_los_demas_cancelan():
+    """Modelo 4: la cola de adelante nunca supera lo visible en nuestro nivel. Con el modelo 3 la cola
+    quedaba fija aunque los demás cancelaran, y el paper esquivaba las compras que en real se llenan
+    justo cuando el nivel se vacía y el precio está por bajar (25-oct, ZROUSDT)."""
+    from nexus.live_paper_maker import Book
+    b = Book("X", notional=40, maker=0.0)                  # 4 unidades a 10
+    b.on_book(10.0, 1000, 10.01, 1000)
+    assert b.queue == 1000
+    b.on_book(10.0, 30, 10.01, 1000)                       # quedan 30 visibles: a lo sumo 30 adelante
+    assert b.queue == 30
+    b.on_book(10.0, 500, 10.01, 1000)                      # los que llegan después quedan detrás
+    assert b.queue == 30
+    b.on_trade(10.0, 34, True)                             # 30 de adelante + nuestras 4
+    assert b.state == "long" and b.px == 10.01 and b.queue == 1000
+    b.on_book(10.0, 1000, 10.01, 8)                        # en el ask también avanza
+    assert b.queue == 8
+    b.on_trade(10.01, 12, False)
+    assert b.state == "flat" and b.wins == 1
+
+
 def test_regresion_defecto2_no_vende_bajo_entrada_como_maker():
     from nexus.live_paper_maker import Book
     b = Book("X", notional=100, maker=0.0, stop_pct=1.0)

@@ -91,6 +91,12 @@ class FakeMexc:
     def exchange_info(self, symbol):
         return INFO
 
+    def _get(self, path, params=None, signed=False):
+        """Libro de datos (cliente de solo lectura): el mejor nivel de cada lado, sin nuestras órdenes."""
+        assert path == "/api/v3/depth"
+        bt = self.book_ticker(params["symbol"])
+        return {"bids": [[bt["bidPrice"], bt["bidQty"]]], "asks": [[bt["askPrice"], bt["askQty"]]]}
+
     def open_cids(self):
         return [c for c, o in self.orders.items() if o["status"] in ("NEW", "PARTIALLY_FILLED")]
 
@@ -584,3 +590,44 @@ def test_modo_auto_opera_los_promovidos_y_cambia_de_par_solo_sin_posicion(monkey
     assert list(one.books) == ["YUSDT"] and one.books["YUSDT"].notional == 20
     paths.state(live.AUTH_FILE).unlink()                                        # sin autorización y sin posición:
     assert ma.rotate(one, cfg, fake, 0.0, 0.05) is None                        # vuelve a solo paper
+
+
+def test_el_real_ve_el_libro_sin_su_propia_orden(env):
+    """bookTicker incluye nuestra orden: si los demás se iban del nivel, el real se quedaba solo arriba
+    y lo llenaban justo antes de una baja. Con el libro sin nuestra orden se corre como el paper."""
+    ex, bk = env["ex"], env["make"]()
+    bk.on_book(1.0000, 500, 1.0010, 500)                         # compra 20 en 1,0000
+    assert bk.order["cid"] == "nx1XUSDT"
+    solos = {"bids": [["1.0000", "20.00"], ["0.9990", "300"]], "asks": [["1.0010", "500"]]}
+    assert bk.market(solos) == (0.999, 300.0, 1.001, 500.0)     # en 1,0000 quedamos solos: el bid real es 0,9990
+    con_otros = {"bids": [["1.0000", "50"]], "asks": [["1.0010", "500"]]}
+    assert bk.market(con_otros)[:2] == (1.0, 30.0)               # 50 visibles = 30 de otros + nuestros 20
+    sin_reflejar = {"bids": [["1.0000", "5"]], "asks": [["1.0010", "500"]]}
+    assert bk.market(sin_reflejar)[:2] == (1.0, 5.0)             # la foto aún no tiene nuestra orden
+    bk.on_book(*bk.market(solos))                                # solos arriba: se baja con el mercado
+    assert ex.orders["nx1XUSDT"]["status"] == "CANCELED" and bk.order["px"] == 0.999
+    ex.fill(bk.order["cid"], float(ex.orders[bk.order["cid"]]["origQty"]))
+    bk.on_book(0.999, 300, 1.001, 500)
+    bk.on_book(0.999, 300, 1.001, 500)                           # venta en el ask
+    assert bk.order["side"] == "SELL" and bk.order["px"] == 1.001
+    arriba = {"bids": [["0.9990", "300"]], "asks": [["1.0010", str(bk.order["qty"])], ["1.0015", "40"]]}
+    assert bk.market(arriba)[2:] == (1.0015, 40.0)               # solos en el ask: el mercado vende más arriba
+    bk.on_book(*bk.market(arriba))
+    assert bk.order["px"] == 1.0015                              # sube como el paper (nunca bajo el piso)
+
+
+def test_desk_pide_el_libro_y_descuenta_la_orden_propia(env):
+    ex, bk, live = env["ex"], env["make"](), env["live"]
+    pedidos = []
+
+    class Datos:
+        def _get(self, path, params=None, signed=False):
+            pedidos.append((path, params))
+            mine = sum(float(o["origQty"]) for o in ex.orders.values() if o["status"] == "NEW" and o["side"] == "BUY")
+            return {"bids": [["0.9990", str(300 + mine)]], "asks": [["1.0010", "500"]]}
+    desk = live.Desk(ex, Datos(), env["gate"], {"XUSDT": bk}, bk.olog)
+    desk.step(20)
+    assert pedidos[0] == ("/api/v3/depth", {"symbol": "XUSDT", "limit": live.DEPTH_LEVELS})
+    assert bk.order["px"] == 0.999                               # primera cotización en el mejor bid
+    desk.step(20)                                                # el nivel muestra 300 de otros + la nuestra:
+    assert ex.open_cids() == ["nx1XUSDT"] and bk.bq == 300       # no se mueve y la cola visible es la de otros

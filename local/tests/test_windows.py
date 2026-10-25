@@ -271,6 +271,9 @@ class FakeMexc:
     has_keys = False
 
     def _get(self, path, params=None, signed=False):
+        if path == "/api/v3/depth":
+            bt = self.book_ticker(params["symbol"])
+            return {"bids": [[bt["bidPrice"], bt["bidQty"]]], "asks": [[bt["askPrice"], bt["askQty"]]]}
         if path == "/api/v3/ticker/24hr":
             return [{"symbol": s, "quoteVolume": v} for s, v in
                     (("AAAUSDT", "900000"), ("BBBUSDT", "500000"), ("USDCUSDT", "9e9"), ("CCCUSDT", "1000"),
