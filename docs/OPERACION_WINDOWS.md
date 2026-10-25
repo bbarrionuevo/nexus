@@ -106,6 +106,30 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
    `state\real_trades.jsonl` (vueltas reales) y `state\orders.jsonl` (cada orden, con hash
    encadenado). El mismo par sigue también en paper, para comparar lo simulado contra lo real.
 
+### Cobertura MEXC→Binance (la estrategia de más margen por operación)
+El bot pone compras y ventas en MEXC, donde no paga comisión, solo cuando el precio de Binance deja
+margen. Cuando alguien le vende barato o le compra caro en MEXC, hace la operación contraria en Binance
+**en el acto**, a mercado: la cantidad de moneda no cambia y no se apuesta al precio. Se gana la
+diferencia entre los dos exchanges menos la comisión de Binance (0,1%).
+1. **Clave de Binance:** en Binance, *Gestión de API* → crear una clave **solo con "Habilitar trading
+   spot y de margen" en spot** (sin margen, sin futuros), **sin retiros** y restringida a la IP de la PC.
+   Pegala en el `.env` como `BINANCE_API_KEY` y `BINANCE_SECRET_KEY` y verificá con `nexus.check_keys`.
+2. **Inventario:** para cada par hacen falta USDT **y** la moneda en los dos exchanges (p. ej. con lote
+   de 10 USDT: 10–20 USDT y 10–20 USDT en moneda en MEXC, y lo mismo en Binance). Una compra en MEXC
+   gasta USDT de MEXC y moneda de Binance; una venta, al revés. Si un lado se queda sin saldo, ese lado
+   deja de cotizar hasta que rebalancees a mano (las claves nunca pueden retirar).
+3. **Autorizá** (pide confirmar la clave de Binance y la frase):
+   ```powershell
+   ..\.venv\Scripts\python -m nexus.agent.authorize --cobertura QUICKUSDT --lote 10 --dias 7 --calibracion
+   ```
+   Hasta 3 pares; lote de 6 a 25 USDT por orden. El agente la toma solo en menos de un minuto. El USDT
+   reservado para la cobertura en MEXC (lote × pares) no lo usa el market making con `--todo`.
+4. **Protecciones:** si una cobertura no se puede hacer (3 rechazos seguidos de Binance o algo llenado
+   sin cubrir más de 30 s), el par se **bloquea**, se cancelan sus órdenes en MEXC y te avisa el
+   vigilante. Revisás saldos, cubrís a mano lo que haya quedado y desbloqueás con
+   `..\.venv\Scripts\python -m nexus.agent.authorize --desbloquear-cobertura QUICKUSDT`.
+   KILL 1/2/3 la detienen igual que al resto; `--revocar` revoca market making y cobertura.
+
 | Acción | Comando |
 |---|---|
 | Dejar de abrir posiciones reales | `..\.venv\Scripts\python -m nexus.agent.authorize --revocar` |

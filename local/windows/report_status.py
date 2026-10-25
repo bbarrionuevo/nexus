@@ -83,10 +83,13 @@ def jsonl_tail(name, n):
 
 def real_block():
     """Lo del dinero real que no está en status.json: autorización, órdenes y vueltas recientes."""
+    from nexus.agent.hedge_live import HEDGE_AUTH, HEDGE_ORDERS, HEDGE_TRADES
     from nexus.agent.live import AUTH_FILE, ORDERS_LOG, REAL_TRADES
     return {"auth": paths.read_json(paths.state(AUTH_FILE), None), "orders_tail": jsonl_tail(ORDERS_LOG, 60),
             "real_trades_tail": jsonl_tail(REAL_TRADES, 50), "risk_real": paths.read_json(paths.state("risk_real.json"), None),
-            "preflight": paths.read_json(paths.state("preflight.json"), None)}
+            "preflight": paths.read_json(paths.state("preflight.json"), None),
+            "hedge_auth": paths.read_json(paths.state(HEDGE_AUTH), None), "hedge_orders_tail": jsonl_tail(HEDGE_ORDERS, 40),
+            "hedge_trades_tail": jsonl_tail(HEDGE_TRADES, 50), "risk_hedge": paths.read_json(paths.state("risk_hedge.json"), None)}
 
 
 def build():
