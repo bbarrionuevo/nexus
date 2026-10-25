@@ -10,7 +10,8 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\nexus-install.ps1
   aparte del de desarrollo y solo sigue versiones validadas.
 - Corre los tests; si fallan, no instala.
 - Crea `%LOCALAPPDATA%\nexus` (estado, logs y `.env` privado) y dos tareas programadas:
-  `nexus-agente` (al iniciar sesión, se reinicia sola) y `nexus-mantenimiento` (cada 30 min).
+  `nexus-agente` (al iniciar sesión, se reinicia sola) y `nexus-mantenimiento` (cada 30 min). El
+  mantenimiento agrega la tercera, `nexus-dashboard` (el tablero local, ver abajo).
 - Desactiva la suspensión con corriente (`-KeepSleep` para no tocarla).
 - **Autorreparación:** si el agente se detiene, Windows lo relanza en menos de 1 minuto, y el
   mantenimiento (cada 30 min) también lo verifica.
@@ -36,7 +37,26 @@ cd $env:USERPROFILE\nexus\local; ..\.venv\Scripts\python -m nexus.check_keys
 | Detener el agente | `Stop-ScheduledTask nexus-agente` |
 | Aprobar una versión con cambios protegidos | `..\.venv\Scripts\python ..\local\windows\update.py --aprobar` (desde `%USERPROFILE%\nexus\local`) |
 | Rearmar tras un halt permanente | `..\.venv\Scripts\python -m nexus.agent.risk --rearmar` |
-| Desinstalar | `Unregister-ScheduledTask nexus-agente,nexus-mantenimiento -Confirm:$false` |
+| Abrir el tablero | `start http://localhost:8765` (o el acceso directo "nexus tablero" del escritorio) |
+| Detener el tablero | `Stop-ScheduledTask nexus-dashboard` (el mantenimiento lo vuelve a lanzar) |
+| Desinstalar | `Unregister-ScheduledTask nexus-agente,nexus-mantenimiento,nexus-dashboard -Confirm:$false` |
+
+## Tablero en tiempo real
+Abrí **http://localhost:8765** en el navegador (o el acceso directo **nexus tablero** del escritorio).
+Se actualiza solo: el estado del agente cada 5 segundos y las oportunidades cada minuto.
+
+- **Qué muestra:** si el agente está en marcha, el modo paper y el interruptor KILL, la ganancia de
+  la estrategia vigente frente al grupo de control (con la curva acumulada), los criterios para pasar
+  a dinero real, el resultado por clima de mercado, los pares del laboratorio (y cuáles están en
+  pausa), las últimas vueltas, los avisos del agente, el riesgo del día y de la semana, y las
+  oportunidades del radar (rulo, P2P, diferencias de funding, paper de funding y carry, rendimiento
+  seguro).
+- **Seguridad:** es de **solo lectura**: no tiene botones ni puede enviar órdenes. Solo responde en
+  esta PC (127.0.0.1): no se puede abrir desde otra máquina. No lee el `.env`.
+- **Cómo corre:** la tarea `nexus-dashboard` lo lanza al iniciar sesión y lo relanza sola si se cae.
+  El mantenimiento crea esa tarea si no existe, así que llega sola a una PC ya instalada (en menos
+  de 30 minutos después de actualizarse). Cuando se instala una versión nueva, el tablero se
+  reinicia solo con el código nuevo. Su log está en `logs\dashboard.log`.
 
 ## Cómo se actualiza solo
 Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
