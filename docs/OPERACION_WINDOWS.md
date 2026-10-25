@@ -91,15 +91,17 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
    `--calibracion` permite empezar antes de cumplir los criterios de paper (excepción de REGLAS.md).
    Sin esa opción, solo autoriza si la evidencia cumple todo R-15.
 
-   **Modo automático** (en vez de elegir el par a mano):
+   **Modo automático (recomendado)**, en vez de elegir el par a mano:
    ```powershell
-   ..\.venv\Scripts\python -m nexus.agent.authorize --todo --dias 7 --auto 1 --calibracion
+   ..\.venv\Scripts\python -m nexus.agent.authorize --todo --dias 7 --auto 2 --calibracion
    ```
-   El agente opera los mejores pares **promovidos** por el laboratorio (`--auto 1` a `--auto 3`; el
-   capital se reparte entre los que estén promovidos en ese momento). Cuando el laboratorio promueve
-   uno mejor, cambia de par **solo si no tiene posición ni órdenes abiertas**: nunca abandona una
-   posición. Si no hay ninguno promovido, sigue en paper hasta que lo haya. Mismos topes (100 €, 7 días)
-   y mismos límites de pérdida.
+   El **selector** opera las mejores combinaciones (par + variante de la estrategia) que hoy ganan en
+   el laboratorio (`--auto 1` a `--auto 3`; el capital se reparte entre ellas). Cada 5 minutos vuelve a
+   puntuar. Si una combinación pierde en real el 2% del capital desde que se eligió, o pierde mientras
+   su gemela en paper gana, la descarta 24 h y pasa a la siguiente que esté ganando. Cambia **solo sin
+   posición abierta**: nunca abandona una posición. Si no hay ninguna combinación con ventaja, espera
+   en USDT hasta que la haya. Mismos topes (100 €, 7 días); los límites de pérdida del día, la semana
+   y el total quedan como red final.
 5. **Seguimiento:** el tablero muestra la tarjeta "Dinero real". El detalle está en
    `state\real_trades.jsonl` (vueltas reales) y `state\orders.jsonl` (cada orden, con hash
    encadenado). El mismo par sigue también en paper, para comparar lo simulado contra lo real.
@@ -139,7 +141,8 @@ vos pausaste y siempre te avisa del motivo. Lo hace si en el latido ve cualquier
 - Un par real **bloqueado** o en **estado desconocido** por más de 10 minutos.
 - Rechazos del exchange que se repiten (clave, IP, reloj o saldo) o el chequeo previo falla.
 - La calibración muestra que el real **pierde** mientras el gemelo en paper gana en el mismo período,
-  con al menos 10 vueltas reales: el modelo de paper no representa la realidad de ese par.
+  con al menos 10 vueltas reales, **y** el selector ya no tiene otra combinación a la que rotar (con
+  rotación, el agente deja esa combinación solo y pasa a la siguiente).
 - El latido muestra errores de datos sostenidos o el agente sin actualizar su estado.
 Reanuda (solo lo que pausó) cuando la causa desapareció, y te lo informa.
 

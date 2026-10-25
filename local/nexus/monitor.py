@@ -127,6 +127,10 @@ def digest(pc, research_md=None, now=None):
                   f"Vueltas reales {rr.get('n', 0)} · total {rr.get('total', 0) or 0:+.2f} · {rr.get('days', 0)} días · "
                   f"riesgo real hoy {rk.get('pnl_day', 0):+.2f} / semana {rk.get('pnl_week', 0):+.2f} · "
                   f"bloqueo: {lv.get('risk_block') or 'ninguno'} · KILL nivel {lv.get('kill_level', 0)}"]
+            sel = pc.get("selector") or {}
+            if sel:
+                ch = ", ".join(f"{s} ({c['strategy']})" for s, c in (sel.get("choices") or {}).items()) or "ninguna con ventaja hoy"
+                L.append(f"Selector: opera {ch}; descartadas: {', '.join(sel.get('banned') or {}) or 'ninguna'}.")
             for b in lv.get("books") or []:
                 L.append(f"- {b['sym']}: {b['state']}, posición {b.get('pos_qty')}, residuo {b.get('dust')}, "
                          f"PnL {b['pnl_eur']:+.4f}{' · BLOQUEADO: ' + b['blocked'] if b.get('blocked') else ''}")
