@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792944000.0,
-   "long_last": 1792944000.0,
-   "funding": 0.11474999999999998,
+   "short_last": 1792958400.0,
+   "long_last": 1792958400.0,
+   "funding": 0.13499999999999998,
    "fees": 0.24,
-   "settlements": 8,
+   "settlements": 10,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,13 +22,13 @@
     6.8
    ],
    "mark": {
-    "funding": 0.1147,
-    "basis": 0.2446,
+    "funding": 0.135,
+    "basis": 0.1479,
     "fees": 0.24,
-    "net": 0.1194
+    "net": 0.0429
    },
-   "last_short_px": 0.0061188,
-   "last_long_px": 0.006124
+   "last_short_px": 0.0069061,
+   "last_long_px": 0.006895
   },
   "JCT:MEXC/Bitget": {
    "base": "JCT",
@@ -40,11 +40,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.007408,
    "long_entry": 0.00741,
-   "short_last": 1792944000.0,
-   "long_last": 1792944000.0,
-   "funding": 0.05474999999999999,
+   "short_last": 1792958400.0,
+   "long_last": 1792958400.0,
+   "funding": 0.07164999999999999,
    "fees": 0.16,
-   "settlements": 4,
+   "settlements": 6,
    "realized_at_open": [
     1.111,
     59.3,
@@ -52,10 +52,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0547,
+    "funding": 0.0716,
     "basis": 0.0,
     "fees": 0.16,
-    "net": -0.1053
+    "net": -0.0884
    },
    "last_short_px": 0.007408,
    "last_long_px": 0.00741
@@ -70,11 +70,11 @@
    "long_symbol": "CT_USDT",
    "short_entry": 0.17666,
    "long_entry": 0.1765,
-   "short_last": 1792945867.5512798,
-   "long_last": 1792945867.5512798,
-   "funding": 0.0,
+   "short_last": 1792958400.0,
+   "long_last": 1792958400,
+   "funding": 0.013499999999999998,
    "fees": 0.14,
-   "settlements": 0,
+   "settlements": 2,
    "realized_at_open": [
     0.669,
     35.7,
@@ -82,11 +82,13 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0,
-    "basis": 0.0,
+    "funding": 0.0135,
+    "basis": -0.0414,
     "fees": 0.14,
-    "net": -0.14
-   }
+    "net": -0.1679
+   },
+   "last_short_px": 0.1698,
+   "last_long_px": 0.1695
   }
  },
  "closed": [
@@ -127,11 +129,11 @@
   }
  ],
  "summary": {
-  "ts": 1792945867.5512798,
+  "ts": 1792961819.8738492,
   "open": 3,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": -0.1259,
-  "total_eur": -0.2659
+  "open_net_eur": -0.2134,
+  "total_eur": -0.3534
  }
 }
