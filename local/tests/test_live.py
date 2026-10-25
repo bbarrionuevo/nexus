@@ -140,10 +140,11 @@ def test_id_propio_se_guarda_antes_de_enviar_y_requote_cancela(env):
     seen = []
     ex.on_new = lambda cid: seen.append((cid, (saved["XUSDT"]["order"] or {}).get("cid")))
     bk.on_book(1.0000, 500, 1.0010, 500)
-    bk.on_book(1.0002, 500, 1.0010, 500)                         # sube el bid: cancela...
-    assert ex.orders["nx1XUSDT"]["status"] == "CANCELED" and bk.order is None
-    bk.on_book(1.0002, 500, 1.0010, 500)                         # ...y re-cotiza en el ciclo siguiente
+    bk.on_book(1.0002, 500, 1.0010, 500)                         # sube el bid: cancela y re-cotiza en el mismo ciclo
+    assert ex.orders["nx1XUSDT"]["status"] == "CANCELED" and bk.order["cid"] == "nx2XUSDT"
     assert seen == [("nx1XUSDT", "nx1XUSDT"), ("nx2XUSDT", "nx2XUSDT")]   # R-06: guardado antes de enviar
+    assert ex.open_cids() == ["nx2XUSDT"] and ex.orders["nx2XUSDT"]["price"] == "1.0002"
+    bk.on_book(1.0002, 500, 1.0010, 500)                         # mismo precio: no toca la orden
     assert ex.open_cids() == ["nx2XUSDT"]
 
 
@@ -517,3 +518,69 @@ def test_capital_real_se_reparte_entre_los_pares_autorizados(monkeypatch):
                                                            "sin_retiro_confirmado": True})
     desk = ma.build_desk(ma.load_config(), fake, 0.0, 0.05)
     assert sorted(desk.books) == ["XUSDT", "YUSDT"] and {b.notional for b in desk.books.values()} == {10.0}
+
+
+def test_modo_auto_valida_tope_de_pares_y_no_mezcla_con_pares():
+    from nexus import paths
+    from nexus.agent import authorize, live
+    ok = {"evidence": {"criteria_met": 2, "criteria_total": 6}}
+    assert not authorize.validate(20, 7, [], True, ok, auto=2)
+    assert authorize.validate(20, 7, [], True, ok, auto=4)                     # más de 3 pares
+    assert authorize.validate(20, 7, ["XUSDT"], True, ok, auto=1)              # --pares y --auto juntos
+    assert authorize.validate(20, 7, [], True, ok)                             # ni pares ni auto
+    args = ["--capital", "20", "--dias", "7", "--auto", "2", "--calibracion"]
+    assert authorize.main(args, ask=answers("SI", authorize.PHRASE), out=lambda m: None, now=1e9) == 0
+    a = live.authorization(1e9 + 1)
+    assert a["auto"] == 2 and a["symbols"] == [] and a["capital_eur"] == 20
+    assert authorize.main(["--capital", "20", "--auto", "2", "--pares", "XUSDT", "--calibracion"],
+                          ask=answers("SI", authorize.PHRASE), out=lambda m: None, now=1e9) == 2
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), a | {"auto": 5})       # editada a mano: más de 3
+    assert live.authorization(1e9 + 1) is None
+
+
+def test_modo_auto_opera_los_promovidos_y_cambia_de_par_solo_sin_posicion(monkeypatch):
+    import time
+    from nexus import paths
+    from nexus.agent import live
+    import nexus.agent.maker_agent as ma
+    import nexus.exchanges.mexc_trade as mt
+    info2 = {"symbols": INFO["symbols"] + [INFO["symbols"][0] | {"symbol": "YUSDT", "baseAsset": "Y"}]}
+    fake = FakeMexc()
+    fake.has_keys = True
+    fake.exchange_info = lambda s: info2
+    fake.book_ticker = lambda s: {"bidPrice": "1.0", "bidQty": "5", "askPrice": "1.001", "askQty": "5"}
+    fake.trade_fee = lambda s: {"makerCommission": 0, "takerCommission": 0.0005}
+    monkeypatch.setattr(mt, "MexcTrader", lambda: fake)
+    cfg = ma.load_config()
+    auth = {"ts": time.time(), "expires": time.time() + 3600, "capital_eur": 20, "symbols": [], "auto": 1,
+            "sin_retiro_confirmado": True}
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), auth)
+    assert ma.build_desk(cfg, fake, 0.0, 0.05) is None                         # nada promovido: solo paper
+
+    def promote(**sc):
+        paths.write_json_atomic(paths.state("allocator.json"), {
+            "promoted": {s: 1 for s in sc}, "scores": {s: {"score": v, "n": 30, "mean": v * 2} for s, v in sc.items()}})
+    promote(XUSDT=0.01, YUSDT=0.005)
+    desk = ma.build_desk(cfg, fake, 0.0, 0.05)
+    assert list(desk.books) == ["XUSDT"] and desk.books["XUSDT"].notional == 20  # el mejor, con todo el capital
+    assert ma.rotate(desk, cfg, fake, 0.0, 0.05) is desk                       # sin cambios: no se rearma
+    desk.books["XUSDT"].seq = 3
+    promote(XUSDT=0.001, YUSDT=0.02)                                            # ahora Y es mejor...
+    desk.books["XUSDT"].state = "long"
+    assert ma.rotate(desk, cfg, fake, 0.0, 0.05) is desk                       # ...pero X está comprado: sigue
+    assert not desk.books["XUSDT"].entry_allowed()                             # y no vuelve a entrar en X
+    desk.books["XUSDT"].state = "flat"
+    new = ma.rotate(desk, cfg, fake, 0.0, 0.05)
+    assert list(new.books) == ["YUSDT"] and new.books["YUSDT"].entry_allowed()
+    new.save()
+    saved = json.loads(paths.state(live.STATE_FILE).read_text())
+    assert saved["XUSDT"]["seq"] == 3 and "YUSDT" in saved                    # R-06: el contador de X no se pierde
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), auth | {"auto": 2})    # 2 pares: se reparte el capital
+    two = ma.rotate(new, cfg, fake, 0.0, 0.05)
+    assert sorted(two.books) == ["XUSDT", "YUSDT"] and {b.notional for b in two.books.values()} == {10.0}
+    assert two.books["XUSDT"].seq == 3
+    promote(YUSDT=0.02)                                                         # promovido uno solo: todo el capital
+    one = ma.rotate(two, cfg, fake, 0.0, 0.05)
+    assert list(one.books) == ["YUSDT"] and one.books["YUSDT"].notional == 20
+    paths.state(live.AUTH_FILE).unlink()                                        # sin autorización y sin posición:
+    assert ma.rotate(one, cfg, fake, 0.0, 0.05) is None                        # vuelve a solo paper

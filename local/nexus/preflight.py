@@ -5,7 +5,7 @@ Revisa sin enviar órdenes:
 - reloj de la PC frente al de MEXC (si se desfasa más de ~5 s, MEXC rechaza las órdenes firmadas);
 - latencia a MEXC (mediana de varias consultas: dato para el criterio C6 de R-15);
 - autorización local vigente;
-- cada par autorizado o candidato: estado, tipos de orden, monto mínimo, precisión, tick en % del
+- cada par del dinero real (autorizado o elegido en modo automático) o candidato: estado, tipos de orden, monto mínimo, precisión, tick en % del
   precio, spread actual y comisiones reales.
 Resultado en state/preflight.json (va en el latido) y en pantalla.
   python -m nexus.preflight [PAR1,PAR2]
@@ -100,15 +100,23 @@ def run(client=None, symbols=(), clock=None, now=None):
     except Exception as e:                                           # noqa: BLE001
         r["clock_offset_ms"] = f"sin dato ({type(e).__name__})"
     r["latency"] = latency_ms(client)
-    syms = list(dict.fromkeys(list((auth or {}).get("symbols") or []) + list(symbols)))
+    # pares del dinero real: los autorizados o, en modo automático, los promovidos que elige el agente,
+    # más los que quedaron con posición guardada
+    from .agent.live import STATE_FILE
+    from .agent.maker_agent import desk_symbols
+    real = desk_symbols(auth, paths.read_json(paths.state(STATE_FILE), {})) if auth else []
+    r["real_symbols"] = real
+    if auth and auth.get("auto") and not real:
+        r["problems"].append("modo automático sin pares promovidos todavía: el agente sigue en paper")
+    syms = list(dict.fromkeys(real + list(symbols)))
     r["symbols"] = [symbol_check(client, s, capital) for s in syms]
     if auth and r.get("account"):
-        # capital = USDT + lo invertido en los pares autorizados (con una posición abierta el USDT baja)
-        held = sum(bal.get(x.get("base"), 0.0) * (x.get("bid") or 0.0) for x in r["symbols"] if x["sym"] in auth["symbols"])
+        # capital = USDT + lo invertido en los pares reales (con una posición abierta el USDT baja)
+        held = sum(bal.get(x.get("base"), 0.0) * (x.get("bid") or 0.0) for x in r["symbols"] if x["sym"] in real)
         r["account"]["in_positions_usdt"] = round(held, 4)
         if bal.get("USDT", 0.0) + held < capital * 0.95:
             r["problems"].append(f"capital en la cuenta {bal.get('USDT', 0.0) + held:.2f} USDT menor que el autorizado {capital:g}")
-    r["ready"] = bool(auth) and not r["problems"] and all(x["ok"] for x in r["symbols"] if x["sym"] in auth["symbols"])
+    r["ready"] = bool(auth) and not r["problems"] and all(x["ok"] for x in r["symbols"] if x["sym"] in real)
     paths.write_json_atomic(paths.state("preflight.json"), r)
     return r
 

@@ -10,11 +10,11 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\nexus-install.ps1
   aparte del de desarrollo y solo sigue versiones validadas.
 - Corre los tests; si fallan, no instala.
 - Crea `%LOCALAPPDATA%\nexus` (estado, logs y `.env` privado) y dos tareas programadas:
-  `nexus-agente` (al iniciar sesión, se reinicia sola) y `nexus-mantenimiento` (cada 30 min). El
+  `nexus-agente` (al iniciar sesión, se reinicia sola) y `nexus-mantenimiento` (cada 10 min). El
   mantenimiento agrega la tercera, `nexus-dashboard` (el tablero local, ver abajo).
 - Desactiva la suspensión con corriente (`-KeepSleep` para no tocarla).
 - **Autorreparación:** si el agente se detiene, Windows lo relanza en menos de 1 minuto, y el
-  mantenimiento (cada 30 min) también lo verifica.
+  mantenimiento (cada 10 min) también lo verifica.
 - **Reinstalar o actualizar el instalador:** volver a correr los dos comandos de arriba. Detiene el
   agente anterior, instala la última versión validada de `main` y vuelve a registrar las tareas.
 - **Reinicios de Windows:** el agente arranca al iniciar sesión. Si Windows Update reinicia la PC,
@@ -84,6 +84,16 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
    `XXXUSDT` es el par que elijamos con la evidencia del laboratorio (te lo indico en el informe).
    `--calibracion` permite empezar antes de cumplir los criterios de paper (excepción de REGLAS.md).
    Sin esa opción, solo autoriza si la evidencia cumple todo R-15.
+
+   **Modo automático** (en vez de elegir el par a mano):
+   ```powershell
+   ..\.venv\Scripts\python -m nexus.agent.authorize --capital 20 --dias 7 --auto 1 --calibracion
+   ```
+   El agente opera los mejores pares **promovidos** por el laboratorio (`--auto 1` a `--auto 3`; el
+   capital se reparte entre los que estén promovidos en ese momento). Cuando el laboratorio promueve
+   uno mejor, cambia de par **solo si no tiene posición ni órdenes abiertas**: nunca abandona una
+   posición. Si no hay ninguno promovido, sigue en paper hasta que lo haya. Mismos topes (20 €, 7 días)
+   y mismos límites de pérdida.
 5. **Seguimiento:** el tablero muestra la tarjeta "Dinero real". El detalle está en
    `state\real_trades.jsonl` (vueltas reales) y `state\orders.jsonl` (cada orden, con hash
    encadenado). El mismo par sigue también en paper, para comparar lo simulado contra lo real.
@@ -128,7 +138,7 @@ vos pausaste y siempre te avisa del motivo. Lo hace si en el latido ve cualquier
 Reanuda (solo lo que pausó) cuando la causa desapareció, y te lo informa.
 
 ## Cómo se actualiza solo
-Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
+Cada 10 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
 todas estas condiciones:
 - El CI está en verde.
 - No hay cambios protegidos sin tu aprobación local. Tu aprobación de una versión sigue valiendo
