@@ -175,6 +175,16 @@ def test_check_keys_no_muestra_secretos_y_detecta_retiros(monkeypatch):
     texto = "\n".join(lines)
     assert "super-secret" not in texto and "R-01" in texto and "sin clave" in texto
 
+    def clave_sin_retiro(c):                     # la cuenta dice retiros, pero la clave confirma que no
+        return {"canWithdraw": True, "permisos_de_la_clave": {"retiros": False}, "avisos": ["permisos correctos"]}
+
+    def clave_con_retiro(c):
+        return {"canWithdraw": True, "permisos_de_la_clave": {"retiros": True}, "avisos": ["LA CLAVE PERMITE RETIROS"]}
+    lines = []
+    assert ck.run([("E", "FAKE_K", "FAKE_S", Ok, clave_sin_retiro)], lines.append, check_clock=False) == 0
+    assert ck.run([("F", "FAKE_K", "FAKE_S", Ok, clave_con_retiro)], lines.append, check_clock=False) == 2
+    assert "  E: permisos correctos" in lines and "  F: LA CLAVE PERMITE RETIROS" in lines
+
 
 
 def test_describe_error_es_util_y_no_filtra_claves():
