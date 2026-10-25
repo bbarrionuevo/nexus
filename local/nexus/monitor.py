@@ -92,6 +92,14 @@ def digest(pc, research_md=None, now=None):
                     a = (reg.get("vigente") or {}).get(dim, {}).get(c, {})
                     b = (reg.get("control") or {}).get(dim, {}).get(c, {})
                     L.append(f"| {dim} | {c} | {a.get('n', 0)} · {a.get('total', 0):+.2f} | {b.get('n', 0)} · {b.get('total', 0):+.2f} |")
+        sel = ev.get("selection") or {}
+        if sel:
+            L += ["", "### Selección de pares por evidencia (laboratorio, fuera de muestra)",
+                  "Promovido = par elegido por su cota inferior con vueltas ANTERIORES; si no supera a "
+                  "explorando, elegir por evidencia no sirve.",
+                  "| selección | vueltas | total € | media € | IC95 desde |", "|---|---|---|---|---|"]
+            for k, x in sel.items():
+                L.append(f"| {k} | {x.get('n', 0)} | {x.get('total', 0):+.2f} | {x.get('mean')} | {x.get('ci95_low')} |")
         per = ev.get("per_symbol") or {}
         if per:
             rows = sorted(per.items(), key=lambda kv: (kv[1].get("n", 0) >= 30, kv[1].get("mean") or -9),

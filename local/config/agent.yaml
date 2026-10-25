@@ -27,6 +27,14 @@ lab:
   pause_hours: 24              # ...se pausa 24 h y no se vuelve a elegir
   fast_pause_stops: 3          # o antes: 3 stops dentro de las últimas 6 vueltas
   fast_pause_window: 6
+  # Asignador (explorar/explotar, ver nexus/allocator.py). Reglas fijadas de antemano: NO se ajustan
+  # mirando resultados. Se conservan hasta keep_max pares con cota inferior > 0 (media − desvío/√n)
+  # sobre sus últimas score_window vueltas de los últimos score_days días (mínimo score_min_n).
+  allocator: true
+  keep_max: 6
+  score_window: 60
+  score_min_n: 20
+  score_days: 7
 
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).

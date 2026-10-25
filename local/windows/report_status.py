@@ -61,7 +61,7 @@ def trades_tail(n=4000, max_bytes=1_500_000):
         if t.get("model", 1) >= evidence.FILL_MODEL:
             out.append([round(t["ts"]), t["sym"], t["pnl"], t.get("kind"), t.get("hold_s"), t.get("entry"),
                         t.get("exit"), int(bool(t.get("lab"))), t.get("spread_pct"), t.get("vol_1m_pct"),
-                        t.get("er"), t.get("btc_ret15_pct"), t.get("strategy")])
+                        t.get("er"), t.get("btc_ret15_pct"), t.get("strategy"), t.get("sel")])
     return out[-n:]
 
 
