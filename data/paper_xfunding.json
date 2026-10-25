@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792889494.7311144,
-   "long_last": 1792889494.7311144,
-   "funding": 0.0,
+   "short_last": 1792900800.0,
+   "long_last": 1792900800.0,
+   "funding": 0.03415,
    "fees": 0.24,
-   "settlements": 0,
+   "settlements": 2,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,11 +22,13 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0,
-    "basis": 0.0,
+    "funding": 0.0341,
+    "basis": 0.2446,
     "fees": 0.24,
-    "net": -0.24
-   }
+    "net": 0.0388
+   },
+   "last_short_px": 0.0061188,
+   "last_long_px": 0.006124
   }
  },
  "closed": [
@@ -67,11 +69,11 @@
   }
  ],
  "summary": {
-  "ts": 1792889494.7311144,
+  "ts": 1792903927.0466866,
   "open": 1,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": -0.24,
-  "total_eur": -0.38
+  "open_net_eur": 0.0388,
+  "total_eur": -0.1012
  }
 }
