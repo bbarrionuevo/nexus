@@ -24,9 +24,10 @@ WS = "wss://data-stream.binance.vision/stream?streams="
 
 class Book:
     def __init__(self, sym, notional=40.0, maker=0.0, taker=0.1, stop_pct=1.0, min_edge_pct=0.0,
-                 max_hold_s=1800, gate=None, now=time.time, on_closed=None, max_vol_1m_pct=None):
+                 max_hold_s=1800, gate=None, now=time.time, on_closed=None, max_vol_1m_pct=None, context=None):
         self.on_closed = on_closed                            # callback(dict) por cada vuelta cerrada
         self.max_vol = max_vol_1m_pct                         # no entrar si la volatilidad supera esto (%/min)
+        self.context = context                                # callable -> dict con el clima del mercado (BTC)
         self.sym, self.notional, self.maker, self.taker = sym, notional, maker, taker
         self.stop, self.min_edge, self.max_hold, self.gate, self.now = stop_pct, min_edge_pct, max_hold_s, gate, now
         self.bid = self.ask = self.bq = self.aq = None
@@ -55,6 +56,15 @@ class Book:
         var = sum(math.log(b / a) ** 2 for (_, a), (_, b) in zip(pts, pts[1:]) if a > 0 and b > 0)
         secs = pts[-1][0] - pts[0][0]
         return round(math.sqrt(var / secs * 60) * 100, 4) if secs > 0 else None
+
+    def trend(self):
+        """(efficiency ratio 0-1, variación % de la ventana): ~0 = lateral (va y viene), ~1 = tendencia."""
+        if len(self.mids) < 10:
+            return None, None
+        pts = [m for _, m in self.mids]
+        path = sum(abs(b - a) for a, b in zip(pts, pts[1:]))
+        er = abs(pts[-1] - pts[0]) / path if path > 0 else 0.0
+        return round(er, 3), round((pts[-1] / pts[0] - 1) * 100, 4)
 
     def on_book(self, b, bq, a, aq):
         self.bid, self.bq, self.ask, self.aq = b, bq, a, aq
@@ -86,8 +96,10 @@ class Book:
         if self.state == "flat" and buyer_is_maker:           # vendedor agresor golpea bids
             if price < self.px or (price == self.px and self._consume(qty)):
                 self.state, self.entry, self.entry_ts = "long", self.px, self.now()
+                er, ret = self.trend()
                 self.entry_ctx = {"spread_pct": round((self.ask / self.bid - 1) * 100, 4)
-                                  if self.bid and self.ask else None, "vol_1m_pct": self.vol_1m()}
+                                  if self.bid and self.ask else None, "vol_1m_pct": self.vol_1m(),
+                                  "er": er, "ret_window_pct": ret} | (self.context() if self.context else {})
                 self.qty = self.notional / self.px
                 self.entry_fee = self.notional * self.maker / 100
                 self.eq -= self.entry_fee

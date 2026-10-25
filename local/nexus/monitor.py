@@ -82,6 +82,16 @@ def digest(pc, research_md=None, now=None):
             if ev.get("strategy"):
                 L.append(f"Estrategia vigente: **{ev['strategy']}** (los criterios se miden solo con ella). "
                          f"Versiones anteriores: {prev.get('n', 0)} vueltas, {prev.get('total', 0):+.2f} €.")
+        reg = ev.get("regimes") or {}
+        if reg.get("vigente") or reg.get("control"):
+            L += ["", "### Resultado por clima de mercado (vigente vs. control sin filtro, mismos datos)",
+                  "| dimensión | clima | vigente: vueltas · total € | control: vueltas · total € |", "|---|---|---|---|"]
+            for dim in ("volatilidad", "tendencia", "mercado"):
+                cats = sorted(set((reg.get("vigente") or {}).get(dim, {})) | set((reg.get("control") or {}).get(dim, {})))
+                for c in cats:
+                    a = (reg.get("vigente") or {}).get(dim, {}).get(c, {})
+                    b = (reg.get("control") or {}).get(dim, {}).get(c, {})
+                    L.append(f"| {dim} | {c} | {a.get('n', 0)} · {a.get('total', 0):+.2f} | {b.get('n', 0)} · {b.get('total', 0):+.2f} |")
         per = ev.get("per_symbol") or {}
         if per:
             rows = sorted(per.items(), key=lambda kv: (kv[1].get("n", 0) >= 30, kv[1].get("mean") or -9),
