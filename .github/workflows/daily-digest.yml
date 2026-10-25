@@ -1,6 +1,6 @@
 name: Informe diario (mail)
 on:
-  schedule: [{cron: "41 10 * * *"}]
+  schedule: [{cron: "41 10 * * *"}, {cron: "13 14 * * *"}]   # la segunda es respaldo (no repite)
   workflow_dispatch:
 permissions: {contents: read, issues: write}
 concurrency: digest
@@ -17,9 +17,12 @@ jobs:
         run: |
           git fetch -q origin pc-status && git show FETCH_HEAD:pc_status.json > /tmp/pc.json || echo "sin latido"
           git fetch -q origin data && git show FETCH_HEAD:data/discovery.jsonl > /tmp/discovery.jsonl || true
-          if [ -s /tmp/discovery.jsonl ]; then cd local && python -m nexus.daily_report /tmp/discovery.jsonl > /tmp/research.md; fi
+          git show FETCH_HEAD:data/radar.md > /tmp/radar.md 2>/dev/null || true
+          if [ -s /tmp/discovery.jsonl ]; then (cd local && python -m nexus.daily_report /tmp/discovery.jsonl > /tmp/report.md); fi
+          cat /tmp/radar.md /tmp/report.md > /tmp/research.md 2>/dev/null || true
       - name: Publicar informe
         env:
           GITHUB_TOKEN: ${{ github.token }}
           NEXUS_OWNER: ${{ github.repository_owner }}
+          NEXUS_DIGEST_ONCE: ${{ github.event_name == 'schedule' && '1' || '0' }}
         run: cd local && python -m nexus.monitor digest /tmp/pc.json /tmp/research.md
