@@ -27,7 +27,7 @@ class FakeMexc:
         from nexus.exchanges.mexc_trade import OrderRejected
         self.Rej = OrderRejected
         self.orders, self.calls, self.fail, self.reject = {}, [], {}, {}
-        self.market_px = None
+        self.market_px, self.depth = None, 1e9                 # depth: cuánto hay comprando (libro finito)
         self.balances = {"X": 0.0, "USDT": 100.0}
         self.on_new = None
 
@@ -49,6 +49,8 @@ class FakeMexc:
         self.orders[cid] = o
         if type_ == "MARKET":
             self.fill(cid, float(quantity), self.market_px)
+        if type_ == "LIMIT" and side == "SELL" and self.market_px is not None and float(price) <= self.market_px:
+            self.fill(cid, min(float(quantity), self.depth), self.market_px)          # límite agresivo: cruza
         return {"orderId": len(self.orders), "symbol": symbol}
 
     def fill(self, cid, qty, px=None):
@@ -190,7 +192,8 @@ def test_stop_cancela_la_venta_y_vende_a_mercado(env):
     ex.market_px = 0.985
     bk.on_book(0.985, 500, 0.986, 500)                           # cae 1,5%: stop
     assert ex.orders["nx2XUSDT"]["status"] == "CANCELED"
-    assert ex.orders["nx3XUSDT"]["type"] == "MARKET" and bk.state == "flat" and bk.stops == 1
+    o = ex.orders["nx3XUSDT"]                                    # límite agresivo con tope de 0,5% bajo el bid
+    assert o["type"] == "LIMIT" and o["price"] == "0.9800" and bk.state == "flat" and bk.stops == 1
     t = env["closed"][0]
     assert t["kind"] == "stop" and t["pnl"] == pytest.approx(20 * 0.985 * (1 - 0.0005) - 20.0)
     assert env["gate"].risk.s["stops_row"] == 1
@@ -313,6 +316,9 @@ def test_agente_activa_el_modo_real_solo_con_autorizacion(monkeypatch):
     paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": time.time(), "expires": time.time() + 3600,
                                                            "capital_eur": 20, "symbols": ["XUSDT"],
                                                            "sin_retiro_confirmado": True})
+    fake.balances["USDT"] = 15.0
+    assert ma.build_desk(cfg, fake, 0.0, 0.05).books["XUSDT"].notional == 14.7   # compra con lo que hay
+    fake.balances["USDT"] = 100.0
     desk = ma.build_desk(cfg, fake, 0.0, 0.05)
     assert list(desk.books) == ["XUSDT"] and desk.books["XUSDT"].notional == 20
     assert desk.gate.risk.path == paths.state("risk_real.json")                # riesgo real aparte del paper
@@ -426,3 +432,32 @@ def test_agente_completo_en_modo_real_hasta_el_reinicio(monkeypatch):
     assert books["XUSDT#real"]["state"] == "long"                # el actualizador ve la posición real
     assert ex.open_cids() == []                                   # al reiniciar cancela la venta puesta
     assert live.verify_chain(paths.state(live.ORDERS_LOG))
+
+
+def test_salida_forzada_en_libro_finito_reprecia_sin_pasar_el_tope(env):
+    ex, bk, clock = env["ex"], env["make"](), env["clock"]
+    bk.on_book(1.0, 500, 1.001, 500)
+    ex.fill("nx1XUSDT", 20.0)
+    bk.on_book(1.0, 500, 1.001, 500)
+    bk.on_book(1.0, 500, 1.001, 500)
+    ex.market_px, ex.depth = 0.985, 8.0                          # solo hay 8 unidades comprando
+    bk.on_book(0.985, 8, 0.986, 500)
+    assert bk.state == "long" and bk.pos_qty == pytest.approx(12.0) and bk.order["kind"] == "stop"
+    bk.on_book(0.985, 8, 0.986, 500)                             # antes de 3 s no toca la orden
+    assert bk.order["cid"] == "nx3XUSDT"
+    clock.t += 4
+    ex.market_px, ex.depth = 0.983, 1e9
+    bk.on_book(0.983, 500, 0.984, 500)                           # re-precio al bid nuevo: se completa
+    assert bk.state == "flat" and ex.orders["nx3XUSDT"]["status"] == "PARTIALLY_CANCELED"
+    assert ex.orders["nx4XUSDT"]["price"] == "0.9780" and env["closed"][0]["kind"] == "stop"
+    assert env["closed"][0]["qty"] == pytest.approx(20.0)
+
+
+def test_reglas_rechazan_pares_no_operables():
+    from nexus.agent import live
+    bad = {"symbols": [INFO["symbols"][0] | {"status": "2"}]}
+    with pytest.raises(ValueError):
+        live.Rules(bad, "XUSDT")
+    with pytest.raises(ValueError):
+        live.Rules({"symbols": [INFO["symbols"][0] | {"orderTypes": ["LIMIT", "MARKET"]}]}, "XUSDT")
+    assert live.Rules({"symbols": [INFO["symbols"][0] | {"status": "1"}]}, "XUSDT").min_quote == 1.0

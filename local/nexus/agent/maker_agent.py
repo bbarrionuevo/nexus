@@ -302,6 +302,11 @@ def build_desk(cfg, client, maker, taker):
     rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
     olog, books = live.OrderLog(), {}
     notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR), cfg["risk"]["max_position_eur"])
+    usdt = sum(float(b.get("free") or 0) for b in acc.get("balances", []) if b.get("asset") == "USDT")
+    if usdt and usdt * 0.98 < notional:                 # comprar con lo que hay, no acumular rechazos
+        log.warning("real: saldo USDT %.2f menor que el capital autorizado %.2f: se compra por %.2f",
+                    usdt, notional, usdt * 0.98)
+        notional = round(usdt * 0.98, 2)
     for s in syms:
         try:
             rules = live.Rules(trader.exchange_info(s), s)

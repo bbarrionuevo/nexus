@@ -26,7 +26,7 @@ class OrderRejected(Exception):
     @property
     def not_found(self):
         m = (self.msg or "").lower()
-        return self.code in (-2011, -2013, 30016, 30014) or "not exist" in m or "unknown order" in m
+        return self.code in (-2011, -2013) or "not exist" in m or "unknown order" in m
 
 
 class MexcTrader(MexcReadOnly):
