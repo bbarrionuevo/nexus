@@ -332,21 +332,25 @@ def test_mexc_solo_lectura_y_comisiones():
 
 
 def test_ordenes_solo_en_el_cliente_de_trading_y_retiros_en_ninguna_parte():
-    """Fase 6: los endpoints de órdenes existen SOLO en exchanges/mexc_trade.py, que solo importa el
-    agente real. Retiros, transferencias, margen y futuros no existen en ningún módulo."""
+    """Fase 6: los endpoints de órdenes existen SOLO en exchanges/mexc_trade.py y exchanges/binance_trade.py
+    (este último, solo para cubrir), que solo importa el agente real. Retiros, transferencias, margen y
+    futuros no existen en ningún módulo."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1] / "nexus"
+    traders = ("mexc_trade.py", "binance_trade.py")
     order = ("/api/v3/order", "/api/v3/openOrders", "AddOrder", "newOrder")
-    never = ("withdraw", "Withdraw", "/capital/transfer", "sub-account", "/margin", "/futures", "universalTransfer")
+    never = ("withdraw", "Withdraw", "/capital/transfer", "sub-account", "/margin", "/futures", "universalTransfer",
+             "/sapi/v1/asset")
     hits = [f"{p.relative_to(root)}:{b}" for p in root.rglob("*.py") for b in order
-            if b in p.read_text(encoding="utf-8") and p.name != "mexc_trade.py"]
+            if b in p.read_text(encoding="utf-8") and p.name not in traders]
     assert hits == []
     endpoints = ("capital/withdraw", "/0/private/Withdraw", "/sapi/v1/capital/withdraw", "/api/v3/capital/transfer")
     assert [f"{p.name}:{b}" for p in root.rglob("*.py") for b in endpoints if b in p.read_text(encoding="utf-8")] == []
-    src = (root / "exchanges" / "mexc_trade.py").read_text(encoding="utf-8")
-    assert [b for b in never if b in src] == []
-    importers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py") if "mexc_trade" in p.read_text(encoding="utf-8")
-                       and p.name != "mexc_trade.py")
+    for t in traders:
+        src = (root / "exchanges" / t).read_text(encoding="utf-8")
+        assert [b for b in never if b in src] == [], t
+    importers = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.py")
+                       if any(t[:-3] in p.read_text(encoding="utf-8") for t in traders) and p.name not in traders)
     assert importers == ["agent/maker_agent.py"]
 
 

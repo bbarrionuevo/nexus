@@ -49,6 +49,13 @@ lab:
   eval_max: 3                  # también se conservan hasta 3 pares EN EVALUACIÓN: media > 0 con al menos
   eval_min_n: 5                # 5 vueltas, para que lleguen al mínimo de la cota sin que se los suelte
 
+# Cobertura MEXC→Binance con dinero real (agent/hedge_live.py; se activa con authorize --cobertura).
+# Cotiza en MEXC solo si, al precio de Binance, la vuelta cubierta deja al menos min_edge_pct después
+# de la comisión tomadora de Binance (0,1%; 0,075% pagando con BNB).
+hedge:
+  min_edge_pct: 0.1
+  taker_fee_pct: 0.1
+
 # Límites para 100 EUR de capital (derivación en docs/LIMITES.md). Bajar = libre; subir = solo
 # con tu autorización (el CI rechaza valores por encima de la línea base aprobada).
 risk:

@@ -158,11 +158,14 @@ def calibration(auth, trades_path=None, real_path=None, now=None):
     return out
 
 
-def books_snapshot(gate, desk):
+def books_snapshot(gate, desk, hedge=None):
     """Libros para paper_books.json: el actualizador lee de acá si hay posiciones abiertas (R-13),
-    así que los reales van también (clave PAR#real) aunque su estado completo esté en live_books.json."""
+    así que los reales van también (clave PAR#real) aunque su estado completo esté en live_books.json.
+    La cobertura figura como posición (PAR#cobertura) mientras tenga algo llenado sin cubrir."""
     return {x: b.to_dict() for x, b in gate.books.items()} | (
-        {f"{x}#real": b.to_dict() for x, b in desk.books.items()} if desk else {})
+        {f"{x}#real": b.to_dict() for x, b in desk.books.items()} if desk else {}) | (
+        {f"{x}#cobertura": {"state": "long" if (p.hedge or any(v[0] for v in p.pending.values())) else "flat"}
+         for x, p in hedge.pairs.items()} if hedge else {})
 
 
 def rotate(desk, cfg, client, maker, taker):
@@ -383,8 +386,11 @@ def real_notional(auth, cfg, balances, books, n_pairs):
     ganancias se reinvierten. Contar lo invertido evita que un reinicio con una posición abierta achique
     las compras (25-oct: 9,15 en vez de 20 tras reiniciar comprado en ZRO)."""
     from . import live
+    from .hedge_live import hedge_authorization
     usdt = sum(float(b.get("free") or 0) + float(b.get("locked") or 0) for b in balances if b.get("asset") == "USDT")
-    avail = usdt + sum(bk.pos_cost for bk in books.values())
+    h = hedge_authorization()                           # la cobertura necesita su USDT en MEXC: no se toca
+    reserve = float(h["lot_usdt"]) * len(h["symbols"]) if h else 0.0
+    avail = max(usdt - reserve, 0.0) + sum(bk.pos_cost for bk in books.values())
     cap = float((auth or {}).get("capital_eur") or live.MAX_CAPITAL_EUR)
     return round(min(min(cap, avail * 0.98) / n_pairs, cfg["risk"]["max_position_eur"]), 2)
 
@@ -466,6 +472,59 @@ def build_desk(cfg, client, maker, taker):
     return desk
 
 
+def build_hedge_desk(cfg, client):
+    """Cobertura MEXC→Binance con dinero real (agent/hedge_live.py), solo con autorización local vigente
+    (`authorize --cobertura`) o si quedó algo llenado sin cubrir de antes (hay que cubrirlo igual)."""
+    from . import hedge_live as hl
+    from . import live
+    auth = hl.hedge_authorization()
+    saved = paths.read_json(paths.state(hl.HEDGE_STATE), {})
+    pending = [s for s, d in saved.items() if isinstance(d, dict)
+               and (any((d.get("pending") or {}).get(k, [0])[0] for k in ("BUY", "SELL")) or d.get("hedge"))]
+    syms = sorted(set((auth or {}).get("symbols") or []) | set(pending))
+    if not syms:
+        return None
+    from ..exchanges.binance_trade import BinanceTrader
+    from ..exchanges.mexc_trade import MexcTrader
+    mexc, binance = MexcTrader(), BinanceTrader()
+    try:
+        if not mexc.has_keys or not (binance.key and binance.secret):
+            raise RuntimeError("faltan las claves de MEXC o de Binance en .env")
+        acc = binance.account()
+        if acc.get("canTrade") is False:
+            raise RuntimeError("la clave de Binance no tiene permiso de trading spot")
+        if acc.get("canWithdraw") and not (auth or {}).get("sin_retiro_confirmado"):
+            raise RuntimeError("R-01: Binance informa retiros y el dueño no confirmó que la clave no los tenga")
+    except Exception as e:                                           # noqa: BLE001
+        log.error("COBERTURA NO ACTIVADA: %s", e)
+        return None
+    lot = float((auth or {}).get("lot_usdt") or hl.MIN_LOT_USDT)
+    hcfg = cfg.get("hedge") or {}
+    gate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_hedge.json")))
+    olog, pairs = live.OrderLog(paths.state(hl.HEDGE_ORDERS)), {}
+    for s in syms:
+        try:
+            mr, br = live.Rules(mexc.exchange_info(s), s), hl.BinanceRules(binance.exchange_info(s), s)
+        except Exception as e:                                       # noqa: BLE001
+            log.error("cobertura %s: sin reglas del par en MEXC o Binance (%s): no se opera", s, e)
+            continue
+        hp = hl.HedgePair(s, mexc, binance, mr, br, olog, lot_usdt=lot, min_edge_pct=hcfg.get("min_edge_pct", 0.1),
+                          taker_b_pct=hcfg.get("taker_fee_pct", 0.1), on_trade=hl.journal_hedge, gate=gate)
+        if s in saved:
+            hp.load(saved[s])
+        pairs[s] = hp
+    if not pairs:
+        return None
+    desk = hl.HedgeDesk(mexc, binance, client, pairs, olog, hl.journal_hedge)
+    for s, hp in pairs.items():
+        hp.save_cb = desk.save
+        hp.quote_allowed = lambda s=s: s in ((hl.hedge_authorization() or {}).get("symbols") or [])
+        hp.reconcile()
+    desk.refresh_balances(every_s=0)
+    log.warning("COBERTURA activa en %s (lote %s USDT)", list(pairs), lot)
+    return desk
+
+
 def single_instance(path=None):
     """Un solo agente por PC. El 25-oct, un Stop-ScheduledTask detuvo el bucle de PowerShell pero no el
     proceso de Python: ese agente huérfano tomó la autorización y operó la cuenta real a la vez que el
@@ -527,8 +586,15 @@ def run():
     errors, last_status = [], 0.0
     log.info("comisiones maker=%s taker=%s; estado cargado: %s", maker, taker,
              {x: b.state for x, b in gate.books.items()})
+    hedge = build_hedge_desk(cfg, client)
     last_eval, ev, last_bal, last_desk, last_sel = 0.0, {}, time.time(), time.time(), time.time()
+    last_hedge = time.time()
     while True:
+        if time.time() - last_hedge >= 60:          # la cobertura arranca sola cuando se autoriza
+            last_hedge = time.time()
+            from .hedge_live import hedge_authorization
+            if hedge is None and hedge_authorization():
+                hedge = build_hedge_desk(cfg, client)
         if time.time() - last_sel >= 300:
             last_sel = time.time()
             try:
@@ -544,10 +610,14 @@ def run():
         try:
             if step(gate, client, cfg, seen, last_ok, errors) == "restart":
                 lab.save()
+                if hedge:
+                    hedge.shutdown()
                 if desk:
                     desk.shutdown()
-                    save_state("paper_books.json", books_snapshot(gate, desk))
+                    save_state("paper_books.json", books_snapshot(gate, desk, hedge))
                 return
+            if hedge:
+                hedge.step()
             if desk:
                 desk.step(cfg["stale_data_s"])
                 if time.time() - last_bal >= 600:
@@ -563,7 +633,7 @@ def run():
         if time.time() - last_status >= 30:
             last_status = time.time()
             errors[:] = [e for e in errors if time.time() - e < 3600]
-            save_state("paper_books.json", books_snapshot(gate, desk))
+            save_state("paper_books.json", books_snapshot(gate, desk, hedge))
             lab.save()
             if desk:
                 desk.save()
@@ -582,7 +652,8 @@ def run():
                 "data_age_s": {x: round(time.time() - t, 1) for x, t in last_ok.items()},
                 "lab": lab.status(), "evidence": ev, "market": MARKET.snapshot(),
                 "recommended": allocator.recommend(lab.alloc),
-                "live": desk.status(live_auth()) if desk else None})
+                "live": desk.status(live_auth()) if desk else None,
+                "hedge": hedge.status() if hedge else None})
         time.sleep(cfg["poll_seconds"])
 
 

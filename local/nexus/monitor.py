@@ -64,6 +64,10 @@ def alerts(pc, now=None, ci_conclusion=None):
         if b.get("blocked"):
             a.append(f"DINERO REAL: {b['sym']} BLOQUEADO ({b['blocked']}). Revisá en MEXC y desbloqueá con "
                      "`python -m nexus.agent.authorize --desbloquear` (ver OPERACION_WINDOWS.md).")
+    for x in (st.get("hedge") or {}).get("pairs") or []:
+        if x.get("blocked"):
+            a.append(f"COBERTURA: {x['sym']} BLOQUEADA ({x['blocked']}). Revisá saldos en MEXC y Binance y desbloqueá "
+                     "con `python -m nexus.agent.authorize --desbloquear-cobertura` (ver OPERACION_WINDOWS.md).")
     pf = (pc.get("real") or {}).get("preflight") or {}
     if pf.get("auth") and not pf.get("ready"):
         a.append("DINERO REAL autorizado pero el chequeo previo falla: "
@@ -118,6 +122,12 @@ def digest(pc, research_md=None, now=None):
                     a = (reg.get("vigente") or {}).get(dim, {}).get(c, {})
                     b = (reg.get("control") or {}).get(dim, {}).get(c, {})
                     L.append(f"| {dim} | {c} | {a.get('n', 0)} · {a.get('total', 0):+.2f} | {b.get('n', 0)} · {b.get('total', 0):+.2f} |")
+        hg = st.get("hedge")
+        if hg:
+            L += ["", "### Cobertura MEXC→Binance (dinero real)",
+                  f"Resultado {hg.get('pnl', 0):+.4f} USDT · " + " · ".join(
+                      f"{x['sym']}: {x['fills']} cubiertas, {x['pnl']:+.4f}"
+                      + (f", BLOQUEADO: {x['blocked']}" if x.get("blocked") else "") for x in hg.get("pairs") or [])]
         lv = st.get("live")
         if lv:
             rr, rk, auth = lv.get("real") or {}, lv.get("risk") or {}, lv.get("auth") or {}
