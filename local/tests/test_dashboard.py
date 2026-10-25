@@ -14,7 +14,9 @@ def _write(path, lines):
             f.write((x if isinstance(x, str) else json.dumps(x)) + "\n")
 
 
-def _trade(ts, pnl, strategy, model=2, **kw):
+def _trade(ts, pnl, strategy, model=None, **kw):
+    from nexus import evidence
+    model = evidence.FILL_MODEL if model is None else model
     return {"ts": ts, "sym": "BONKUSDT", "pnl": pnl, "kind": "maker", "hold_s": 30, "model": model,
             "strategy": strategy, "lab": False, "vol_1m_pct": 0.1} | kw
 
@@ -34,9 +36,9 @@ def test_estado_curvas_pausas_kill_y_avisos(dash):
                                                           "evidence": {"strategy": "v3"}})
     paths.write_json_atomic(paths.state("lab_paused.json"), {"AIUSDT": now + 3600, "OLDUSDT": now - 1})
     _write(paths.state("trades.jsonl"), [
-        _trade(now - 500, 5.0, "v2", model=1),               # modelo de llenado viejo: no cuenta
+        _trade(now - 500, 5.0, "v2", model=2),               # modelo de llenado viejo: no cuenta
         _trade(now - 400, 0.10, "v3"), _trade(now - 300, -0.04, "control"), "{roto",
-        _trade(now - 200, 0.05, "v3"), {"ts": now - 100, "model": 2}])   # sin pnl: se ignora
+        _trade(now - 200, 0.05, "v3"), {"ts": now - 100, "model": 99}])  # sin pnl: se ignora
     paths.kill_file().write_text("1")
     _write(paths.logs("agent.log"), ["2026-10-25 10:00:00 INFO nada",
                                      "2026-10-25 10:00:01 WARNING clave " + "A" * 40 + " filtrada"])

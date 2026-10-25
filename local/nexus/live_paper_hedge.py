@@ -2,7 +2,8 @@
 
 Por cada par se cotiza el mejor bid y el mejor ask de MEXC, solo si al precio actual de Binance la
 vuelta cubierta deja al menos `min_edge_pct`. Llenado con el mismo modelo de cola conservador que
-el resto del sistema (hay que agotar la cola visible, o que se opere atravesando el precio).
+el resto del sistema (hay que agotar la cola visible Y nuestra orden, o que se opere atravesando el
+precio).
 En cada sondeo primero se evalúan las operaciones contra las órdenes que estaban puestas y después
 se re-cotiza (al revés se esquivan llenados adversos). La cobertura NO se hace al precio del momento:
 se usa el precio de Binance del sondeo SIGUIENTE a la detección, para incluir demora y movimiento adverso.
@@ -35,9 +36,11 @@ class Side:
     def __init__(self, kind):
         self.kind, self.px, self.queue = kind, None, None
 
-    def quote(self, px, queue):
+    def quote(self, px, queue, own=0.0):
+        """queue = cola visible adelante; own = tamaño de nuestra orden. Se llena recién cuando el
+        volumen operado a nuestro precio cubre las dos (modelo 3)."""
         if px != self.px:
-            self.px, self.queue = px, queue
+            self.px, self.queue = px, queue + own
 
     def cancel(self):
         self.px, self.queue = None, None
@@ -51,13 +54,13 @@ class Side:
                 return True
             if price == self.px:
                 self.queue -= qty
-                return self.queue < 0
+                return self.queue <= 0
         if self.kind == "sell" and not buyer_is_maker:       # comprador agresor levanta asks
             if price > self.px:
                 return True
             if price == self.px:
                 self.queue -= qty
-                return self.queue < 0
+                return self.queue <= 0
         return False
 
 
@@ -107,11 +110,11 @@ class HedgedPair:
         self.b_bid, self.b_ask = b_bid, b_ask
         # 2) cotizar solo si la vuelta cubierta deja margen al precio actual
         if self.can("buy") and b_bid * (1 - self.fb) / m_bid - 1 >= self.min_edge:
-            self.buy.quote(m_bid, m_bq)
+            self.buy.quote(m_bid, m_bq, self.notional / m_bid)
         else:
             self.buy.cancel()
         if self.can("sell") and m_ask / (b_ask * (1 + self.fb)) - 1 >= self.min_edge:
-            self.sell.quote(m_ask, m_aq)
+            self.sell.quote(m_ask, m_aq, self.notional / m_ask)
         else:
             self.sell.cancel()
 
