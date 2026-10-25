@@ -45,6 +45,13 @@ def alerts(pc, now=None, ci_conclusion=None):
             a.append(f"Versión {up.get('candidate')} espera TU aprobación en el PC: {r}")
     if pc.get("kill_switch"):
         a.append("Interruptor de emergencia ACTIVO (no se abren posiciones).")
+    lv = st.get("live") or {}
+    for b in lv.get("books") or []:
+        if b.get("blocked"):
+            a.append(f"DINERO REAL: {b['sym']} BLOQUEADO ({b['blocked']}). Revisá en MEXC y desbloqueá con "
+                     "`python -m nexus.agent.authorize --desbloquear` (ver OPERACION_WINDOWS.md).")
+    if (lv.get("risk") or {}).get("sticky_halt"):
+        a.append(f"DINERO REAL en HALT PERMANENTE: {lv['risk']['sticky_halt']} (rearme: risk --rearmar --real).")
     return a
 
 
@@ -92,6 +99,18 @@ def digest(pc, research_md=None, now=None):
                     a = (reg.get("vigente") or {}).get(dim, {}).get(c, {})
                     b = (reg.get("control") or {}).get(dim, {}).get(c, {})
                     L.append(f"| {dim} | {c} | {a.get('n', 0)} · {a.get('total', 0):+.2f} | {b.get('n', 0)} · {b.get('total', 0):+.2f} |")
+        lv = st.get("live")
+        if lv:
+            rr, rk, auth = lv.get("real") or {}, lv.get("risk") or {}, lv.get("auth") or {}
+            L += ["", "### Dinero real (ejecuciones del exchange)",
+                  f"Autorización: {('hasta ' + str(auth.get('capital_eur')) + ' € en ' + ', '.join(auth.get('symbols', []))) if auth else 'vencida o revocada (solo cierra lo abierto)'}"
+                  f"{' · calibración' if auth.get('calibracion') else ''}. "
+                  f"Vueltas reales {rr.get('n', 0)} · total {rr.get('total', 0) or 0:+.2f} · {rr.get('days', 0)} días · "
+                  f"riesgo real hoy {rk.get('pnl_day', 0):+.2f} / semana {rk.get('pnl_week', 0):+.2f} · "
+                  f"bloqueo: {lv.get('risk_block') or 'ninguno'} · KILL nivel {lv.get('kill_level', 0)}"]
+            for b in lv.get("books") or []:
+                L.append(f"- {b['sym']}: {b['state']}, posición {b.get('pos_qty')}, residuo {b.get('dust')}, "
+                         f"PnL {b['pnl_eur']:+.4f}{' · BLOQUEADO: ' + b['blocked'] if b.get('blocked') else ''}")
         sel = ev.get("selection") or {}
         if sel:
             L += ["", "### Selección de pares por evidencia (laboratorio, fuera de muestra)",

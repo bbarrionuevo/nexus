@@ -12,6 +12,8 @@ PROTECTED = (
     ".github/workflows/ci.yml",
     ".github/CODEOWNERS",
     "local/nexus/agent/risk.py",       # gestor de riesgo
+    "local/nexus/agent/live.py",       # ejecución con dinero real (Fase 6)
+    "local/nexus/agent/authorize.py",  # autorización local del dueño para operar en real
     "local/nexus/exchanges/",          # clientes de exchange (capacidad de operar)
     "local/nexus/paths.py",            # ubicación del interruptor y del estado
     "local/windows/update.py",         # actualizador seguro

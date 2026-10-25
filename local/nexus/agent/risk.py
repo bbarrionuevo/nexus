@@ -4,7 +4,7 @@
 - Su estado se persiste de forma atómica: un reinicio NO borra la pérdida del día ni los stops.
 - Las salidas (reducir riesgo) siempre se permiten; lo que se bloquea son las entradas nuevas.
 - Halts "pegajosos" (drawdown total, estrategia perdedora 7 días) solo los levanta una persona:
-  python -m nexus.agent.risk --rearmar   (pide confirmación escrita; categoría C)
+  python -m nexus.agent.risk --rearmar [--real]   (pide confirmación escrita; categoría C)
 """
 import sys
 import time
@@ -139,7 +139,9 @@ def rearm(path=None):
 
 
 if __name__ == "__main__":
+    # --real: el riesgo del dinero real (Fase 6) tiene su propio estado, separado del paper.
+    target = paths.state("risk_real.json" if "--real" in sys.argv else "risk.json")
     if "--rearmar" in sys.argv:
-        rearm()
+        rearm(target)
     else:
-        print(paths.read_json(paths.state("risk.json"), {}))
+        print(paths.read_json(target, {}))

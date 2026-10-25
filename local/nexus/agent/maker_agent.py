@@ -127,6 +127,26 @@ def feed(bk, trades, seen):
     apply_trades(bk, fresh_trades(trades, seen))
 
 
+def live_auth():
+    from .live import authorization
+    return authorization()
+
+
+def books_snapshot(gate, desk):
+    """Libros para paper_books.json: el actualizador lee de acá si hay posiciones abiertas (R-13),
+    así que los reales van también (clave PAR#real) aunque su estado completo esté en live_books.json."""
+    return {x: b.to_dict() for x, b in gate.books.items()} | (
+        {f"{x}#real": b.to_dict() for x, b in desk.books.items()} if desk else {})
+
+
+def live_wanted():
+    """Hay autorización vigente o quedó una posición/orden real guardada que hay que gestionar."""
+    from .live import STATE_FILE
+    saved = paths.read_json(paths.state(STATE_FILE), {})
+    return bool(live_auth()) or any(isinstance(d, dict) and (d.get("state") == "long" or d.get("order"))
+                                    for d in saved.values())
+
+
 STRATEGY = {"tag": None}                                       # versión de la estrategia (agent.yaml)
 CONTROL_TAG = "control"                                        # misma estrategia SIN filtro de volatilidad
 
@@ -232,6 +252,62 @@ def save_state(name, data, tries=5):
     return False
 
 
+def build_desk(cfg, client, maker, taker):
+    """Libros con DINERO REAL (Fase 6), solo si hay autorización local vigente del dueño o quedó una
+    posición/orden real de antes (hay que seguir gestionándola aunque la autorización venza)."""
+    from . import live
+    auth = live.authorization()
+    saved = paths.read_json(paths.state(live.STATE_FILE), {})
+    pending = [s for s, d in saved.items() if isinstance(d, dict)
+               and (d.get("state") == "long" or d.get("order") or d.get("unknown"))]
+    syms = sorted(set((auth or {}).get("symbols", [])) | set(pending))
+    if not syms:
+        return None
+    from ..exchanges.mexc_trade import MexcTrader
+    trader = MexcTrader()
+    try:
+        if not trader.has_keys:
+            raise RuntimeError("no hay clave de MEXC en .env")
+        acc = trader.account()
+        if acc.get("canTrade") is False:
+            raise RuntimeError("la clave de MEXC no tiene permiso de trading")
+        if acc.get("canWithdraw") and not (auth or {}).get("sin_retiro_confirmado"):
+            raise RuntimeError("R-01: la cuenta informa retiros y el dueño no confirmó que la clave no los tenga")
+    except Exception as e:                                           # noqa: BLE001
+        log.error("MODO REAL NO ACTIVADO: %s", e)
+        return None
+    lmaker, ltaker = verified_fees(client, {**cfg, "symbols": syms})
+    rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
+    olog, books = live.OrderLog(), {}
+    notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR), cfg["risk"]["max_position_eur"])
+    for s in syms:
+        try:
+            rules = live.Rules(trader.exchange_info(s), s)
+        except Exception as e:                                       # noqa: BLE001
+            log.error("real %s: sin reglas del par (%s): no se opera", s, e)
+            continue
+        bk = live.LiveBook(s, trader, rules, olog, save=lambda: None, notional=notional, maker=lmaker, taker=ltaker,
+                           stop_pct=cfg["stop_pct"], min_edge_pct=cfg["min_edge_pct"],
+                           max_hold_s=cfg["max_hold_min"] * 60, gate=rgate, on_closed=live.journal_real,
+                           max_vol_1m_pct=cfg.get("max_vol_1m_pct"), context=MARKET.snapshot)
+        if s in saved:
+            bk.load(saved[s])
+        bk.entry_allowed = lambda s=s: s in ((live.authorization() or {}).get("symbols") or [])
+        books[s] = rgate.books[s] = bk
+    if not books:
+        return None
+    desk = live.Desk(trader, client, rgate, books, olog)
+    for bk in books.values():
+        bk.save_cb = desk.save
+        try:
+            px = float(client.book_ticker(bk.sym)["bidPrice"])
+        except Exception:                                            # noqa: BLE001
+            px = bk.entry or 0.0
+        bk.reconcile(acc.get("balances", []), px)
+    log.warning("MODO REAL activo en %s (autorización: %s)", list(books), auth)
+    return desk
+
+
 def main():
     paths.load_env()
     setup_logging()
@@ -251,6 +327,7 @@ def main():
             bk.load(saved[x])
         gate.books[x] = bk
     lab = Lab(client, cfg, maker, taker)
+    desk = build_desk(cfg, client, maker, taker)
     version = os.environ.get("NEXUS_VERSION", "desconocida")
     log.info("arranque version=%s simbolos=%s home=%s", version, cfg["symbols"], paths.home())
     seen = {x: set() for x in gate.books}
@@ -258,12 +335,23 @@ def main():
     errors, last_status = [], 0.0
     log.info("comisiones maker=%s taker=%s; estado cargado: %s", maker, taker,
              {x: b.state for x, b in gate.books.items()})
-    last_eval, ev = 0.0, {}
+    last_eval, ev, last_bal, last_desk = 0.0, {}, time.time(), time.time()
     while True:
+        if desk is None and time.time() - last_desk >= 60 and live_wanted():
+            last_desk = time.time()                  # p. ej. MEXC no respondía al arrancar con una posición real
+            desk = build_desk(cfg, client, maker, taker)
         try:
             if step(gate, client, cfg, seen, last_ok, errors) == "restart":
                 lab.save()
+                if desk:
+                    desk.shutdown()
+                    save_state("paper_books.json", books_snapshot(gate, desk))
                 return
+            if desk:
+                desk.step(cfg["stale_data_s"])
+                if time.time() - last_bal >= 600:
+                    last_bal = time.time()
+                    desk.check_balances()
             lab.step()
         except Exception:
             log.exception("error inesperado en el ciclo (el agente sigue)")
@@ -272,8 +360,10 @@ def main():
         if time.time() - last_status >= 30:
             last_status = time.time()
             errors[:] = [e for e in errors if time.time() - e < 3600]
-            save_state("paper_books.json", {x: b.to_dict() for x, b in gate.books.items()})
+            save_state("paper_books.json", books_snapshot(gate, desk))
             lab.save()
+            if desk:
+                desk.save()
             if time.time() - last_eval >= 300:
                 last_eval = time.time()
                 try:
@@ -282,11 +372,12 @@ def main():
                 except Exception:
                     log.exception("no se pudo evaluar la evidencia")
             save_state("status.json", {
-                "ts": time.time(), "version": version, "mode": "paper", "fees": [maker, taker],
+                "ts": time.time(), "version": version, "mode": "real+paper" if desk else "paper", "fees": [maker, taker],
                 "books": [b.mark() for b in gate.books.values()], "risk": risk.snapshot(),
                 "risk_block": risk.last_reason, "errors_last_hour": len(errors),
                 "data_age_s": {x: round(time.time() - t, 1) for x, t in last_ok.items()},
-                "lab": lab.status(), "evidence": ev, "market": MARKET.snapshot()})
+                "lab": lab.status(), "evidence": ev, "market": MARKET.snapshot(),
+                "live": desk.status(live_auth()) if desk else None})
         time.sleep(cfg["poll_seconds"])
 
 
