@@ -31,6 +31,7 @@ log = logging.getLogger("nexus.live")
 AUTH_FILE, STATE_FILE, ORDERS_LOG, REAL_TRADES = "live_auth.json", "live_books.json", "orders.jsonl", "real_trades.jsonl"
 UNBLOCK_FILE = "live_unblock.json"                # pedido humano de desbloqueo (authorize --desbloquear)
 CALIBRATION_MAX_EUR, MAX_DAYS = 20.0, 7          # Fase 6a: tope de capital y de vigencia de una autorización
+MAX_AUTO_PAIRS = 3                               # modo automático: hasta 3 pares promovidos a la vez
 MAX_REJECTS, UNKNOWN_BLOCK_S, BALANCE_TOL_USDT = 5, 120, 0.5
 EXIT_SLIP_PCT, EXIT_REPRICE_S = 0.5, 3   # salida forzada: límite agresivo hasta 0,5% bajo el bid, re-precio cada 3 s
 ONLINE = ("1", "ENABLED", "TRADING")
@@ -41,7 +42,10 @@ def authorization(now=None):
     """Autorización local vigente o None. Solo la escribe una persona con `nexus.agent.authorize`."""
     now = now or time.time()
     a = paths.read_json(paths.state(AUTH_FILE), None)
-    if not isinstance(a, dict) or not a.get("symbols") or a.get("expires", 0) <= now:
+    if not isinstance(a, dict) or a.get("expires", 0) <= now:
+        return None
+    auto = a.get("auto") or 0
+    if not a.get("symbols") and not (isinstance(auto, int) and 1 <= auto <= MAX_AUTO_PAIRS):
         return None
     if not 0 < float(a.get("capital_eur", 0)) <= CALIBRATION_MAX_EUR or a["expires"] - a.get("ts", 0) > MAX_DAYS * 86400:
         return None
@@ -193,10 +197,13 @@ class LiveBook(Book):
         if o:
             if o.get("kind"):                                 # salida forzada en curso: la maneja _close
                 return
-            if want is None or o["side"] != side or abs(o["px"] - want) > 1e-12:
-                self._cancel()                                # la nueva va en el próximo ciclo
-            return
-        if want is None:
+            if want is not None and o["side"] == side and abs(o["px"] - want) <= 1e-12:
+                return
+            if not self._cancel() or self.unknown or self.blocked:
+                return
+            if ("BUY" if self.state == "flat" else "SELL") != side:
+                return                                        # el cancel dejó posición: Book fija la venta al ciclo siguiente
+        if want is None:                                      # re-cotiza en el MISMO ciclo: no queda fuera del libro
             return
         if side == "BUY":
             qty = self.rules.qty(max(self.notional - self.pos_cost, 0) / want)
@@ -458,8 +465,11 @@ class Desk:
         self.last_ok = {s: time.time() for s in books}
 
     def save(self):
+        """Conserva lo guardado de los pares que no están en este escritorio (p. ej. tras cambiar de par
+        en modo automático): sin eso se perdía su contador de IDs y podía repetirse un ID propio (R-06)."""
         from .maker_agent import save_state
-        save_state(STATE_FILE, {s: b.to_dict() for s, b in self.books.items()})
+        other = {s: d for s, d in paths.read_json(paths.state(STATE_FILE), {}).items() if s not in self.books}
+        save_state(STATE_FILE, other | {s: b.to_dict() for s, b in self.books.items()})
 
     def check_balances(self):
         """Cada 10 min: el saldo del exchange tiene que coincidir con lo que creemos tener."""

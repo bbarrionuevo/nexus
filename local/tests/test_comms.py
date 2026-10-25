@@ -164,3 +164,20 @@ def test_preflight_cuenta_lo_invertido_en_la_posicion():
             return {"canTrade": True, "canWithdraw": False, "balances": [{"asset": "USDT", "free": "9.5", "locked": "0"}]}
     r = preflight.run(Vacio(), clock=lambda n: 100)
     assert not r["ready"] and "capital en la cuenta 9.50" in r["problems"][0]
+
+
+def test_preflight_y_informe_en_modo_automatico():
+    from nexus import paths, preflight
+    from nexus.agent import live
+    from nexus.monitor import auth_where
+    now = time.time()
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": now, "expires": now + 3600, "capital_eur": 20,
+                                                           "symbols": [], "auto": 1})
+    r = preflight.run(FakeClient(), clock=lambda n: 100)
+    assert not r["ready"] and "sin pares promovidos" in r["problems"][0] and r["real_symbols"] == []
+    paths.write_json_atomic(paths.state("allocator.json"), {"promoted": {"XUSDT": 1},
+                                                            "scores": {"XUSDT": {"score": 0.01, "n": 30, "mean": 0.02}}})
+    r = preflight.run(FakeClient(), clock=lambda n: 100)
+    assert r["ready"] and r["real_symbols"] == ["XUSDT"] and r["symbols"][0]["sym"] == "XUSDT"
+    assert auth_where({"symbols": [], "auto": 2}) == "modo automático (2 pares promovidos)"
+    assert auth_where({"symbols": ["XUSDT"]}) == "XUSDT"

@@ -8,7 +8,7 @@ explícita del dueño ([docs/REGLAS.md](docs/REGLAS.md)).
 | Componente | Dónde corre | Qué hace |
 |---|---|---|
 | Agente de market making (`nexus.agent.maker_agent`) | PC Windows 11 | Paper trading en MEXC (BONK, AI) con modelo de cola sobre datos reales; riesgo con veto y persistente |
-| Actualizador seguro (`local/windows/update.py`) | PC, cada 30 min | Instala solo `main` con CI en verde, sin posiciones abiertas, con tests locales y vuelta atrás |
+| Actualizador seguro (`local/windows/update.py`) | PC, cada 10 min | Instala solo `main` con CI en verde, sin posiciones abiertas, con tests locales y vuelta atrás |
 | Vigilante y informe diario (`nexus.monitor`) | GitHub Actions | Alertas cada hora e informe diario como issues → mail |
 | Descubrimiento (`discover.yml`) | GitHub Actions | Escanea arbitraje triangular, entre exchanges, paridad de stablecoins, spreads y ARS (datos públicos) |
 | Investigación (`research-maker.yml`, `trading-backtest.yml`, `live-paper.yml`) | GitHub Actions | Backtests walk-forward y paper en vivo; resultados en la rama `data` |

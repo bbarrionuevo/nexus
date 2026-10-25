@@ -8,7 +8,7 @@ resultados. Antes de actuar, leé `docs/REGLAS.md`: esas reglas mandan.
 - Despliegue: `%USERPROFILE%\nexus` (clon aparte que sigue `main`; no edites código ahí).
 - Estado y logs: `%LOCALAPPDATA%\nexus` (`state\status.json`, `state\update.json`, `logs\*.log`).
 - Claves: `%LOCALAPPDATA%\nexus\.env`. **Nunca muestres, copies ni subas su contenido.**
-- Tareas programadas: `nexus-agente` (agente, se relanza solo) y `nexus-mantenimiento` (cada 30 min).
+- Tareas programadas: `nexus-agente` (agente, se relanza solo) y `nexus-mantenimiento` (cada 10 min).
 
 ## Qué podés hacer sin pedir permiso
 - Diagnosticar: estado de las tareas, logs, `status.json`, versión instalada (`git -C %USERPROFILE%\nexus log --oneline -1`).

@@ -149,7 +149,7 @@ def calibration(auth, trades_path=None, real_path=None, now=None):
         return t["pnl"] / (t.get("notional") or 40.0) * 100
 
     out = {}
-    for s in auth.get("symbols") or []:
+    for s in dict.fromkeys(real_symbols(auth) + sorted({t["sym"] for t in real})):   # modo auto: los que operó
         p = [ret(t) for t in paper if t["sym"] == s]
         r = [ret(t) for t in real if t["sym"] == s]
         out[s] = {"hours": round(hours, 2),
@@ -163,6 +163,18 @@ def books_snapshot(gate, desk):
     así que los reales van también (clave PAR#real) aunque su estado completo esté en live_books.json."""
     return {x: b.to_dict() for x, b in gate.books.items()} | (
         {f"{x}#real": b.to_dict() for x, b in desk.books.items()} if desk else {})
+
+
+def rotate(desk, cfg, client, maker, taker):
+    """Modo automático: si los pares promovidos cambiaron, se rearma el escritorio real, pero SOLO
+    cuando todos sus libros están sin posición ni órdenes (nunca se abandona una posición)."""
+    want = set(real_symbols())
+    idle = all(b.state == "flat" and not b.order and not b.unknown for b in desk.books.values())
+    if want == set(desk.books) or not idle:
+        return desk
+    log.info("real: cambian los pares %s -> %s", sorted(desk.books), sorted(want))
+    desk.shutdown()
+    return build_desk(cfg, client, maker, taker)
 
 
 def live_wanted():
@@ -286,15 +298,32 @@ def save_state(name, data, tries=5):
     return False
 
 
+def real_symbols(auth=None):
+    """Pares que el dinero real puede operar ahora: los autorizados a mano y, en modo automático
+    (`authorize --auto N`), los N promovidos del laboratorio con mejor cota inferior fuera de muestra."""
+    auth = live_auth() if auth is None else auth
+    if not auth:
+        return []
+    picks = [r["sym"] for r in allocator.recommend(paths.read_json(paths.state("allocator.json"), {}),
+                                                    top=auth.get("auto") or 0)] if auth.get("auto") else []
+    return list(dict.fromkeys(list(auth.get("symbols") or []) + picks))
+
+
+def desk_symbols(auth, saved):
+    """Pares del escritorio real: los que puede operar ahora y los que quedaron con posición, orden o
+    estado desconocido guardados (hay que seguir gestionándolos aunque ya no estén autorizados)."""
+    pending = [s for s, d in saved.items() if isinstance(d, dict)
+               and (d.get("state") == "long" or d.get("order") or d.get("unknown"))]
+    return sorted(set(real_symbols(auth)) | set(pending))
+
+
 def build_desk(cfg, client, maker, taker):
     """Libros con DINERO REAL (Fase 6), solo si hay autorización local vigente del dueño o quedó una
     posición/orden real de antes (hay que seguir gestionándola aunque la autorización venza)."""
     from . import live
     auth = live.authorization()
     saved = paths.read_json(paths.state(live.STATE_FILE), {})
-    pending = [s for s, d in saved.items() if isinstance(d, dict)
-               and (d.get("state") == "long" or d.get("order") or d.get("unknown"))]
-    syms = sorted(set((auth or {}).get("symbols", [])) | set(pending))
+    syms = desk_symbols(auth, saved)
     if not syms:
         return None
     from ..exchanges.mexc_trade import MexcTrader
@@ -313,7 +342,10 @@ def build_desk(cfg, client, maker, taker):
     lmaker, ltaker = verified_fees(client, {**cfg, "symbols": syms})
     rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
     olog, books = live.OrderLog(), {}
-    n_pairs = max(1, len((auth or {}).get("symbols") or syms))      # el capital autorizado se reparte
+    # el capital autorizado se reparte entre los pares del escritorio (en modo automático, entre los
+    # promovidos que haya ahora: si se suma otro, rotate() rearma con el reparto nuevo, siempre sin posición)
+    auto = (auth or {}).get("auto")
+    n_pairs = max(1, len(syms) if auto else len((auth or {}).get("symbols") or syms))
     notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR) / n_pairs,
                    cfg["risk"]["max_position_eur"])
     for s in syms:
@@ -328,7 +360,7 @@ def build_desk(cfg, client, maker, taker):
                            max_vol_1m_pct=cfg.get("max_vol_1m_pct"), context=MARKET.snapshot)
         if s in saved:
             bk.load(saved[s])
-        bk.entry_allowed = lambda s=s: s in ((live.authorization() or {}).get("symbols") or [])
+        bk.entry_allowed = lambda s=s: s in real_symbols()
         books[s] = rgate.books[s] = bk
     if not books:
         return None
@@ -420,6 +452,9 @@ def run():
         if desk is None and time.time() - last_desk >= 60 and live_wanted():
             last_desk = time.time()                  # p. ej. MEXC no respondía al arrancar con una posición real
             desk = build_desk(cfg, client, maker, taker)
+        elif desk is not None and time.time() - last_desk >= 60:
+            last_desk = time.time()
+            desk = rotate(desk, cfg, client, maker, taker)
         try:
             if step(gate, client, cfg, seen, last_ok, errors) == "restart":
                 lab.save()
@@ -500,7 +535,7 @@ class Lab:
 
     def twins(self):
         """Pares con dinero real autorizado: siempre en el laboratorio, para comparar paper con real."""
-        return [s for s in ((live_auth() or {}).get("symbols") or []) if s not in self.main]
+        return [s for s in real_symbols() if s not in self.main]
 
     def on_closed(self, e, variant=None):
         """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio, o antes si
