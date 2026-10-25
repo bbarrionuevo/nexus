@@ -79,6 +79,17 @@ def by_regime(trades):
                 for c, v in cats.items()} for d, cats in out.items()}
 
 
+def by_variant(valid, now=None, hours=24):
+    """Laboratorio por variante de estrategia en la MISMA ventana (últimas `hours` horas): la vigente,
+    el control y las de lab.variants operan los mismos pares con los mismos datos."""
+    now = now or time.time()
+    d = defaultdict(list)
+    for t in valid:
+        if t.get("lab") and t["ts"] >= now - hours * 3600:
+            d[t.get("strategy") or "sin versión"].append(t["pnl"])
+    return {k: stats(v) for k, v in sorted(d.items())}
+
+
 def by_selection(trades):
     """Laboratorio por estado de selección al ENTRAR (promovido / explorando, ver allocator.py).
     "promovido" es fuera de muestra: la promoción se decidió con vueltas anteriores."""
@@ -135,6 +146,7 @@ def evaluate(path, now=None, strategy=None):
             "excluded_old_model": excluded, "strategy": strategy,
             "previous": stats([t["pnl"] for t in valid if t not in trades]) if strategy else None,
             "selection": by_selection(trades),
+            "variants": by_variant(valid, now),
             "regimes": {"vigente": by_regime(trades),
                         "control": by_regime([t for t in valid if t.get("strategy") == "control"])}}
 

@@ -110,6 +110,8 @@ ul.plain { margin: 0; padding-left: 18px; }
     <section class="card w4">
       <h2>Resultado por clima <span class="muted">vigente · control</span></h2>
       <div class="tablewrap"><table id="regimes"></table></div>
+      <h2 style="margin-top:14px">Variantes <span class="muted">laboratorio, últimas 24 h, mismos datos</span></h2>
+      <div class="tablewrap"><table id="variants"></table></div>
       <h2 style="margin-top:14px">Elegir pares por evidencia <span class="muted">fuera de muestra</span></h2>
       <div class="tablewrap"><table id="selection"></table></div>
       <div class="note">Promovido = par elegido con sus vueltas anteriores. Si no le gana a "explorando", elegir por evidencia no sirve.</div>
@@ -315,6 +317,10 @@ function renderState(d) {
   const lab = st.lab || [];
   const rec = (st.recommended || []).map(r => `${r.sym} (${nf(4).format(r.score)})`).join(", ");
   setText("lab-count", `${lab.length} pares · pausados: ${lab.filter(b => b.paused).length} · recomendado para real: ${rec || "ninguno todavía"}`);
+  table("variants", [{ h: "Variante", f: r => r[0] + (r[0] === ev.strategy ? " (vigente)" : "") }, { h: "Vueltas", num: true, f: r => num(r[1].n) },
+    { h: "Total", num: true, f: r => [eur(r[1].total), signCls(r[1].total)] }, { h: "Media", num: true, f: r => [eur(r[1].mean, 4), signCls(r[1].mean)] },
+    { h: "IC95 desde", num: true, f: r => r[1].ci95_low == null ? "—" : [eur(r[1].ci95_low, 4), signCls(r[1].ci95_low)] }],
+    Object.entries(ev.variants || {}), "Sin vueltas en las últimas 24 h.");
   table("selection", [{ h: "Selección", f: r => r[0] }, { h: "Vueltas", num: true, f: r => num(r[1].n) },
     { h: "Total", num: true, f: r => [eur(r[1].total), signCls(r[1].total)] }, { h: "Media", num: true, f: r => [eur(r[1].mean, 4), signCls(r[1].mean)] }],
     Object.entries(ev.selection || {}), "Se llena cuando el laboratorio promueva pares.");

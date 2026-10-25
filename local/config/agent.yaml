@@ -27,6 +27,12 @@ lab:
   pause_hours: 24              # ...se pausa 24 h y no se vuelve a elegir
   fast_pause_stops: 3          # o antes: 3 stops dentro de las últimas 6 vueltas
   fast_pause_window: 6
+  # Variantes que corren junto a la vigente sobre los mismos datos (además del control sin filtro).
+  # v4: además del filtro de volatilidad, compra solo si en el mejor nivel hay al menos 60% del tamaño
+  # del lado comprador (bidQty / (bidQty + askQty) ≥ 0,6): busca menos compras justo antes de una baja.
+  # Regla fijada de antemano; se compara fuera de muestra contra la vigente y el control.
+  variants:
+    v4-imb0.6: {max_vol_1m_pct: 0.3, min_imbalance: 0.6}
   # Asignador (explorar/explotar, ver nexus/allocator.py). Reglas fijadas de antemano: NO se ajustan
   # mirando resultados. Se conservan hasta keep_max pares con cota inferior > 0 (media − desvío/√n)
   # sobre sus últimas score_window vueltas de los últimos score_days días (mínimo score_min_n).

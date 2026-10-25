@@ -28,9 +28,11 @@ WS = "wss://data-stream.binance.vision/stream?streams="
 
 class Book:
     def __init__(self, sym, notional=40.0, maker=0.0, taker=0.1, stop_pct=1.0, min_edge_pct=0.0,
-                 max_hold_s=1800, gate=None, now=time.time, on_closed=None, max_vol_1m_pct=None, context=None):
+                 max_hold_s=1800, gate=None, now=time.time, on_closed=None, max_vol_1m_pct=None, context=None,
+                 min_imbalance=None):
         self.on_closed = on_closed                            # callback(dict) por cada vuelta cerrada
         self.max_vol = max_vol_1m_pct                         # no entrar si la volatilidad supera esto (%/min)
+        self.min_imb = min_imbalance                          # entrar solo si bidQty/(bidQty+askQty) ≥ esto
         self.context = context                                # callable -> dict con el clima del mercado (BTC)
         self.sym, self.notional, self.maker, self.taker = sym, notional, maker, taker
         self.stop, self.min_edge, self.max_hold, self.gate, self.now = stop_pct, min_edge_pct, max_hold_s, gate, now
@@ -83,6 +85,9 @@ class Book:
                 if v is None or v > self.max_vol:              # sin datos suficientes o muy volátil: no compra
                     self.px, self.queue = None, None
                     return
+            if self.min_imb is not None and (bq or 0) + (aq or 0) > 0 and bq / (bq + aq) < self.min_imb:
+                self.px, self.queue = None, None              # más presión vendedora que compradora: no compra
+                return
             if self.px != b:
                 self._quote(b, bq)
         elif self.state == "long":

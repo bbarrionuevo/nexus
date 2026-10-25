@@ -313,7 +313,9 @@ def build_desk(cfg, client, maker, taker):
     lmaker, ltaker = verified_fees(client, {**cfg, "symbols": syms})
     rgate = Gate(RiskManager(cfg["risk"], state_path=paths.state("risk_real.json")))
     olog, books = live.OrderLog(), {}
-    notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR), cfg["risk"]["max_position_eur"])
+    n_pairs = max(1, len((auth or {}).get("symbols") or syms))      # el capital autorizado se reparte
+    notional = min(float((auth or {}).get("capital_eur") or live.CALIBRATION_MAX_EUR) / n_pairs,
+                   cfg["risk"]["max_position_eur"])
     for s in syms:
         try:
             rules = live.Rules(trader.exchange_info(s), s)
@@ -431,6 +433,8 @@ def run():
                     last_bal = time.time()
                     desk.check_balances()
             lab.step()
+            if desk:                                 # el par real se atiende de nuevo tras el laboratorio:
+                desk.step(cfg["stale_data_s"])       # menos tiempo fuera del libro entre re-cotizaciones
         except Exception:
             log.exception("error inesperado en el ciclo (el agente sigue)")
             errors.append(time.time())
@@ -472,10 +476,22 @@ class Lab:
         self.saved = paths.read_json(paths.state("lab_books.json"), {})
         self.recent = {}                                      # últimas vueltas por par (pausa)
         self.recent_kinds = {}                                # tipos de cierre recientes (pausa rápida)
-        self.control = {}                                     # mismo par, misma estrategia SIN filtro de volatilidad
+        # Variantes sobre los MISMOS datos que la estrategia vigente: control = sin filtro de volatilidad;
+        # las demás vienen de lab.variants (reglas fijas en la config). Cada una tiene sus propias pausas.
+        self.arms = {tag: {} for tag in self.variants()}
         self.paused = {s: t for s, t in paths.read_json(paths.state("lab_paused.json"), {}).items()
                        if t > time.time()}
         self.alloc = paths.read_json(paths.state("allocator.json"), {})   # promociones (explorar/explotar)
+
+    def variants(self):
+        v = dict(self.cfg.get("variants") or {})
+        if self.cfg.get("control_group", True):
+            v = {CONTROL_TAG: {"max_vol_1m_pct": None}} | v
+        return v
+
+    @property
+    def control(self):
+        return self.arms.get(CONTROL_TAG, {})
 
     def is_paused(self, sym):
         if sym.split("#")[0] in self.twins():                     # el gemelo del par real no se pausa
@@ -489,7 +505,7 @@ class Lab:
     def on_closed(self, e, variant=None):
         """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio, o antes si
         acumula muchos stops seguidos de cerca (CHOMP perdió 12,7 € en 15 vueltas antes de pausarse).
-        variant=CONTROL_TAG: la vuelta es del grupo de control, que tiene sus propias pausas."""
+        variant=<variante> (control u otra de lab.variants): la vuelta es de esa variante, con sus pausas."""
         journal(e | {"lab": True}, strategy=variant)
         key = e["sym"] if variant is None else f"{e['sym']}#{variant}"
         n = self.cfg.get("pause_window", 15)
@@ -506,14 +522,16 @@ class Lab:
             log.info("laboratorio: %s pausado %s h (últimas %s vueltas pierden)", key,
                      self.cfg.get("pause_hours", 24), n)
 
-    def _book(self, sym, control=False):
+    def _book(self, sym, arm=None):
+        spec = self.variants().get(arm, {}) if arm else {}
         bk = Book(sym, notional=self.base["risk"]["max_position_eur"], maker=self.maker, taker=self.taker,
                   stop_pct=self.base["stop_pct"], min_edge_pct=self.base["min_edge_pct"],
                   max_hold_s=self.base["max_hold_min"] * 60,
-                  on_closed=(lambda e: self.on_closed(e, CONTROL_TAG)) if control else self.on_closed,
-                  max_vol_1m_pct=None if control else self.base.get("max_vol_1m_pct"),
+                  on_closed=(lambda e: self.on_closed(e, arm)) if arm else self.on_closed,
+                  max_vol_1m_pct=spec.get("max_vol_1m_pct", self.base.get("max_vol_1m_pct")),
+                  min_imbalance=spec.get("min_imbalance"),
                   context=lambda: MARKET.snapshot() | {"sel": allocator.status(self.alloc, sym)})
-        key = f"{sym}#{CONTROL_TAG}" if control else sym
+        key = f"{sym}#{arm}" if arm else sym
         if key in self.saved:
             bk.load(self.saved[key])
         return bk
@@ -537,21 +555,23 @@ class Lab:
         picked = select_lab(self.client, self.cfg, self.main | set(promoted) |
                             {s for s in self.paused if self.is_paused(s)}, self.base["risk"]["max_position_eur"])
         keep = {s for s, b in self.books.items() if b.state == "long"} | \
-            {s for s, b in self.control.items() if b.state == "long"}   # no se abandonan posiciones
+            {s for a in self.arms.values() for s, b in a.items() if b.state == "long"}   # no se abandonan posiciones
         twins = self.twins()
         promoted = twins + [s for s in promoted if s not in twins]
         names = promoted + [s for s, _ in picked if s not in twins][:max(0, self.cfg["max_symbols"] - len(promoted))]
         for s in list(self.books):
             if s not in names and s not in keep:
                 self.saved[s] = self.books.pop(s).to_dict()
-                if s in self.control:
-                    self.saved[f"{s}#{CONTROL_TAG}"] = self.control.pop(s).to_dict()
+                for tag, a in self.arms.items():
+                    if s in a:
+                        self.saved[f"{s}#{tag}"] = a.pop(s).to_dict()
         for s in names:
             if s not in self.books:
                 self.books[s] = self._book(s)
                 self.seen[s] = set()
-            if self.cfg.get("control_group", True) and s not in self.control:
-                self.control[s] = self._book(s, control=True)
+            for tag, a in self.arms.items():
+                if s not in a:
+                    a[s] = self._book(s, tag)
         self.order = list(self.books)
         self.selected_at = time.time()
         log.info("laboratorio: conservados (promovidos/en evaluación/gemelos) %s · explorando %s", promoted,
@@ -570,14 +590,11 @@ class Lab:
         for _ in range(min(self.cfg["per_loop"], len(self.order))):
             sym = self.order[self.i % len(self.order)]
             self.i += 1
-            bk, ck = self.books[sym], self.control.get(sym)
-            main_off = self.is_paused(sym) and bk.state == "flat"
-            ctrl_off = ck is None or (self.is_paused(f"{sym}#{CONTROL_TAG}") and ck.state == "flat")
-            if main_off:
-                bk.px, bk.queue = None, None                     # pausado: no abre; si estaba comprado, sale
-            if ck is not None and ctrl_off:
-                ck.px, ck.queue = None, None
-            if not (main_off and ctrl_off):
+            off = {key: self.is_paused(key) and b.state == "flat" for key, b in self.lab_books(sym)}
+            for key, b in self.lab_books(sym):
+                if off[key]:
+                    b.px, b.queue = None, None                   # pausado: no abre; si estaba comprado, sale
+            if not all(off.values()):
                 syms.append(sym)
         data = fetch_many(self.client, syms)
         for sym in syms:
@@ -587,9 +604,8 @@ class Lab:
                     raise data[sym]
                 bt, trades = data[sym]
                 new = fresh_trades(trades, self.seen[sym])
-                for b in (bk, self.control.get(sym)):
-                    if b is None or (b is not bk and self.is_paused(f"{sym}#{CONTROL_TAG}") and b.state == "flat") \
-                            or (b is bk and self.is_paused(sym) and b.state == "flat"):
+                for key, b in self.lab_books(sym):
+                    if self.is_paused(key) and b.state == "flat":
                         continue
                     apply_trades(b, new)                  # primero, contra la orden que estaba puesta
                     b.on_book(float(bt["bidPrice"]), float(bt["bidQty"]), float(bt["askPrice"]), float(bt["askQty"]))
@@ -598,10 +614,14 @@ class Lab:
             except Exception as e:
                 log.warning("laboratorio %s: %s", sym, type(e).__name__)
 
+    def lab_books(self, sym):
+        """[(clave de pausa, libro)]: la versión vigente y cada variante del par."""
+        return [(sym, self.books[sym])] + [(f"{sym}#{tag}", a[sym]) for tag, a in self.arms.items() if sym in a]
+
     def save(self):
         if self.books:
             save_state("lab_books.json", self.saved | {s: b.to_dict() for s, b in self.books.items()}
-                       | {f"{s}#{CONTROL_TAG}": b.to_dict() for s, b in self.control.items()})
+                       | {f"{s}#{tag}": b.to_dict() for tag, a in self.arms.items() for s, b in a.items()})
 
     def status(self):
         out = []
@@ -610,7 +630,9 @@ class Lab:
             sc = (self.alloc.get("scores") or {}).get(b.sym) or {}
             out.append(b.mark() | {"paused": self.is_paused(b.sym), "vol_1m_pct": b.vol_1m(), "er": b.trend()[0],
                                    "sel": allocator.status(self.alloc, b.sym), "score": sc.get("score"),
-                                   "control": {"pnl_eur": c.mark()["pnl_eur"], "roundtrips": c.rt} if c else None})
+                                   "control": {"pnl_eur": c.mark()["pnl_eur"], "roundtrips": c.rt} if c else None,
+                                   "arms": {t: {"pnl_eur": a[b.sym].mark()["pnl_eur"], "roundtrips": a[b.sym].rt}
+                                            for t, a in self.arms.items() if t != CONTROL_TAG and b.sym in a}})
         return out
 
 
