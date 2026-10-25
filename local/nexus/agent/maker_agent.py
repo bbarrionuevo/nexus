@@ -132,6 +132,28 @@ def live_auth():
     return authorization()
 
 
+def calibration(auth, trades_path=None, real_path=None, now=None):
+    """Mismo par, mismo período: lo que dio el paper contra lo que dio el dinero real. Es el objetivo de
+    la calibración: si el real llena mucho menos o gana menos que el paper, el modelo de paper miente."""
+    from .live import REAL_TRADES
+    if not auth:
+        return None
+    now = now or time.time()
+    since = auth.get("ts", now)
+    hours = max((now - since) / 3600, 1e-9)
+    paper = [t for t in evidence.load(trades_path or paths.state("trades.jsonl"), since=since)
+             if t.get("strategy") == STRATEGY["tag"]]
+    real = [t for t in evidence.load(real_path or paths.state(REAL_TRADES), since=since, min_model=0)]
+    out = {}
+    for s in auth.get("symbols") or []:
+        p = [t["pnl"] for t in paper if t["sym"] == s]
+        r = [t["pnl"] for t in real if t["sym"] == s]
+        out[s] = {"hours": round(hours, 2),
+                  "paper": evidence.stats(p) | {"per_hour": round(len(p) / hours, 2)},
+                  "real": evidence.stats(r) | {"per_hour": round(len(r) / hours, 2)}}
+    return out
+
+
 def books_snapshot(gate, desk):
     """Libros para paper_books.json: el actualizador lee de acá si hay posiciones abiertas (R-13),
     así que los reales van también (clave PAR#real) aunque su estado completo esté en live_books.json."""
@@ -369,6 +391,7 @@ def main():
                 try:
                     ev = evidence.evaluate(paths.state("trades.jsonl"), strategy=STRATEGY["tag"])
                     ev.pop("daily", None)
+                    ev["calibration"] = calibration(live_auth())
                 except Exception:
                     log.exception("no se pudo evaluar la evidencia")
             save_state("status.json", {
@@ -377,6 +400,7 @@ def main():
                 "risk_block": risk.last_reason, "errors_last_hour": len(errors),
                 "data_age_s": {x: round(time.time() - t, 1) for x, t in last_ok.items()},
                 "lab": lab.status(), "evidence": ev, "market": MARKET.snapshot(),
+                "recommended": allocator.recommend(lab.alloc),
                 "live": desk.status(live_auth()) if desk else None})
         time.sleep(cfg["poll_seconds"])
 
@@ -398,7 +422,13 @@ class Lab:
         self.alloc = paths.read_json(paths.state("allocator.json"), {})   # promociones (explorar/explotar)
 
     def is_paused(self, sym):
+        if sym.split("#")[0] in self.twins():                     # el gemelo del par real no se pausa
+            return False
         return self.paused.get(sym, 0) > time.time()
+
+    def twins(self):
+        """Pares con dinero real autorizado: siempre en el laboratorio, para comparar paper con real."""
+        return [s for s in ((live_auth() or {}).get("symbols") or []) if s not in self.main]
 
     def on_closed(self, e, variant=None):
         """Registra la vuelta y pausa el par si sus últimas N vueltas pierden en promedio, o antes si
@@ -451,7 +481,9 @@ class Lab:
                             {s for s in self.paused if self.is_paused(s)})
         keep = {s for s, b in self.books.items() if b.state == "long"} | \
             {s for s, b in self.control.items() if b.state == "long"}   # no se abandonan posiciones
-        names = promoted + [s for s, _ in picked][:max(0, self.cfg["max_symbols"] - len(promoted))]
+        twins = self.twins()
+        promoted = twins + [s for s in promoted if s not in twins]
+        names = promoted + [s for s, _ in picked if s not in twins][:max(0, self.cfg["max_symbols"] - len(promoted))]
         for s in list(self.books):
             if s not in names and s not in keep:
                 self.saved[s] = self.books.pop(s).to_dict()

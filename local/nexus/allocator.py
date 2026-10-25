@@ -66,5 +66,13 @@ def decide(state, sc, now, keep_max=6, exclude=()):
     return {"ts": now, "promoted": promoted, "scores": sc, "history": history[-200:]}, keep
 
 
+def recommend(state, top=3):
+    """Pares promovidos con mejor cota inferior: candidatos para el dinero real (el dueño decide)."""
+    sc = state.get("scores") or {}
+    best = sorted((s for s in (state.get("promoted") or {}) if (sc.get(s) or {}).get("score")),
+                  key=lambda s: -sc[s]["score"])[:top]
+    return [{"sym": s} | sc[s] for s in best]
+
+
 def status(state, sym):
     return PROMOTED if sym in (state.get("promoted") or {}) else EXPLORING

@@ -102,6 +102,17 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
 Los límites de riesgo del dinero real se llevan aparte del paper (`state\risk_real.json`): 2 € por
 día, 4 € por semana y 8 € en total (halt que solo levantás vos).
 
+## Comunicación con la sesión de Claude
+- **Latido cada 5 minutos** (tarea `nexus-latido`, la crea el mantenimiento). Publica en la rama
+  `pc-status`: estado del agente, dinero real (autorización, órdenes y vueltas recientes, riesgo
+  real), chequeo previo y resultado de los comandos remotos. Nunca incluye claves.
+- **Chequeo previo** cada 30 minutos: clave, permiso de trading, saldo USDT, reloj, latencia y reglas
+  de cada par. A mano: `..\.venv\Scripts\python -m nexus.preflight XXXUSDT`.
+- **Comandos de seguridad** (rama `pc-comandos`): la sesión de Claude puede pedir **pausar** (no abrir
+  posiciones), **cancelar** (cancelar órdenes reales), **reanudar** (solo lo que pausó ella) y
+  **diagnóstico**. No puede autorizar, desbloquear, rearmar, vender a mercado ni cambiar límites.
+  Un KILL tuyo nunca lo quita. Para apagar el canal: `New-Item $env:LOCALAPPDATA\nexus\state\remote_off`.
+
 ## Cómo se actualiza solo
 Cada 30 min `update.py` compara con `origin/main`. Activa la versión nueva **solo** si se cumplen
 todas estas condiciones:

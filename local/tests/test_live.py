@@ -398,7 +398,7 @@ def test_agente_completo_en_modo_real_hasta_el_reinicio(monkeypatch):
     monkeypatch.setattr(ma.time, "sleep", lambda s: None)
     monkeypatch.setattr(ma, "load_config", lambda: {**ma.yaml.safe_load(ma.CFG.read_text(encoding="utf-8")),
                                                     "max_vol_1m_pct": None})
-    ex, calls = FakeMexc(), itertools.count()
+    ex, calls, filled = FakeMexc(), itertools.count(), []
     ex.has_keys = True
 
     class Data(FakeData):
@@ -406,9 +406,10 @@ def test_agente_completo_en_modo_real_hasta_el_reinicio(monkeypatch):
 
         def book_ticker(self, s):
             n = next(calls)
-            if s == "XUSDT" and n == 40:
-                for cid in ex.open_cids():                   # se llena la compra real
-                    ex.fill(cid, float(ex.orders[cid]["origQty"]))
+            buys = [c for c in ex.open_cids() if ex.orders[c]["side"] == "BUY"]
+            if s == "XUSDT" and n >= 40 and buys and not filled:
+                filled.append(buys[0])                       # se llena la compra real
+                ex.fill(buys[0], float(ex.orders[buys[0]]["origQty"]))
             if n >= 120:
                 paths.state("RESTART").touch()
             return super().book_ticker(s)
@@ -419,7 +420,8 @@ def test_agente_completo_en_modo_real_hasta_el_reinicio(monkeypatch):
                                                            "sin_retiro_confirmado": True})
     ma.main()
     st = json.loads(paths.state("status.json").read_text())
-    assert st["mode"] == "real+paper" and st["live"]["books"][0]["sym"] == "XUSDT"
+    assert st["mode"] == "real+paper" and st["live"]["books"][0]["sym"] == "XUSDT" and filled
+    assert "XUSDT" in [b["sym"] for b in st["lab"]]                # gemelo en paper del par real
     books = json.loads(paths.state("paper_books.json").read_text())
     assert books["XUSDT#real"]["state"] == "long"                # el actualizador ve la posición real
     assert ex.open_cids() == []                                   # al reiniciar cancela la venta puesta

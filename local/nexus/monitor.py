@@ -50,6 +50,11 @@ def alerts(pc, now=None, ci_conclusion=None):
         if b.get("blocked"):
             a.append(f"DINERO REAL: {b['sym']} BLOQUEADO ({b['blocked']}). Revisá en MEXC y desbloqueá con "
                      "`python -m nexus.agent.authorize --desbloquear` (ver OPERACION_WINDOWS.md).")
+    pf = (pc.get("real") or {}).get("preflight") or {}
+    if pf.get("auth") and not pf.get("ready"):
+        a.append("DINERO REAL autorizado pero el chequeo previo falla: "
+                 + "; ".join((pf.get("problems") or []) + [f"{x['sym']}: {', '.join(x['problems'])}"
+                                                          for x in pf.get("symbols") or [] if not x.get("ok")])[:400])
     if (lv.get("risk") or {}).get("sticky_halt"):
         a.append(f"DINERO REAL en HALT PERMANENTE: {lv['risk']['sticky_halt']} (rearme: risk --rearmar --real).")
     return a
@@ -111,6 +116,18 @@ def digest(pc, research_md=None, now=None):
             for b in lv.get("books") or []:
                 L.append(f"- {b['sym']}: {b['state']}, posición {b.get('pos_qty')}, residuo {b.get('dust')}, "
                          f"PnL {b['pnl_eur']:+.4f}{' · BLOQUEADO: ' + b['blocked'] if b.get('blocked') else ''}")
+        rec = st.get("recommended") or []
+        L += ["", "**Par recomendado para el dinero real** (promovido con mejor cota inferior, fuera de muestra): "
+              + (", ".join(f"{r['sym']} (cota {r['score']}, {r['n']} vueltas, media {r['mean']})" for r in rec)
+                 or "ninguno todavía: no hay pares con evidencia suficiente.")]
+        cal = ev.get("calibration") or {}
+        if cal:
+            L += ["", "### Calibración: mismo par, paper contra real", "| par | horas | paper: vueltas · por hora · media | "
+                  "real: vueltas · por hora · media |", "|---|---|---|---|"]
+            for s, c in cal.items():
+                p, r = c["paper"], c["real"]
+                L.append(f"| {s} | {c['hours']} | {p.get('n', 0)} · {p.get('per_hour')} · {p.get('mean')} | "
+                         f"{r.get('n', 0)} · {r.get('per_hour')} · {r.get('mean')} |")
         sel = ev.get("selection") or {}
         if sel:
             L += ["", "### Selección de pares por evidencia (laboratorio, fuera de muestra)",

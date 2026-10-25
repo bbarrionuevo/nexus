@@ -114,7 +114,8 @@ def state_payload(now=None):
             "update": _read_json("update.json", {}),
             "paused": {k: v for k, v in _read_json("lab_paused.json", {}).items() if v > now},
             "kill_switch": paths.kill_file().exists(), "curves": curves, "last_trades": last,
-            "warnings": log_tail()}
+            "warnings": log_tail(), "preflight": _read_json("preflight.json", None),
+            "remote": list((_read_json("remote.json", {}) or {}).get("done", {}).values())[-3:]}
 
 
 def refresh_research(fetch=None):

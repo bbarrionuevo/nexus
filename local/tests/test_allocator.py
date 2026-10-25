@@ -68,3 +68,30 @@ def test_informe_muestra_la_seleccion_fuera_de_muestra():
                         "promovido": {"n": 30, "total": 0.9, "mean": 0.03, "ci95_low": 0.01}}}
     md = digest({"status": {"evidence": ev, "books": []}}, None, now=NOW)
     assert "fuera de muestra" in md and "| promovido | 30 | +0.90 |" in md
+
+
+def test_recomienda_promovidos_por_cota_inferior():
+    from nexus.allocator import recommend
+    st = {"promoted": {"A": NOW, "B": NOW, "C": NOW},
+          "scores": {"A": {"score": 0.01, "n": 30, "mean": 0.03}, "B": {"score": 0.02, "n": 25, "mean": 0.04},
+                     "C": {"score": None, "n": 3, "mean": 0.1}, "D": {"score": 0.5, "n": 40, "mean": 0.6}}}
+    assert [x["sym"] for x in recommend(st)] == ["B", "A"]                    # D no está promovido; C sin cota
+
+
+def test_calibracion_compara_paper_y_real_del_mismo_par(tmp_path):
+    import nexus.agent.maker_agent as ma
+    from nexus import evidence
+    ma.STRATEGY["tag"] = "v3"
+    tp, rp = tmp_path / "t.jsonl", tmp_path / "r.jsonl"
+    m = evidence.FILL_MODEL
+    tp.write_text("\n".join(json.dumps(t) for t in [
+        {"ts": NOW - 7200, "sym": "X", "pnl": 9, "model": m, "strategy": "v3"},          # antes de autorizar
+        {"ts": NOW - 100, "sym": "X", "pnl": 0.05, "model": m, "strategy": "v3"},
+        {"ts": NOW - 50, "sym": "X", "pnl": 0.03, "model": m, "strategy": "v3"},
+        {"ts": NOW - 40, "sym": "Y", "pnl": 0.03, "model": m, "strategy": "v3"}]))
+    rp.write_text(json.dumps({"ts": NOW - 30, "sym": "X", "pnl": -0.02, "real": True}) + "\n")
+    c = ma.calibration({"ts": NOW - 3600, "symbols": ["X"]}, tp, rp, now=NOW)
+    assert c["X"]["paper"]["n"] == 2 and c["X"]["paper"]["per_hour"] == 2.0
+    assert c["X"]["real"]["n"] == 1 and c["X"]["real"]["total"] == -0.02
+    assert ma.calibration(None) is None
+    ma.STRATEGY["tag"] = None

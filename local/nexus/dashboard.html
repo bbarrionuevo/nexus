@@ -57,6 +57,7 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 th { text-align: left; color: var(--text-secondary); font-weight: 500; border-bottom: 1px solid var(--grid); padding: 4px 6px; white-space: nowrap; }
 td { border-bottom: 1px solid var(--grid); padding: 4px 6px; white-space: nowrap; }
 td.num, th.num { text-align: right; }
+#system td, #realbooks td:last-child { white-space: normal; }
 .chartbox { position: relative; }
 svg { display: block; width: 100%; height: 260px; }
 .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; flex-wrap: wrap; }
@@ -282,7 +283,8 @@ function renderState(d) {
       { h: "Motivo", f: r => r.blocked || "" }], lv.books || []);
     setText("real-note", `Riesgo real: hoy ${eur(rk.pnl_day)} · semana ${eur(rk.pnl_week)} · total ${eur(rk.pnl_total)}` +
       (lv.risk_block ? ` · bloqueo: ${lv.risk_block}` : "") + (lv.kill_level ? ` · KILL nivel ${lv.kill_level}` : "") +
-      ` · para pasar a 100 €: ${rr.pass_6b ? "✓ una semana positiva" : "falta una semana con PnL real > 0"}. Montos de las órdenes en USDT.`);
+      ` · para pasar a 100 €: ${rr.pass_6b ? "✓ una semana positiva" : "falta una semana con PnL real > 0"}. Montos de las órdenes en USDT.` +
+      Object.entries((st.evidence || {}).calibration || {}).map(([s, c]) => ` · ${s} paper ${num(c.paper.n)} vueltas (${nf(1).format(c.paper.per_hour)}/h, media ${eur(c.paper.mean, 4)}) vs real ${num(c.real.n)} (${nf(1).format(c.real.per_hour)}/h, media ${eur(c.real.mean, 4)})`).join(""));
   }
   const up = d.update || {};
   setText("meta", `versión ${st.version || "—"} · actualización: ${up.result || "—"}${up.reasons ? " (" + up.reasons.join("; ") + ")" : ""} · ${new Date().toLocaleTimeString("es-AR")}`);
@@ -311,7 +313,8 @@ function renderState(d) {
 
   drawChart(d.curves);
   const lab = st.lab || [];
-  setText("lab-count", `${lab.length} pares · pausados: ${lab.filter(b => b.paused).length}`);
+  const rec = (st.recommended || []).map(r => `${r.sym} (${nf(4).format(r.score)})`).join(", ");
+  setText("lab-count", `${lab.length} pares · pausados: ${lab.filter(b => b.paused).length} · recomendado para real: ${rec || "ninguno todavía"}`);
   table("selection", [{ h: "Selección", f: r => r[0] }, { h: "Vueltas", num: true, f: r => num(r[1].n) },
     { h: "Total", num: true, f: r => [eur(r[1].total), signCls(r[1].total)] }, { h: "Media", num: true, f: r => [eur(r[1].mean, 4), signCls(r[1].mean)] }],
     Object.entries(ev.selection || {}), "Se llena cuando el laboratorio promueva pares.");
@@ -336,7 +339,9 @@ function renderState(d) {
     ["Versión instalada", st.version || "—"], ["Actualización", (up.result || "—") + (up.version ? " " + up.version : up.candidate ? " " + up.candidate : "")],
     ["Comisiones MEXC (maker · taker)", (st.fees || []).map(x => nf(2).format(x) + "%").join(" · ") || "—"],
     ["Errores en la última hora", num(st.errors_last_hour)], ["Interruptor KILL", d.kill_switch ? "ACTIVO" : "no"],
-    ["Pares en pausa (24 h)", Object.keys(d.paused || {}).length + ""]]);
+    ["Pares en pausa (24 h)", Object.keys(d.paused || {}).length + ""],
+    ["Chequeo previo del dinero real", d.preflight ? (d.preflight.ready ? "✓ listo" : (d.preflight.problems || []).concat((d.preflight.symbols || []).filter(x => !x.ok).map(x => x.sym + ": " + x.problems.join("; "))).join(" · ") || "sin autorización") + " · " + hhmm(d.preflight.ts) : "—"],
+    ["Comandos remotos (últimos)", (d.remote || []).map(c => `${c.cmd}: ${c.ok ? "ok" : "no"} (${c.msg})`).join(" · ") || "—"]]);
   $("chartbox").classList.remove("stale");
 }
 
