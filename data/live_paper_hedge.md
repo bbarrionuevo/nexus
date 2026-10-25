@@ -1,21 +1,21 @@
-# Market making cubierto MEXC→Binance (paper) — 2026-10-25 09:18 UTC
+# Market making cubierto MEXC→Binance (paper) — 2026-10-25 14:48 UTC
 
-330.0 min · nocional 25.0 € por llenado · lotes por lado: 1 · taker Binance 0.1% · errores 0
+330.0 min · nocional 25.0 € por llenado · lotes por lado: 1 · taker Binance 0.1% · errores 3
 
 | par | llenados | por hora | € por llenado | adversos | transferencias € | neto € | neto €/h | bloqueado compra/venta (min) |
 |---|---|---|---|---|---|---|---|---|
-| IOSTUSDT | 27 | 4.91 | 0.0747 | 10 | 0.0 | 2.0174 | 0.3668 | 114.7 / 139.3 |
-| QUICKUSDT | 7 | 1.27 | 0.0846 | 3 | 0.0 | 0.5923 | 0.1077 | 95.6 / 2.2 |
-| ANIMEUSDT | 1 | 0.18 | 0.2051 | 0 | 0.0 | 0.2051 | 0.0373 | 0.0 / 329.0 |
-| DCRUSDT | 3 | 0.55 | 0.0461 | 0 | 0.0 | 0.1383 | 0.0251 | 288.6 / 9.9 |
-| IDUSDT | 2 | 0.36 | 0.0552 | 0 | 0.0 | 0.1104 | 0.0201 | 0.0 / 92.8 |
-| IMXUSDT | 1 | 0.18 | 0.087 | 0 | 0.0 | 0.087 | 0.0158 | 65.7 / 0.0 |
-| OPENUSDT | 1 | 0.18 | 0.0311 | 0 | 0.0 | 0.0311 | 0.0056 | 0.0 / 255.0 |
-| TREEUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
+| DCRUSDT | 6 | 1.09 | 0.1169 | 1 | 0.0 | 0.7014 | 0.1275 | 68.3 / 135.5 |
+| POLYXUSDT | 3 | 0.55 | 0.1434 | 1 | 0.0 | 0.4303 | 0.0782 | 214.5 / 0.0 |
+| LUNAUSDT | 3 | 0.55 | 0.0821 | 0 | 0.0 | 0.2464 | 0.0448 | 48.7 / 179.5 |
+| IMXUSDT | 1 | 0.18 | 0.1037 | 0 | 0.0 | 0.1037 | 0.0189 | 76.0 / 0.0 |
+| QUICKUSDT | 2 | 0.36 | 0.0437 | 0 | 0.0 | 0.0873 | 0.0159 | 0.0 / 246.4 |
+| IDUSDT | 1 | 0.18 | 0.0237 | 0 | 0.0 | 0.0237 | 0.0043 | 0.0 / 238.2 |
+| IOSTUSDT | 7 | 1.27 | 0.0027 | 5 | 0.0 | 0.0186 | 0.0034 | 65.6 / 228.1 |
 | PORTOUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
 | CYBERUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
-| AMPUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
-| POLYXUSDT | 1 | 0.18 | -0.025 | 1 | 0.0 | -0.025 | -0.0045 | 118.5 / 0.0 |
-| LUNAUSDT | 1 | 0.18 | -0.0664 | 1 | 0.0 | -0.0664 | -0.0121 | 0.0 / 247.2 |
+| OPENUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
+| ANIMEUSDT | 1 | 0.18 | -0.0083 | 1 | 0.0 | -0.0083 | -0.0015 | 0.0 / 318.4 |
+| TREEUSDT | 1 | 0.18 | -0.0571 | 1 | 0.0 | -0.0571 | -0.0104 | 233.4 / 0.0 |
+| AMPUSDT | 1 | 0.18 | -0.1808 | 1 | 0.0 | -0.1808 | -0.0329 | 279.9 / 0.0 |
 
 Bloqueado = minutos sin inventario para ese lado (con capital chico, el límite real). El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h.
