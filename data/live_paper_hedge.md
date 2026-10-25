@@ -1,21 +1,21 @@
-# Market making cubierto MEXC→Binance (paper) — 2026-10-25 03:47 UTC
+# Market making cubierto MEXC→Binance (paper) — 2026-10-25 09:18 UTC
 
 330.0 min · nocional 25.0 € por llenado · lotes por lado: 1 · taker Binance 0.1% · errores 0
 
 | par | llenados | por hora | € por llenado | adversos | transferencias € | neto € | neto €/h | bloqueado compra/venta (min) |
 |---|---|---|---|---|---|---|---|---|
-| QUICKUSDT | 5 | 0.91 | 0.2949 | 1 | 0.0 | 1.4746 | 0.2681 | 175.3 / 0.0 |
-| ANIMEUSDT | 13 | 2.36 | 0.0923 | 9 | 0.0 | 1.2002 | 0.2182 | 25.6 / 288.3 |
-| IOSTUSDT | 9 | 1.64 | 0.0655 | 2 | 0.0 | 0.5898 | 0.1072 | 161.7 / 91.4 |
-| DCRUSDT | 3 | 0.55 | 0.1102 | 0 | 0.0 | 0.3307 | 0.0601 | 188.8 / 58.4 |
-| IMXUSDT | 1 | 0.18 | 0.0994 | 0 | 0.0 | 0.0994 | 0.0181 | 29.7 / 0.0 |
-| TREEUSDT | 6 | 1.09 | 0.0122 | 3 | 0.0 | 0.0729 | 0.0133 | 23.0 / 38.7 |
-| LUNAUSDT | 2 | 0.36 | 0.0256 | 0 | 0.0 | 0.0512 | 0.0093 | 0.0 / 139.4 |
+| IOSTUSDT | 27 | 4.91 | 0.0747 | 10 | 0.0 | 2.0174 | 0.3668 | 114.7 / 139.3 |
+| QUICKUSDT | 7 | 1.27 | 0.0846 | 3 | 0.0 | 0.5923 | 0.1077 | 95.6 / 2.2 |
+| ANIMEUSDT | 1 | 0.18 | 0.2051 | 0 | 0.0 | 0.2051 | 0.0373 | 0.0 / 329.0 |
+| DCRUSDT | 3 | 0.55 | 0.0461 | 0 | 0.0 | 0.1383 | 0.0251 | 288.6 / 9.9 |
+| IDUSDT | 2 | 0.36 | 0.0552 | 0 | 0.0 | 0.1104 | 0.0201 | 0.0 / 92.8 |
+| IMXUSDT | 1 | 0.18 | 0.087 | 0 | 0.0 | 0.087 | 0.0158 | 65.7 / 0.0 |
+| OPENUSDT | 1 | 0.18 | 0.0311 | 0 | 0.0 | 0.0311 | 0.0056 | 0.0 / 255.0 |
+| TREEUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
 | PORTOUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
 | CYBERUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
-| OPENUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
-| POLYXUSDT | 1 | 0.18 | -0.025 | 1 | 0.0 | -0.025 | -0.0045 | 182.6 / 0.0 |
-| IDUSDT | 7 | 1.27 | -0.008 | 2 | 0.0 | -0.0561 | -0.0102 | 167.4 / 123.8 |
-| AMPUSDT | 1 | 0.18 | -0.1043 | 1 | 0.0 | -0.1043 | -0.019 | 0.0 / 202.2 |
+| AMPUSDT | 0 | 0.0 | — | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 |
+| POLYXUSDT | 1 | 0.18 | -0.025 | 1 | 0.0 | -0.025 | -0.0045 | 118.5 / 0.0 |
+| LUNAUSDT | 1 | 0.18 | -0.0664 | 1 | 0.0 | -0.0664 | -0.0121 | 0.0 / 247.2 |
 
 Bloqueado = minutos sin inventario para ese lado (con capital chico, el límite real). El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h.
