@@ -108,8 +108,9 @@ día, 4 € por semana y 8 € en total (halt que solo levantás vos).
   real), chequeo previo y resultado de los comandos remotos. Nunca incluye claves.
 - **Chequeo previo** cada 30 minutos: clave, permiso de trading, saldo USDT, reloj, latencia y reglas
   de cada par. A mano: `..\.venv\Scripts\python -m nexus.preflight XXXUSDT`.
-- **Comandos de seguridad** (rama `pc-comandos`): la sesión de Claude puede pedir **pausar** (no abrir
-  posiciones), **cancelar** (cancelar órdenes reales), **reanudar** (solo lo que pausó ella) y
+- **Comandos de seguridad** (issues abiertos con la etiqueta `pc-comando`, creados con tu cuenta):
+  la sesión de Claude puede pedir **pausar** (no abrir posiciones), **cancelar** (cancelar órdenes
+  reales), **reanudar** (solo lo que pausó ella) y
   **diagnóstico**. No puede autorizar, desbloquear, rearmar, vender a mercado ni cambiar límites.
   Un KILL tuyo nunca lo quita. Para apagar el canal: `New-Item $env:LOCALAPPDATA\nexus\state\remote_off`.
 

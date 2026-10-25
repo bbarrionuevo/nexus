@@ -1,6 +1,9 @@
-"""Canal de comandos de SEGURIDAD: de la sesión de Claude en la nube al PC, por la rama `pc-comandos`.
+"""Canal de comandos de SEGURIDAD: de la sesión de Claude en la nube al PC, por issues de GitHub.
 
-El latido (cada 5 min) lee `comandos.json` de esa rama y ejecuta cada comando UNA vez. Solo existen
+Un comando es un issue ABIERTO con la etiqueta `pc-comando`, creado por la cuenta dueña del repositorio
+(nadie de afuera puede crearlo con esa cuenta ni ponerle etiquetas). El título es el comando y el
+cuerpo, el motivo. El latido (cada 5 min) los lee de la API pública de GitHub (sin credenciales) y
+ejecuta cada uno UNA vez; la sesión de Claude cierra el issue al ver el resultado en el latido. Solo existen
 comandos que reducen riesgo o piden información. Ninguno puede autorizar dinero real, desbloquear,
 rearmar, vender a mercado ni cambiar límites (eso es solo del dueño, en la PC):
 - pausar [motivo]: no abrir posiciones (KILL nivel 1, marcado "remoto").
@@ -10,30 +13,50 @@ rearmar, vender a mercado ni cambiar límites (eso es solo del dueño, en la PC)
 - latido: nada (sirve para confirmar que el canal funciona).
 Un comando con más de 6 h se ignora (no se ejecutan órdenes viejas). El resultado va en el latido.
 El dueño apaga el canal creando el archivo state/remote_off (sus comandos se registran sin ejecutarse).
-Formato de comandos.json: {"commands": [{"id": "c1", "cmd": "pausar", "motivo": "...", "ts": 1792940000}]}
 """
-import json
+import calendar
 import subprocess
 import time
 
 from . import paths
 
-BRANCH, FILE, MAX_AGE_S = "pc-comandos", "comandos.json", 6 * 3600
+LABEL, MAX_AGE_S = "pc-comando", 6 * 3600
 ALLOWED = ("pausar", "cancelar", "reanudar", "diagnostico", "latido")
 REMOTE_TAG = "remoto"
 
 
-def fetch(repo_dir):
-    """Comandos publicados en la rama pc-comandos ([] si la rama no existe o no hay red)."""
-    r = subprocess.run(["git", "-C", str(repo_dir), "fetch", "-q", "origin", BRANCH], capture_output=True,
-                       text=True, timeout=60)
-    if r.returncode != 0:
+def owner_repo(repo_dir):
+    """("dueño", "repo") a partir del remoto de git (https://github.com/dueño/repo.git)."""
+    url = subprocess.run(["git", "-C", str(repo_dir), "remote", "get-url", "origin"], capture_output=True,
+                         text=True, timeout=20).stdout.strip()
+    parts = url.rstrip("/").removesuffix(".git").split("/")
+    return parts[-2], parts[-1]
+
+
+def fetch(repo_dir, get=None):
+    """Comandos pendientes: issues abiertos con la etiqueta, creados por el dueño ([] si no hay red)."""
+    import requests
+    owner, repo = owner_repo(repo_dir)
+    get = get or (lambda url, params: requests.get(url, params=params, timeout=20,
+                                                   headers={"Accept": "application/vnd.github+json"}).json())
+    try:
+        issues = get(f"https://api.github.com/repos/{owner}/{repo}/issues",
+                     {"labels": LABEL, "state": "open", "creator": owner, "per_page": 30})
+    except Exception:                                                # noqa: BLE001
         return []
-    r = subprocess.run(["git", "-C", str(repo_dir), "show", f"FETCH_HEAD:{FILE}"], capture_output=True,
-                       text=True, timeout=30)
-    if r.returncode != 0:
-        return []
-    return (json.loads(r.stdout) or {}).get("commands") or []
+    out = []
+    for i in issues if isinstance(issues, list) else []:
+        labels = [x.get("name") for x in i.get("labels") or []]
+        if "pull_request" in i or (i.get("user") or {}).get("login") != owner or LABEL not in labels:
+            continue
+        words = (i.get("title") or "").strip().lower().split()
+        try:
+            ts = calendar.timegm(time.strptime(i["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
+        except (KeyError, ValueError):
+            ts = None
+        out.append({"id": f"issue{i['number']}", "cmd": words[0] if words else "", "ts": ts,
+                    "motivo": (i.get("body") or "")[:200]})
+    return out
 
 
 def _prev_path():

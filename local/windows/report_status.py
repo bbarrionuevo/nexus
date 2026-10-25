@@ -1,7 +1,7 @@
 """Latido del PC (cada 5 min): publica un resumen del estado en la rama `pc-status` de GitHub.
 
 El vigilante de GitHub Actions y la sesión de Claude lo leen. Antes de publicar, ejecuta los comandos
-de seguridad de la rama `pc-comandos` (nexus/remote.py) y, cada 30 min, el chequeo previo del dinero
+de seguridad (issues con la etiqueta `pc-comando`, nexus/remote.py) y, cada 30 min, el chequeo previo del dinero
 real (nexus/preflight.py), así el resultado sale en este mismo latido.
 Nunca incluye secretos: estado, órdenes propias (IDs y precios) y advertencias del log, filtradas.
 Si el push falla (sin credenciales de git), no rompe nada: queda registrado y sigue.
