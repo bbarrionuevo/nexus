@@ -23,6 +23,13 @@ def auth_where(auth):
     return " + ".join(x for x in (syms, auto) if x) or "ningún par"
 
 
+def auth_amount(auth):
+    """Cuánto capital real está autorizado: un monto fijo o todo lo de la subcuenta (--todo)."""
+    if auth.get("todo"):
+        return f"todo el capital de la subcuenta (hasta {auth.get('capital_eur'):g} €)"
+    return f"hasta {auth.get('capital_eur')} €"
+
+
 def alerts(pc, now=None, ci_conclusion=None):
     """Lista de alertas a partir del latido del PC. pc=None significa que nunca reportó."""
     now = now or time.time()
@@ -115,7 +122,7 @@ def digest(pc, research_md=None, now=None):
         if lv:
             rr, rk, auth = lv.get("real") or {}, lv.get("risk") or {}, lv.get("auth") or {}
             L += ["", "### Dinero real (ejecuciones del exchange)",
-                  f"Autorización: {('hasta ' + str(auth.get('capital_eur')) + ' € en ' + auth_where(auth)) if auth else 'vencida o revocada (solo cierra lo abierto)'}"
+                  f"Autorización: {(auth_amount(auth) + ' en ' + auth_where(auth)) if auth else 'vencida o revocada (solo cierra lo abierto)'}"
                   f"{' · calibración' if auth.get('calibracion') else ''}. "
                   f"Vueltas reales {rr.get('n', 0)} · total {rr.get('total', 0) or 0:+.2f} · {rr.get('days', 0)} días · "
                   f"riesgo real hoy {rk.get('pnl_day', 0):+.2f} / semana {rk.get('pnl_week', 0):+.2f} · "

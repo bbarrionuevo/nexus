@@ -181,3 +181,6 @@ def test_preflight_y_informe_en_modo_automatico():
     assert r["ready"] and r["real_symbols"] == ["XUSDT"] and r["symbols"][0]["sym"] == "XUSDT"
     assert auth_where({"symbols": [], "auto": 2}) == "modo automático (2 pares promovidos)"
     assert auth_where({"symbols": ["XUSDT"]}) == "XUSDT"
+    from nexus.monitor import auth_amount
+    assert auth_amount({"todo": True, "capital_eur": 100}) == "todo el capital de la subcuenta (hasta 100 €)"
+    assert auth_amount({"capital_eur": 20}) == "hasta 20 €"

@@ -287,7 +287,7 @@ def test_autorizacion_topes_frase_y_revocar():
     from nexus import paths
     from nexus.agent import authorize, live
     ok_status = {"evidence": {"criteria_met": 6, "criteria_total": 6}}
-    assert authorize.validate(25, 7, ["XUSDT"], False, ok_status)              # más de 20 €
+    assert authorize.validate(101, 7, ["XUSDT"], False, ok_status)             # más de 100 € (el capital del dueño)
     assert authorize.validate(20, 8, ["XUSDT"], False, ok_status)              # más de 7 días
     assert authorize.validate(20, 7, ["XUSDT"], False, {"evidence": {"criteria_met": 2, "criteria_total": 6}})
     assert not authorize.validate(20, 7, ["XUSDT"], True, {"evidence": {"criteria_met": 2, "criteria_total": 6}})
@@ -302,7 +302,7 @@ def test_autorizacion_topes_frase_y_revocar():
     assert live.authorization(1e9 + 8 * 86400) is None                         # vencida
     authorize.main(["--revocar"], out=out.append, now=1e9 + 7200)
     assert live.authorization(1e9 + 7201) is None
-    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": 1e9, "expires": 1e9 + 86400, "capital_eur": 50,
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": 1e9, "expires": 1e9 + 86400, "capital_eur": 150,
                                                            "symbols": ["XUSDT"]})
     assert live.authorization(1e9 + 1) is None                                  # editada a mano por encima del tope
 
@@ -631,3 +631,62 @@ def test_desk_pide_el_libro_y_descuenta_la_orden_propia(env):
     assert bk.order["px"] == 0.999                               # primera cotización en el mejor bid
     desk.step(20)                                                # el nivel muestra 300 de otros + la nuestra:
     assert ex.open_cids() == ["nx1XUSDT"] and bk.bq == 300       # no se mueve y la cola visible es la de otros
+
+
+def test_todo_el_capital_sigue_al_saldo_y_se_reparte(monkeypatch):
+    """Pedido del dueño (25-oct): invertir siempre todo el capital disponible. --todo autoriza hasta
+    100 € y el monto por par sigue al saldo real (ganancias reinvertidas), sin pasar el máximo por
+    posición ni cambiar a mitad de una vuelta."""
+    import time
+    from nexus import paths
+    from nexus.agent import authorize, live
+    import nexus.agent.maker_agent as ma
+    import nexus.exchanges.mexc_trade as mt
+    out = []
+    assert authorize.main(["--todo", "--dias", "7", "--pares", "XUSDT", "--calibracion"],
+                          ask=answers("SI", authorize.PHRASE), out=out.append, now=time.time()) == 0
+    a = live.authorization()
+    assert a["todo"] and a["capital_eur"] == 100 and any("TODO el capital" in m for m in out)
+    info2 = {"symbols": INFO["symbols"] + [INFO["symbols"][0] | {"symbol": "YUSDT", "baseAsset": "Y"}]}
+    fake = FakeMexc()
+    fake.has_keys = True
+    fake.exchange_info = lambda s: info2
+    fake.book_ticker = lambda s: {"bidPrice": "1.0", "bidQty": "5", "askPrice": "1.001", "askQty": "5"}
+    fake.trade_fee = lambda s: {"makerCommission": 0, "takerCommission": 0.0005}
+    fake.balances = {"USDT": 29.0}
+    monkeypatch.setattr(mt, "MexcTrader", lambda: fake)
+    cfg = ma.load_config()
+    desk = ma.build_desk(cfg, fake, 0.0, 0.05)
+    assert desk.books["XUSDT"].notional == 28.42                               # todo lo que hay, con 2% de margen
+    fake.balances["USDT"] = 35.0                                                # ganó: se reinvierte
+    desk.books["XUSDT"].state = "long"
+    ma.resize(desk, cfg, desk.check_balances())
+    assert desk.books["XUSDT"].notional == 28.42                               # a mitad de una vuelta no cambia
+    desk.books["XUSDT"].state = "flat"
+    ma.resize(desk, cfg, desk.check_balances())
+    assert desk.books["XUSDT"].notional == 34.3
+    fake.balances["USDT"] = 500.0
+    ma.resize(desk, cfg, desk.check_balances())
+    assert desk.books["XUSDT"].notional == cfg["risk"]["max_position_eur"]      # nunca más que el máximo por posición
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), a | {"symbols": ["XUSDT", "YUSDT"]})
+    fake.balances["USDT"] = 29.0
+    two = ma.build_desk(cfg, fake, 0.0, 0.05)
+    assert {b.notional for b in two.books.values()} == {14.21}                  # dos pares: la mitad cada uno
+
+
+def test_preflight_con_todo_no_exige_el_tope_en_la_cuenta():
+    import time
+    from nexus import paths, preflight
+    from nexus.agent import live
+    from tests.test_comms import FakeClient
+    now = time.time()
+    paths.write_json_atomic(paths.state(live.AUTH_FILE), {"ts": now, "expires": now + 3600, "capital_eur": 100,
+                                                           "todo": True, "symbols": ["XUSDT"]})
+    r = preflight.run(FakeClient(), clock=lambda n: 100)
+    assert r["ready"] and r["account"]["capital_usdt"] == 21.5                  # 21,5 USDT: se opera lo que hay
+
+    class Vacia(FakeClient):
+        def account(self):
+            return {"canTrade": True, "canWithdraw": False, "balances": [{"asset": "USDT", "free": "3", "locked": "0"}]}
+    r = preflight.run(Vacia(), clock=lambda n: 100)
+    assert not r["ready"] and "no alcanza para operar" in r["problems"][0]
