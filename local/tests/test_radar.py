@@ -129,3 +129,18 @@ def test_market_making_estable_prioriza_actividad_y_descuenta_comisiones():
     assert res[0]["symbol"] == "USDTARS" and abs(res[0]["vol_usd_24h"] - 1640e6 / 1642.5) < 2
     usdc = next(x for x in res if x["symbol"] == "USDCUSDT")
     assert usdc["net_pct"][0.0] > 0 > usdc["net_pct"][0.075]                                  # solo con comisión cero
+
+
+def test_defi_solo_stablecoins_grandes_sin_perdida_impermanente():
+    from nexus.discovery.yields import defi_stable_pools
+    raw = {"data": [
+        {"project": "aave-v3", "chain": "Arbitrum", "symbol": "USDC", "tvlUsd": 300e6, "apyBase": 5.1,
+         "apyReward": 0, "apyMean30d": 4.8, "stablecoin": True, "ilRisk": "no"},
+        {"project": "x", "chain": "Base", "symbol": "USDC-USDT", "tvlUsd": 50e6, "apyBase": 9.0,
+         "stablecoin": True, "ilRisk": "no", "outlier": True},                                # atípico: fuera
+        {"project": "y", "chain": "Ethereum", "symbol": "ETH-USDC", "tvlUsd": 900e6, "apyBase": 20,
+         "stablecoin": False, "ilRisk": "yes"},                                               # no estable: fuera
+        {"project": "z", "chain": "Ethereum", "symbol": "USDT", "tvlUsd": 5e6, "apyBase": 30,
+         "stablecoin": True, "ilRisk": "no"}]}                                                # TVL chico: fuera
+    out = defi_stable_pools(raw)
+    assert [x["project"] for x in out] == ["aave-v3"] and out[0]["tvl_musd"] == 300.0

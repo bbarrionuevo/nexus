@@ -5,6 +5,9 @@
 - Launchpools de MEXC: se deposita un activo (a veces USDT) y se cobra en el token nuevo; el APR en %
   suele ser alto con cupo por usuario, ideal para capital chico.
 - Anuncios de Bitget con palabras clave de eventos (Launchpool, PoolX, Earn, Candybomb).
+- DeFi (DefiLlama): pools de stablecoins sin pérdida impermanente, con TVL grande, ordenados por el
+  rendimiento BASE (comisiones/intereses reales; los premios en tokens se informan aparte porque se
+  pueden cortar). Riesgo: contratos inteligentes y depeg, no el precio.
 """
 import time
 
@@ -86,3 +89,29 @@ def bitget_events(days=14, now=None):
                 out.append({"title": title, "url": a.get("annUrl"),
                             "date": time.strftime("%Y-%m-%d", time.gmtime(int(a.get("cTime") or 0) / 1000))})
     return out
+
+
+DEFI_CHAINS = {"Ethereum", "Arbitrum", "Base", "Optimism", "Polygon", "Avalanche", "BSC", "Solana"}
+
+
+def defi_stable_pools(raw, min_tvl=20e6, top=12):
+    """Pools de stablecoins sin pérdida impermanente, ordenados por APY base (sin premios)."""
+    out = []
+    for p in raw.get("data") or []:
+        try:
+            if not p.get("stablecoin") or p.get("ilRisk") != "no" or p.get("chain") not in DEFI_CHAINS:
+                continue
+            if float(p.get("tvlUsd") or 0) < min_tvl or p.get("outlier"):
+                continue
+            base = float(p.get("apyBase") or 0)
+            out.append({"project": p.get("project"), "chain": p.get("chain"), "symbol": p.get("symbol"),
+                        "tvl_musd": round(float(p["tvlUsd"]) / 1e6, 1), "apy_base": round(base, 2),
+                        "apy_reward": round(float(p.get("apyReward") or 0), 2),
+                        "apy_30d_mean": round(float(p.get("apyMean30d") or 0), 2)})
+        except (TypeError, ValueError):
+            continue
+    return sorted(out, key=lambda x: -x["apy_base"])[:top]
+
+
+def defi_yields():
+    return defi_stable_pools(_get("https://yields.llama.fi/pools"))
