@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792915200.0,
-   "long_last": 1792915200.0,
-   "funding": 0.07039999999999999,
+   "short_last": 1792944000.0,
+   "long_last": 1792944000.0,
+   "funding": 0.11474999999999998,
    "fees": 0.24,
-   "settlements": 4,
+   "settlements": 8,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,10 +22,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0704,
+    "funding": 0.1147,
     "basis": 0.2446,
     "fees": 0.24,
-    "net": 0.075
+    "net": 0.1194
    },
    "last_short_px": 0.0061188,
    "last_long_px": 0.006124
@@ -40,11 +40,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.007408,
    "long_entry": 0.00741,
-   "short_last": 1792928509.8344328,
-   "long_last": 1792928509.8344328,
-   "funding": 0.0,
+   "short_last": 1792944000.0,
+   "long_last": 1792944000.0,
+   "funding": 0.05474999999999999,
    "fees": 0.16,
-   "settlements": 0,
+   "settlements": 4,
    "realized_at_open": [
     1.111,
     59.3,
@@ -52,10 +52,40 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0,
+    "funding": 0.0547,
     "basis": 0.0,
     "fees": 0.16,
-    "net": -0.16
+    "net": -0.1053
+   },
+   "last_short_px": 0.007408,
+   "last_long_px": 0.00741
+  },
+  "CT:MEXC/Gate": {
+   "base": "CT",
+   "opened": 1792945867.5512798,
+   "notional": 50.0,
+   "short_ex": "MEXC",
+   "long_ex": "Gate",
+   "short_symbol": "CT_USDT",
+   "long_symbol": "CT_USDT",
+   "short_entry": 0.17666,
+   "long_entry": 0.1765,
+   "short_last": 1792945867.5512798,
+   "long_last": 1792945867.5512798,
+   "funding": 0.0,
+   "fees": 0.14,
+   "settlements": 0,
+   "realized_at_open": [
+    0.669,
+    35.7,
+    0.86,
+    6.8
+   ],
+   "mark": {
+    "funding": 0.0,
+    "basis": 0.0,
+    "fees": 0.14,
+    "net": -0.14
    }
   }
  },
@@ -97,11 +127,11 @@
   }
  ],
  "summary": {
-  "ts": 1792928509.8344328,
-  "open": 2,
+  "ts": 1792945867.5512798,
+  "open": 3,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": -0.085,
-  "total_eur": -0.225
+  "open_net_eur": -0.1259,
+  "total_eur": -0.2659
  }
 }
