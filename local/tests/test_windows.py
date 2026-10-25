@@ -104,6 +104,8 @@ def test_humo_agente_completo_sin_red(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
     monkeypatch.setattr(ma.time, "sleep", lambda s: None)
+    base_cfg = ma.load_config
+    monkeypatch.setattr(ma, "load_config", lambda: {**base_cfg(), "max_vol_1m_pct": None})
     ma.main()
     books = paths.read_json(paths.state("paper_books.json"), {})
     assert set(books) == {"BONKUSDT", "AIUSDT"} and sum(b["rt"] for b in books.values()) > 0
@@ -313,7 +315,8 @@ def test_laboratorio_registra_vueltas_sin_tocar_el_riesgo(tmp_path, monkeypatch)
     assert lines and all(x["lab"] for x in lines) and {x["sym"] for x in lines} <= {"AAAUSDT", "BBBUSDT"}
     assert not paths.state("risk.json").exists()          # el laboratorio no toca el riesgo
     lab.save()
-    assert set(json.loads(paths.state("lab_books.json").read_text())) == {"AAAUSDT", "BBBUSDT"}
+    assert set(json.loads(paths.state("lab_books.json").read_text())) == {
+        "AAAUSDT", "BBBUSDT", "AAAUSDT#control", "BBBUSDT#control"}                     # con su grupo de control
 
 
 def _trades(n, days, pnl_fn):
@@ -466,10 +469,10 @@ def test_defecto3_operaciones_del_intervalo_contra_la_orden_vieja(tmp_path, monk
 
     class Client:                                             # cada método con su secuencia (pedidos en paralelo)
         def book_ticker(self, s):
-            return next(books)
+            return {"bidPrice": "60000", "bidQty": "1", "askPrice": "60001", "askQty": "1"} if s == "BTCUSDT" else next(books)
 
         def trades(self, s):
-            return next(trades)
+            return [] if s == "BTCUSDT" else next(trades)
 
     from nexus.live_paper_maker import Book
 
@@ -628,3 +631,51 @@ def test_informe_diario_no_se_repite_el_mismo_dia(tmp_path, monkeypatch):
     assert posted == []                                        # ya había uno hoy: la corrida de respaldo no repite
     monitor.run_digest(pc, None, once_per_day=False)
     assert len(posted) == 1                                    # a mano siempre publica
+
+
+def test_grupo_de_control_y_clima_en_cada_vuelta(tmp_path, monkeypatch):
+    """El laboratorio corre la misma estrategia sin filtro (control) sobre los MISMOS datos y cada vuelta
+    guarda el clima (volatilidad, tendencia, BTC) para medir en qué condiciones gana o pierde."""
+    import json
+    import nexus.agent.maker_agent as ma
+    from nexus import paths
+    monkeypatch.setenv("NEXUS_HOME", str(tmp_path))
+    t0 = 1_800_000_000.0
+    t = [t0]
+    monkeypatch.setattr(ma.time, "time", lambda: t[0])
+    ma.MARKET.mids.clear()
+    monkeypatch.setattr(ma.MARKET, "now", lambda: t[0])
+    for i in range(20):
+        t[0] = t0 + i * 30.0
+        ma.MARKET.update({"bidPrice": str(60000 + i), "askPrice": str(60001 + i)})
+    snap = ma.MARKET.snapshot()
+    assert snap["btc_ret15_pct"] is not None and snap["btc_vol_1m_pct"] is not None
+    cfg = {"symbols": ["BONKUSDT"], "lab": LAB | {"per_loop": 2}, "stop_pct": 1.0, "min_edge_pct": 0.0,
+           "max_hold_min": 30, "max_vol_1m_pct": -1, "risk": {"max_position_eur": 40}}
+    lab = ma.Lab(FakeMexc(), cfg, 0.0, 0.08)
+    for _ in range(30):
+        t[0] += 2
+        lab.step()
+    rows = [json.loads(x) for x in paths.state("trades.jsonl").read_text().splitlines()]
+    tags = {r["strategy"] for r in rows}
+    assert "control" in tags                                   # el control (sin filtro) opera
+    assert all(r["strategy"] == "control" for r in rows)        # el filtrado (umbral imposible) no entra
+    assert {"er", "vol_1m_pct", "btc_ret15_pct"} <= set(rows[0])
+
+
+def test_resultado_por_clima_y_control(tmp_path):
+    import json
+    from nexus import evidence
+    from nexus.monitor import digest
+    p = tmp_path / "trades.jsonl"
+    rows = [{"ts": 1, "sym": "A", "pnl": 0.05, "model": 2, "strategy": "v3", "vol_1m_pct": 0.1, "er": 0.2,
+             "ret_window_pct": 0.1, "btc_ret15_pct": 0.1},
+            {"ts": 2, "sym": "A", "pnl": -0.4, "model": 2, "strategy": "control", "vol_1m_pct": 0.8, "er": 0.9,
+             "ret_window_pct": -0.5, "btc_ret15_pct": -1.0}]
+    p.write_text("\n".join(json.dumps(r) for r in rows))
+    assert evidence.regime(rows[1]) == {"volatilidad": "muy alta", "tendencia": "bajista", "mercado": "BTC cae"}
+    ev = evidence.evaluate(p, strategy="v3")
+    assert ev["regimes"]["vigente"]["volatilidad"]["baja"]["n"] == 1
+    assert ev["regimes"]["control"]["mercado"]["BTC cae"]["total"] == -0.4
+    md = digest({"status": {"evidence": ev, "books": []}}, None, now=1_800_000_000)
+    assert "Resultado por clima" in md and "BTC cae" in md

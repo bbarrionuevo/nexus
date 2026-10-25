@@ -57,6 +57,26 @@ def by_kind(trades):
     return dict(d)
 
 
+def regime(t):
+    """Clima de una vuelta al entrar, en categorías fijas y pocas (no se ajustan a los datos):
+    volatilidad del par, tendencia del par (efficiency ratio) y BTC en los últimos 15 min."""
+    v, er, ret, btc = t.get("vol_1m_pct"), t.get("er"), t.get("ret_window_pct"), t.get("btc_ret15_pct")
+    vol = "sin dato" if v is None else "baja" if v <= 0.15 else "media" if v <= 0.3 else "alta" if v <= 0.6 else "muy alta"
+    trend = "sin dato" if er is None else "lateral" if er < 0.5 else ("alcista" if (ret or 0) > 0 else "bajista")
+    mkt = "sin dato" if btc is None else "BTC cae" if btc < -0.5 else "BTC sube" if btc > 0.5 else "BTC calmo"
+    return {"volatilidad": vol, "tendencia": trend, "mercado": mkt}
+
+
+def by_regime(trades):
+    """Resultado por clima: {dimensión: {categoría: {n, total, mean}}}."""
+    out = defaultdict(lambda: defaultdict(list))
+    for t in trades:
+        for dim, cat in regime(t).items():
+            out[dim][cat].append(t["pnl"])
+    return {d: {c: {"n": len(v), "total": round(sum(v), 4), "mean": round(sum(v) / len(v), 5)}
+                for c, v in cats.items()} for d, cats in out.items()}
+
+
 def daily(trades):
     d = defaultdict(float)
     for t in trades:
@@ -85,7 +105,8 @@ def criteria(trades, now=None):
 
 def evaluate(path, now=None, strategy=None):
     """Criterios sobre las vueltas del modelo de llenado vigente y, si se indica, de UNA versión de la
-    estrategia. Las demás vueltas válidas se resumen aparte en `previous` (no cuentan)."""
+    estrategia. Las demás vueltas válidas se resumen aparte en `previous` (no cuentan). El grupo de
+    control (misma estrategia sin filtro) se compara por clima en `regimes`."""
     valid = load(path)
     trades = [t for t in valid if strategy is None or t.get("strategy") == strategy]
     excluded = len(load(path, min_model=0)) - len(valid)
@@ -100,7 +121,9 @@ def evaluate(path, now=None, strategy=None):
             "criteria": [{"name": n, "ok": ok, "detail": d} for n, ok, d in crit],
             "criteria_met": sum(ok for _, ok, _ in crit), "criteria_total": len(crit),
             "excluded_old_model": excluded, "strategy": strategy,
-            "previous": stats([t["pnl"] for t in valid if t not in trades]) if strategy else None}
+            "previous": stats([t["pnl"] for t in valid if t not in trades]) if strategy else None,
+            "regimes": {"vigente": by_regime(trades),
+                        "control": by_regime([t for t in valid if t.get("strategy") == "control"])}}
 
 
 if __name__ == "__main__":
