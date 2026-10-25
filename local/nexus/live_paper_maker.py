@@ -1,8 +1,10 @@
 """Market making long-only con modelo de cola, para paper trading en vivo (Binance/MEXC).
 
 Entrada: orden límite de compra en el mejor bid, al final de la cola visible. Cada operación
-agresora vendedora a ese precio consume la cola; al agotarla nos llenan. Si se opera por debajo
-de nuestro precio, llenado total. Si el mejor bid se mueve, cancelamos y volvemos a entrar al final.
+agresora vendedora a ese precio consume primero la cola de adelante y después NUESTRA orden: se
+cuenta llenada recién cuando pasó volumen para toda la orden (modelo 3; antes bastaba con pasar la
+cola por una unidad y se llenaban los 40 € con una fracción del volumen). Si se opera por debajo de
+nuestro precio, llenado total. Si el mejor bid se mueve, cancelamos y volvemos a entrar al final.
 
 Salida: venta límite en max(mejor ask, piso). El piso = entrada * (1 + 2*maker + margen mínimo):
 como maker NUNCA se vende a pérdida. Si el piso queda por encima del mejor ask, no conocemos la
@@ -18,6 +20,8 @@ import sys
 import threading
 import time
 from collections import deque
+
+from .evidence import FILL_MODEL
 
 WS = "wss://data-stream.binance.vision/stream?streams="
 
@@ -94,7 +98,7 @@ class Book:
         if self.px is None:
             return
         if self.state == "flat" and buyer_is_maker:           # vendedor agresor golpea bids
-            if price < self.px or (price == self.px and self._consume(qty)):
+            if price < self.px or (price == self.px and self._consume(qty, self.notional / self.px)):
                 self.state, self.entry, self.entry_ts = "long", self.px, self.now()
                 er, ret = self.trend()
                 self.entry_ctx = {"spread_pct": round((self.ask / self.bid - 1) * 100, 4)
@@ -108,14 +112,15 @@ class Book:
                     target = max(self.ask, self.floor())
                     self._quote(target, self.aq if target == self.ask else None)
         elif self.state == "long" and not buyer_is_maker:     # comprador agresor levanta asks
-            if price > self.px or (price == self.px and self._consume(qty)):
+            if price > self.px or (price == self.px and self._consume(qty, self.qty)):
                 self._close(self.px, self.maker, kind="maker")
 
-    def _consume(self, qty):
+    def _consume(self, qty, own):
+        """Operación a nuestro precio: se come la cola de adelante y después nuestra orden (own)."""
         if self.queue is None:                                # cola desconocida: solo si atraviesa
             return False
         self.queue -= qty
-        return self.queue < 0
+        return self.queue <= -own
 
     def _close(self, px, fee, kind):
         exit_fee = self.qty * px * fee / 100
@@ -152,13 +157,18 @@ class Book:
     KEYS = ("state", "entry", "entry_fee", "entry_ts", "qty", "eq", "rt", "wins", "stops", "timeouts", "requotes")
 
     def to_dict(self):
-        return {k: getattr(self, k) for k in self.KEYS}
+        return {k: getattr(self, k) for k in self.KEYS} | {"model": FILL_MODEL}
 
     def load(self, d):
+        """Restaura el libro. Un estado guardado con otro modelo de llenado se descarta: su resultado
+        acumulado (y una posición simulada con reglas viejas) no es comparable con el modelo vigente."""
+        if d.get("model") != FILL_MODEL:
+            return False
         for k in self.KEYS:
             if k in d:
                 setattr(self, k, d[k])
         self.px, self.queue = None, None                      # tras reiniciar, se re-cotiza desde cero
+        return True
 
 
 def run(syms, minutes, out):

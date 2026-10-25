@@ -288,8 +288,8 @@ class FakeMexc:
 
     def trades(self, s):
         n = next(_TRADE_IDS) * 10
-        return [{"time": n, "price": "1.000", "qty": "5", "isBuyerMaker": True},
-                {"time": n + 1, "price": "1.003", "qty": "5", "isBuyerMaker": False}]
+        return [{"time": n, "price": "1.000", "qty": "50", "isBuyerMaker": True},     # cola 1 + orden de 40
+                {"time": n + 1, "price": "1.003", "qty": "50", "isBuyerMaker": False}]
 
 
 LAB = {"enabled": True, "max_symbols": 12, "min_quote_volume_usdt": 200000, "min_spread_pct": 0.1,
@@ -599,9 +599,9 @@ def test_evidencia_por_version_de_estrategia(tmp_path):
     import json
     from nexus import evidence
     p = tmp_path / "trades.jsonl"
-    rows = [{"ts": 1, "sym": "A", "pnl": -0.5, "model": 2, "strategy": None},
-            {"ts": 2, "sym": "A", "pnl": 0.1, "model": 2, "strategy": "v3"},
-            {"ts": 3, "sym": "A", "pnl": 0.2, "model": 2, "strategy": "v3"}]
+    rows = [{"ts": 1, "sym": "A", "pnl": -0.5, "model": evidence.FILL_MODEL, "strategy": None},
+            {"ts": 2, "sym": "A", "pnl": 0.1, "model": evidence.FILL_MODEL, "strategy": "v3"},
+            {"ts": 3, "sym": "A", "pnl": 0.2, "model": evidence.FILL_MODEL, "strategy": "v3"}]
     p.write_text("\n".join(json.dumps(r) for r in rows))
     ev = evidence.evaluate(p, strategy="v3")
     assert ev["overall"]["n"] == 2 and ev["previous"]["n"] == 1 and ev["strategy"] == "v3"
@@ -668,9 +668,10 @@ def test_resultado_por_clima_y_control(tmp_path):
     from nexus import evidence
     from nexus.monitor import digest
     p = tmp_path / "trades.jsonl"
-    rows = [{"ts": 1, "sym": "A", "pnl": 0.05, "model": 2, "strategy": "v3", "vol_1m_pct": 0.1, "er": 0.2,
+    m = evidence.FILL_MODEL
+    rows = [{"ts": 1, "sym": "A", "pnl": 0.05, "model": m, "strategy": "v3", "vol_1m_pct": 0.1, "er": 0.2,
              "ret_window_pct": 0.1, "btc_ret15_pct": 0.1},
-            {"ts": 2, "sym": "A", "pnl": -0.4, "model": 2, "strategy": "control", "vol_1m_pct": 0.8, "er": 0.9,
+            {"ts": 2, "sym": "A", "pnl": -0.4, "model": m, "strategy": "control", "vol_1m_pct": 0.8, "er": 0.9,
              "ret_window_pct": -0.5, "btc_ret15_pct": -1.0}]
     p.write_text("\n".join(json.dumps(r) for r in rows))
     assert evidence.regime(rows[1]) == {"volatilidad": "muy alta", "tendencia": "bajista", "mercado": "BTC cae"}
