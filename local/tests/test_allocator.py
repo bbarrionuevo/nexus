@@ -92,6 +92,7 @@ def test_calibracion_compara_paper_y_real_del_mismo_par(tmp_path):
     rp.write_text(json.dumps({"ts": NOW - 30, "sym": "X", "pnl": -0.02, "real": True}) + "\n")
     c = ma.calibration({"ts": NOW - 3600, "symbols": ["X"]}, tp, rp, now=NOW)
     assert c["X"]["paper"]["n"] == 2 and c["X"]["paper"]["per_hour"] == 2.0
-    assert c["X"]["real"]["n"] == 1 and c["X"]["real"]["total"] == -0.02
+    assert c["X"]["real"]["n"] == 1 and c["X"]["real"]["total"] == -0.05            # -0,02 € sobre 40 € = -0,05%
+    assert c["X"]["paper"]["mean"] == 0.1                                            # (0,05 + 0,03) / 2 / 40 € en %
     assert ma.calibration(None) is None
     ma.STRATEGY["tag"] = None

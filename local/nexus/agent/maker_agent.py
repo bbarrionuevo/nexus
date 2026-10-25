@@ -133,8 +133,9 @@ def live_auth():
 
 
 def calibration(auth, trades_path=None, real_path=None, now=None):
-    """Mismo par, mismo período: lo que dio el paper contra lo que dio el dinero real. Es el objetivo de
-    la calibración: si el real llena mucho menos o gana menos que el paper, el modelo de paper miente."""
+    """Mismo par, mismo período: lo que dio el paper contra lo que dio el dinero real, en % del monto de
+    cada vuelta (n, vueltas por hora, media %). Es el objetivo de la calibración: si el real llena mucho
+    menos o gana menos que el paper, el modelo de paper miente."""
     from .live import REAL_TRADES
     if not auth:
         return None
@@ -144,10 +145,13 @@ def calibration(auth, trades_path=None, real_path=None, now=None):
     paper = [t for t in evidence.load(trades_path or paths.state("trades.jsonl"), since=since)
              if t.get("strategy") == STRATEGY["tag"]]
     real = [t for t in evidence.load(real_path or paths.state(REAL_TRADES), since=since, min_model=0)]
+    def ret(t):                                      # % del monto de la vuelta: paper usa 40 €, real 20 €
+        return t["pnl"] / (t.get("notional") or 40.0) * 100
+
     out = {}
     for s in auth.get("symbols") or []:
-        p = [t["pnl"] for t in paper if t["sym"] == s]
-        r = [t["pnl"] for t in real if t["sym"] == s]
+        p = [ret(t) for t in paper if t["sym"] == s]
+        r = [ret(t) for t in real if t["sym"] == s]
         out[s] = {"hours": round(hours, 2),
                   "paper": evidence.stats(p) | {"per_hour": round(len(p) / hours, 2)},
                   "real": evidence.stats(r) | {"per_hour": round(len(r) / hours, 2)}}
@@ -239,8 +243,14 @@ def journal(entry, strategy=None):
 STABLE = ("USDC", "USDT", "FDUSD", "TUSD", "DAI", "USDE", "PYUSD", "USD1", "EUR", "EURC", "EURQ", "USDQ")
 
 
-def select_lab(client, lab_cfg, exclude):
-    """Elige pares USDT de MEXC con volumen suficiente y spread en rango (datos públicos)."""
+def select_lab(client, lab_cfg, exclude, notional=40.0):
+    """Elige pares USDT de MEXC con volumen suficiente y spread en rango (datos públicos).
+
+    Orden: ganancia bruta esperable por hora = spread % × llenados posibles por hora. Con el modelo de
+    llenado 3 una orden se llena recién cuando el volumen cubre la cola visible Y la orden entera, así
+    que los llenados por hora se estiman como (volumen por hora / 2, la mitad golpea el bid) dividido
+    (cola del mejor bid + nuestra orden), con tope de 60. Es una fórmula fija (no se ajusta mirando
+    resultados) para explorar primero donde puede haber evidencia; promover sigue siendo por evidencia."""
     vol = {t["symbol"]: float(t.get("quoteVolume") or 0) for t in client._get("/api/v3/ticker/24hr")}
     out = []
     for t in client._get("/api/v3/ticker/bookTicker"):
@@ -256,7 +266,9 @@ def select_lab(client, lab_cfg, exclude):
         spread = (a / b - 1) * 100
         if lab_cfg["min_spread_pct"] <= spread <= lab_cfg["max_spread_pct"] \
                 and vol.get(sym, 0) >= lab_cfg["min_quote_volume_usdt"]:
-            out.append((vol[sym], sym, round(spread, 3)))
+            queue = float(t.get("bidQty") or 0) * b
+            fills_h = min(vol[sym] / 24 / 2 / (queue + notional), 60.0)
+            out.append((spread * fills_h if lab_cfg.get("rank", "edge") == "edge" else vol[sym], sym, round(spread, 3)))
     out.sort(reverse=True)
     return [(s, sp) for _, s, sp in out[:lab_cfg["max_symbols"]]]
 
@@ -483,7 +495,7 @@ class Lab:
     def reselect(self):
         promoted = self.promote()
         picked = select_lab(self.client, self.cfg, self.main | set(promoted) |
-                            {s for s in self.paused if self.is_paused(s)})
+                            {s for s in self.paused if self.is_paused(s)}, self.base["risk"]["max_position_eur"])
         keep = {s for s, b in self.books.items() if b.state == "long"} | \
             {s for s, b in self.control.items() if b.state == "long"}   # no se abandonan posiciones
         twins = self.twins()
