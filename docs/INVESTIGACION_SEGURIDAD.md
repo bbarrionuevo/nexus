@@ -37,8 +37,9 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | A. Cambios | Commits nuevos que tocan contratos en alcance, por git (clon superficial) o API; libro de vistos; excluye tests, mocks, scripts y specs | Implementado y verificado | Demo sobre OpenZeppelin: 3 commits, 15 archivos, 2.ª corrida sin repetir. Vista previa de los 6 repos de Morpho, Yearn y Euler: el 49% de los archivos eran tests o mocks y daban 11 de 19 alertas "alta"; tras excluirlos, 8 alertas "alta", todas en contratos de producción |
 | B. Triaje | Puntaje determinista **sin IA** de las líneas cambiadas, con señales ERC-4626 | Implementado y verificado | En la demo puso primero el único cambio de vault (ERC7535, puntaje 31) entre 15 archivos |
 | C. Método de invariantes | Modelo de referencia ERC-4626 con aritmética entera y propiedades P0–P6 | Implementado y verificado | Autoverificación: pasa la correcta y atrapa los 5 defectos de referencia |
-| D. Validación local con Foundry | `validate.py`: solo repos de programas verificados; clona fijado a un commit con submódulos; `forge build` + `forge test --json` con FFI apagado forzado y topes de tiempo; informe privado e historial | Implementado. Probado con un `forge` simulado; el clon real de MetaMorpho (commit `ded84e5`, 16 submódulos, 19 s) funciona. **Falta la primera corrida con Foundry real, en la PC** | Línea base: la suite propia de cada repo |
-| D'. Propiedades del vault en Foundry | P0–P6 como tests de invariantes contra el vault en alcance | Pendiente: siguiente paso, después de la línea base | `lib/openzeppelin-contracts/lib/erc4626-tests` ya viene en MetaMorpho |
+| D. Validación local con Foundry | `validate.py`: solo repos de programas verificados; clona fijado a un commit con submódulos; `forge build` + `forge test --json` con FFI apagado forzado y topes de tiempo; informe privado e historial | Implementado y verificado en la PC (26-oct) | Línea base de MetaMorpho `ded84e5`: compila en 350,7 s; 148 pasan · 0 fallan · 0 omitidos (354,2 s) |
+| D'. Propiedades del vault en Foundry | `harness/morpho-org__metamorpho/`: la suite ERC-4626 de a16z y un test de invariantes con handler, en 3 variantes; `validate --harness` los copia al clon y los corre con una semilla nueva | Implementado. Verificado en la nube **sin forge** (solc-js + EDR, el motor de tests de Hardhat 3). **Falta la primera corrida con forge en la PC** | 81/81 pasan en `ded84e5` con 4 semillas; detecta 7 de 7 mutaciones de referencia (abajo) |
+| Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md` | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
 | E. Duplicados y alcance | Auditorías previas, problemas conocidos, exclusiones | Parcial: el catálogo guarda exclusiones; la búsqueda de auditorías está pendiente | — |
 | F. Expediente | Informe por candidato confirmado | Pendiente: plantilla abajo | — |
 
@@ -56,6 +57,74 @@ La primera versión no detectaba "mint hacia abajo" ni "rescate hacia arriba". E
 explotan después de una pérdida del vault (precio de la share < 1) y roban a los demás sin crear valor.
 Se agregaron las pérdidas al modelo y la propiedad P6. Es exactamente el tipo de falso negativo que
 el método tiene que ir cerrando.
+
+## Etapa D': propiedades e invariantes de MetaMorpho
+
+Dos archivos de tests que `validate --harness morpho-org__metamorpho` copia a `test/nexus/` del clon, sobre
+un entorno propio: Morpho Blue, un mercado con préstamos (LLTV 80 %), un mercado idle y el vault. Se corren
+en tres variantes:
+
+- sin comisión;
+- con comisión del 25 %;
+- con un activo de 6 decimales, es decir `DECIMALS_OFFSET` = 12.
+
+1. **Propiedades de a16z** (`NexusMetaMorphoERC4626.t.sol`): las 26 de la suite `erc4626-tests`, que ya trae
+   el repo, con `_delta_ = 0`. La suite original simula el rendimiento acuñando tokens en el contrato del
+   vault, y eso en MetaMorpho no mueve `totalAssets`. Por eso la ganancia y la pérdida se hacen como pasarían
+   de verdad:
+   - ganancia: depósito en Morpho a nombre del vault, más interés pendiente (préstamo y paso del tiempo);
+   - pérdida: deuda incobrable (el oráculo cae a 0 y se liquida sin repagar).
+2. **Invariantes con handler** (`NexusMetaMorphoInvariant.t.sol`). Forge encadena depósitos, acuñaciones,
+   retiros, rescates, transferencias, donaciones, préstamos, repagos, paso del tiempo, deuda incobrable y
+   reasignaciones del allocator. Después de cada llamada verifica:
+   - que `max*` no prometa de más: depositar, acuñar, retirar o rescatar el máximo no revierte;
+   - que `preview*` no mienta a favor del usuario;
+   - que el precio por acción no baje sin una pérdida;
+   - que `convertToAssets` no valga menos que el precio de la especificación;
+   - solvencia, suma de saldos y que el vault no retenga tokens.
+
+**Cómo se verificó sin forge.** Foundry no se puede instalar en la nube de Claude, porque los hosts están
+bloqueados. Sí se puede instalar EDR desde npm: es el motor de tests Solidity de Hardhat 3 y usa los mismos
+cheatcodes. `tools/edr/` compila como forge (Morpho con 0.8.19, MetaMorpho con 0.8.21 y el harness con
+0.8.26, via_ir) y ejecuta. Resultados:
+
+- 81/81 pasan con 4 semillas, con 2.000 corridas de fuzz y 256×500 llamadas por invariante;
+- las invariantes terminan con menos del 0,4 % de reversiones, o sea que no pasan en vacío.
+
+Las mutaciones de referencia, cada una inyectada en una copia de MetaMorpho, tienen que romper algo:
+
+| Mutación | La detecta |
+|---|---|
+| M1 `deposit` redondea acciones hacia arriba | a16z (`RT_deposit_redeem`) e invariantes (precio) |
+| M2 `maxWithdraw` ignora la liquidez | solo invariantes (retirar el máximo revierte) |
+| M3 `deposit` no actualiza `lastTotalAssets` (comisión sobre depósitos) | invariantes, variante con comisión |
+| M4 `mint` redondea el costo hacia abajo | a16z (`RT_mint_withdraw`) |
+| M5 `totalAssets` ignora el mercado idle | invariantes (precio tras reasignar) |
+| M6 `redeem` redondea activos hacia arriba | a16z (`RT_redeem_deposit`, `RT_redeem_mint`) |
+| M7 comisión calculada de más | invariantes (`convertToAssets` por debajo del precio exacto) |
+
+**Lecciones:**
+
+- **Falso positivo propio, corregido.** La primera versión medía el precio con `convertToAssets` y fallaba
+  en la variante con comisión. Las acciones de comisión pendientes se redondean hacia abajo. Cuando ese
+  redondeo salta una acción entera, el precio "devuelve" valor al receptor de comisiones. Con pocas acciones
+  en circulación eso parecía una caída de hasta 1,5 %. No era un defecto de MetaMorpho. Se reprodujo la
+  secuencia de 179 llamadas paso a paso, y ahora se mide el precio de la especificación:
+  (totalAssets − comisión × interés pendiente + 1) / (totalSupply + acciones virtuales).
+- **Versión de solc.** Con via_ir, la suite de a16z da "stack too deep" en solc ≤ 0.8.24. Por eso el
+  adaptador exige `^0.8.26`, y forge baja ese compilador solo para ese archivo.
+
+**Qué NO cubre todavía:**
+
+- varios mercados con préstamos y colas de retiro largas;
+- tokens no estándar (con comisión por transferencia o con callbacks);
+- reentrada;
+- `permit` y `multicall`;
+- las funciones con timelock del curador y del guardián (topes, remoción de mercados);
+- préstamos flash;
+- una tasa de interés que cambie con el uso.
+
+Son los próximos frentes, en ese orden de valor.
 
 ## Límites de seguridad
 
@@ -101,6 +170,32 @@ Validación local con Foundry (etapa D), solo sobre repos de programas verificad
 El informe queda en `%LOCALAPPDATA%\nexus\secresearch\validate\` y los clones en `%LOCALAPPDATA%\nexus\work\`.
 La primera corrida de cada repo es su **línea base**: un test que falla ahí no es una vulnerabilidad.
 
+Propiedades e invariantes de nexus (etapa D'). Cada corrida usa una semilla nueva, que queda en el informe
+junto con el comando para reproducirla:
+
+```powershell
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho
+# más intensidad (por defecto: fuzz 1000, invariantes 256x500), o repetir una corrida exacta:
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho --fuzz-runs 5000 --invariant-depth 1000
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho --ref <commit> --seed <semilla>
+```
+
+Ciclo desatendido: corre todo lo anterior una vez por día, sin ventana y con topes. Se registra una sola
+vez, desde `%USERPROFILE%\nexus`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\windows\registrar_ciclo.ps1      # todos los días a las 03:17
+Start-ScheduledTask nexus-ciclo                                                  # probarlo ahora
+```
+
+Los resultados quedan en `%LOCALAPPDATA%\nexus\secresearch\`:
+
+- `ciclo.md`: el último ciclo;
+- `para_claude.md`: líneas base, corridas y fallas distintas acumuladas, para pegarle a Claude;
+- `ciclo.log`: el progreso.
+
+Para quitarlo: `Unregister-ScheduledTask nexus-ciclo -Confirm:$false`.
+
 ## Métricas (lo único que cuenta)
 
 - Programas activos que cumplen los criterios.
@@ -120,7 +215,8 @@ La primera corrida de cada repo es su **línea base**: un test que falla ahí no
 | Yearn V3 | Immunefi | `yearn/yearn-vaults-v3` (Vyper 0.3.10), `yearn/tokenized-strategy` | Su `foundry.toml` tiene `ffi = true`: correr siempre con `FOUNDRY_FFI=false` |
 | Euler v2 | Cantina | `euler-xyz/euler-vault-kit`, `euler-xyz/euler-earn` | El alcance son las direcciones desplegadas, no el repo entero |
 
-El catálogo queda con `in_scope` y `verified_by_owner` en `false` hasta que el dueño lea cada reglamento.
+El dueño leyó los reglamentos y marcó los 3 programas (`in_scope` y `verified_by_owner` en `true`) en su
+catálogo privado, el 26-oct.
 
 **Seguridad de la PC:** compilar y testear código de terceros es ejecutar código ajeno. FFI de Foundry
 siempre apagado (`FOUNDRY_FFI=false`), y nunca correr scripts de despliegue (`forge script`) de esos repos.
@@ -153,7 +249,8 @@ programa activo): Morpho (MetaMorpho), Yearn V3 y Euler v2.
 ## Qué falta para un primer informe válido
 
 1. Un programa activo, verificado por el dueño, con un vault en alcance.
-2. Foundry en la PC (etapa D), para traducir las propiedades a tests contra el código real.
+2. ~~Foundry en la PC~~ (hecho el 26-oct: línea base de MetaMorpho en verde). Propiedades e invariantes
+   contra el código real (etapa D'): listas para MetaMorpho; faltan Morpho Vault V2, Yearn V3 y Euler v2.
 3. Un test local que falle en el código en alcance y muestre un efecto económico concreto.
 4. La comprobación contra auditorías previas, problemas conocidos y exclusiones.
 5. El expediente: programa y versión, archivo y línea, causa raíz, precondiciones, test reproducible,

@@ -1,5 +1,6 @@
 """Motor de investigación: cambios, triaje, invariantes, orquestador y circuito local (sin red)."""
 import json
+import os
 from pathlib import Path
 
 from nexus.secresearch import changes, invariants, run, triage
@@ -157,8 +158,11 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
 FAKE_FORGE = r'''
 import json, os, sys
 log = os.environ["FAKE_LOG"]
+nexus = os.path.join(os.getcwd(), "test", "nexus")
 with open(log, "a") as f:
-    f.write(json.dumps({"argv": sys.argv[1:], "ffi": os.environ.get("FOUNDRY_FFI"), "cwd": os.getcwd()}) + "\n")
+    f.write(json.dumps({"argv": sys.argv[1:], "ffi": os.environ.get("FOUNDRY_FFI"), "cwd": os.getcwd(),
+                        "fuzz": {k: v for k, v in os.environ.items() if k.startswith(("FOUNDRY_FUZZ", "FOUNDRY_INV"))},
+                        "harness": sorted(os.listdir(nexus)) if os.path.isdir(nexus) else None}) + "\n")
 if sys.argv[1] == "build":
     print("Compiling 42 files")
     sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))
@@ -171,7 +175,8 @@ print(json.dumps({"test/V.t.sol:VaultTest": {"test_results": {
     "testDepositRedeem(uint256)": {"status": "Success", "reason": None, "counterexample": None},
     "testNoDilution(uint256)": {"status": "Failure", "reason": "assertion failed: 7 < 8",
                                 "counterexample": {"calldata": "0xabc", "args": "2"}},
-    "testSkip()": {"status": "Skipped", "reason": None, "counterexample": None}}}}))
+    "testSkip()": {"status": "Skipped", "reason": None, "counterexample": None},
+    "invariant_x()": {"status": "Success", "kind": {"Invariant": {"runs": 4, "calls": 40, "reverts": 30}}}}}}))
 sys.exit(1)
 '''
 
@@ -207,10 +212,10 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
     calls = [json.loads(x) for x in log.read_text().splitlines()]
     assert [c["argv"][0] for c in calls] == ["build", "test"] and all(c["ffi"] == "false" for c in calls)
     assert calls[1]["argv"] == ["test", "--json", "--match-path", "test/V.t.sol"]
-    assert not rec["ok"] and rec["test"]["counts"] == {"Success": 1, "Failure": 1, "Skipped": 1}
+    assert not rec["ok"] and rec["test"]["counts"] == {"Success": 2, "Failure": 1, "Skipped": 1}
     assert rec["test"]["failures"][0]["counterexample"]["args"] == "2" and len(rec["sha"]) == 40
     md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text()
-    assert "1 pasan · 1 fallan" in md and "testNoDilution" in md and "NO es una vulnerabilidad" in md
+    assert "2 pasan · 1 fallan" in md and "testNoDilution" in md and "NO es una vulnerabilidad" in md
     hist = [json.loads(x) for x in (tmp_path / "out" / "history.jsonl").read_text().splitlines()]
     assert hist[-1]["counts"]["Failure"] == 1 and hist[-1]["sha"] == rec["sha"]
     monkeypatch.setenv("FAKE_BUILD_EXIT", "1")                                         # no compila: no testea
@@ -220,3 +225,129 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
     assert not rec["ok"] and rec["build"]["exit"] == 1 and "test" not in rec
     assert [json.loads(x)["argv"][0] for x in log.read_text().splitlines()] == ["build"]
     assert "Compilación: FALLÓ" in validate.report(rec)
+
+
+def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_path, monkeypatch):
+    import sys
+
+    import pytest
+
+    from nexus.secresearch import validate
+    src = _foundry_repo(tmp_path)
+    fake = tmp_path / "forge.py"
+    fake.write_text(FAKE_FORGE)
+    log = tmp_path / "forge.log"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    hb = tmp_path / "harness"
+    for name, man in (("h", {"repo": "o/v", "match_contract": "^Nexus", "env": {"FOUNDRY_FUZZ_RUNS": "7"}}),
+                      ("ffi", {"repo": "o/v", "env": {"FOUNDRY_FFI": "true"}}), ("otro", {"repo": "o/otro"})):
+        (hb / name).mkdir(parents=True)
+        (hb / name / "harness.json").write_text(json.dumps(man))
+    (hb / "h" / "P.t.sol").write_text("contract P {}\n")
+    progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}]}]
+    kw = {"out": tmp_path / "out", "programs": progs, "forge": [sys.executable, str(fake)], "url": f"file://{src}",
+          "work": tmp_path / "work", "harness_base": hb}
+
+    rec = validate.validate("o/v", harness="h", seed="0x2a", fuzz={"FOUNDRY_INVARIANT_DEPTH": "9"}, **kw)
+    build, test = (json.loads(x) for x in log.read_text().splitlines())
+    assert build["harness"] == ["P.t.sol"]                                   # copiado antes de compilar
+    assert test["argv"] == ["test", "--json", "--match-contract", "^Nexus"] and test["ffi"] == "false"
+    assert test["fuzz"] == {"FOUNDRY_FUZZ_RUNS": "7", "FOUNDRY_INVARIANT_DEPTH": "9", "FOUNDRY_FUZZ_SEED": "0x2a"}
+    assert rec["harness_files"] == ["P.t.sol"] and rec["test"]["activity"][0]["reverts"] == 30
+    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}+h@0x2a.md").read_text()
+    assert "--harness h --seed 0x2a" in md and "en vacío" in md                # 30 de 40 llamadas revirtieron
+
+    log.write_text("")                                                       # línea base: sin código de nexus
+    validate.validate("o/v", **kw)
+    assert all(json.loads(x)["harness"] is None and not json.loads(x)["fuzz"] for x in log.read_text().splitlines())
+    seeds = {validate.validate("o/v", harness="h", **kw)["fuzz"]["FOUNDRY_FUZZ_SEED"] for _ in range(2)}
+    assert len(seeds) == 2                                                   # semilla nueva en cada corrida
+
+    log.write_text("")
+    with pytest.raises(ValueError, match="FOUNDRY_FFI"):
+        validate.validate("o/v", harness="ffi", **kw)
+    with pytest.raises(ValueError, match="FOUNDRY_FS_PERMISSIONS"):
+        validate.validate("o/v", harness="h", fuzz={"FOUNDRY_FS_PERMISSIONS": "[]"}, **kw)
+    assert "es para o/otro" in validate.validate("o/v", harness="otro", **kw)["error"]
+    assert log.read_text() == ""                                             # ninguno llegó a forge
+
+
+def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
+    from nexus.secresearch import limits, validate
+    man, files = validate.load_harness("morpho-org__metamorpho")
+    assert man["repo"] == "morpho-org/metamorpho" and man["match_contract"] == "^NexusMetaMorpho"
+    assert {f.name for f in files} == {"NexusMetaMorphoBase.sol", "NexusMetaMorphoERC4626.t.sol",
+                                       "NexusMetaMorphoInvariant.t.sol"}
+    # Ni FFI, ni forks/RPC, ni archivos, ni transacciones: solo cheatcodes de la EVM local.
+    banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
+              "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert not [b for b in banned if b in text], f.name
+
+
+def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
+    from nexus.secresearch import cycle
+    home = tmp_path / "home"
+    hb = tmp_path / "harness"
+    for name, repo in (("h", "o/v"), ("ajeno", "x/y")):
+        (hb / name).mkdir(parents=True)
+        (hb / name / "harness.json").write_text(json.dumps({"repo": repo}))
+    progs = [{"name": "P", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}, {"repo": "o/w"}, {"repo": "o/z"}]}]
+    clock = {"t": 1_000_000.0}
+    calls = []
+
+    def scan(targets, out):
+        calls.append(("scan", [r for _, r, _ in targets]))
+        return {"new_commits": 2, "files": 3, "pending": 5}, []
+
+    def check(repo, harness=None, out=None, **kw):
+        calls.append((harness or "base", repo))
+        clock["t"] += 60 * 50                                                # cada validación tarda 50 min
+        rec = {"repo": repo, "sha": "a" * 40, "ok": harness is None, "build": {"seconds": 1},
+               "test": {"seconds": 2, "counts": {"Success": 3, "Failure": int(harness is not None), "Skipped": 0},
+                        "failures": [{"suite": "t.sol:T", "test": "invariant_x()", "reason": "precio bajo",
+                                      "counterexample": {"args": "7"}, "logs": ["log 1"]}] if harness else []}}
+        if harness:
+            rec["fuzz"] = {"FOUNDRY_FUZZ_SEED": "0x2a"}
+        name = f"{repo.replace('/', '__')}@aaaaaaaaaa" + (f"+{harness}@0x2a" if harness else "")
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{name}.json").write_text(json.dumps(rec))
+        with (out / "history.jsonl").open("a") as f:
+            f.write(json.dumps({"ts": clock["t"], "repo": repo, "sha": rec["sha"], "harness": harness, "report": name,
+                                "seed": "0x2a" if harness else None, "counts": rec["test"]["counts"]}) + "\n")
+        return rec
+
+    kw = {"programs": progs, "home": home, "now": lambda: clock["t"], "scan": scan, "check": check, "harness_base": hb}
+    rep = cycle.cycle(max_minutes=120, baselines=5, **kw)
+    # A–C, el harness del repo verificado (el ajeno no), y líneas base hasta agotar el tope de 120 min
+    assert calls == [("scan", ["o/v", "o/w", "o/z"]), ("h", "o/v"), ("base", "o/v"), ("base", "o/w")]
+    steps = {s["step"]: s for s in rep["steps"]}
+    assert steps["harness ajeno"]["ok"] is None and "no está en un programa verificado" in steps["harness ajeno"]["detail"]
+    assert steps["línea base o/z"]["detail"] == "tope de tiempo del ciclo" and not rep["ok"]
+    out = home / "secresearch"
+    assert "CON FALLAS" in (out / "ciclo.md").read_text() and not (out / "ciclo.lock").exists()
+    digest = (out / "para_claude.md").read_text()
+    assert "Fallas distintas: 1" in digest and "semilla 0x2a" in digest and '"args": "7"' in digest
+    assert "| o/v | aaaaaaaaaa | 3 pasan · 0 fallan" in digest
+
+    calls.clear()                                                            # al otro día: falta solo o/z
+    clock["t"] += 86400
+    cycle.cycle(max_minutes=120, baselines=5, **kw)
+    assert calls[-1] == ("base", "o/z") and ("base", "o/v") not in calls
+
+    def roto(repo, harness=None, **kw):                                      # una corrida que revienta no corta el ciclo
+        if harness:
+            raise ValueError("manifiesto roto")
+        return check(repo, **kw)
+    clock["t"] += 8 * 86400
+    rep = cycle.cycle(baselines=1, **{**kw, "check": roto})
+    assert [s["ok"] for s in rep["steps"]] == [True, None, False, True] and "manifiesto roto" in rep["steps"][2]["detail"]
+
+    calls.clear()                                                            # otro ciclo en curso: no corre nada
+    (out / "ciclo.lock").write_text("{}")
+    assert cycle.cycle(**kw)["skipped"] and calls == []
+    os.utime(out / "ciclo.lock", (clock["t"] - 13 * 3600,) * 2)              # candado viejo (corte de luz): se toma
+    assert not cycle.cycle(baselines=0, **kw).get("skipped") and not (out / "ciclo.lock").exists()

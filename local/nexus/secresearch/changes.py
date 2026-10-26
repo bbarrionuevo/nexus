@@ -20,6 +20,8 @@ CONTRACT_EXT = (".sol", ".vy")
 # Tests, mocks, scripts y specs de verificación formal nunca están en el alcance de un bug bounty. En la
 # primera vista previa (26-oct, 6 repos de Morpho, Yearn y Euler) eran el 49% de los archivos y 11 de las
 # 19 alertas de prioridad alta: puro ruido.
+# Sin ventana de consola en Windows: el ciclo desatendido corre con pythonw y cada git/forge abriría una.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 NOT_SCOPE = re.compile(r"(^|/)(tests?|mocks?|scripts?|certora|echidna|medusa|halmos|foundry_tests)/"
                        r"|\.t\.sol$|\.s\.sol$|(^|/)Mock\w*\.sol$", re.IGNORECASE)
 
@@ -93,7 +95,7 @@ def _git(args, cwd=None, timeout=180, exe=("git",)):
     # UTF-8 explícito y errors="replace": en Windows el texto por defecto es cp1252, que no decodifica bytes
     # como 0x81 (presentes en salidas UTF-8 válidas); una salida así rompía la lectura (26-oct).
     r = subprocess.run([*exe, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       timeout=timeout, check=False)
+                       timeout=timeout, check=False, creationflags=NO_WINDOW)
     if r.returncode:
         raise RuntimeError(f"git {args[0]}: {(r.stderr or r.stdout).strip()[:200]}")
     return r.stdout

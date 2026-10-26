@@ -1,0 +1,37 @@
+[
+[
+"M1 deposit redondea acciones hacia arriba",
+"shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Floor);",
+"shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"
+],
+[
+"M2 maxWithdraw ignora la liquidez",
+"assets -= _simulateWithdrawMorpho(assets);",
+"assets -= 0;"
+],
+[
+"M3 deposit no actualiza lastTotalAssets (cobra comision sobre depositos)",
+"_updateLastTotalAssets(lastTotalAssets + assets);",
+"_updateLastTotalAssets(lastTotalAssets);"
+],
+[
+"M4 mint redondea el costo hacia abajo",
+"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);",
+"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);"
+],
+[
+"M5 totalAssets solo cuenta el primer mercado",
+"for (uint256 i; i < withdrawQueue.length; ++i) {",
+"for (uint256 i; i < withdrawQueue.length && i < 1; ++i) {"
+],
+[
+"M6 redeem redondea activos hacia arriba",
+"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);",
+"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"
+],
+[
+"M7 comision calculada sin restar feeAssets (cobra de mas)",
+"_convertToSharesWithTotals(feeAssets, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);",
+"_convertToSharesWithTotals(feeAssets * 2, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);"
+]
+]
