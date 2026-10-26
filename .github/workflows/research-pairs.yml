@@ -18,7 +18,13 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -r local/requirements.txt
       # Backtest fuera de muestra con 60 días (rápido) y después paper en vivo casi continuo: 5,3 h cada 6 h.
-      - run: cd local && python -m nexus.research_pairs backtest ../datawt/data 60 > /dev/null && cat ../datawt/data/pairs_backtest.md >> $GITHUB_STEP_SUMMARY
+      - run: cd local && python -m nexus.research_pairs backtest ../datawt/data 60 > /dev/null && tee -a $GITHUB_STEP_SUMMARY < ../datawt/data/pairs_backtest.md
+      # El backtest se publica en la rama data enseguida, sin esperar las 5 h del paper en vivo.
+      - run: |
+          cd datawt
+          git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
+          git add data/; git commit -m "pares backtest $(date -u +%FT%TZ)" || exit 0
+          git pull -q --rebase origin data && git push origin HEAD:data
       - run: cd local && python -m nexus.research_pairs live ../datawt/data ${{ inputs.minutes || 320 }}
       - run: cat datawt/data/paper_pairs.md >> $GITHUB_STEP_SUMMARY
       - if: always()
