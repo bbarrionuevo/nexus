@@ -35,7 +35,7 @@ def test_rota_si_el_real_pierde_el_2_por_ciento_o_diverge_del_paper():
     real = [{"ts": NOW + 10, "sym": "A", "pnl": -0.35, "notional": 30}, {"ts": NOW + 20, "sym": "A", "pnl": -0.30, "notional": 30}]
     st = selector.update(st, sc, {"auto": 1}, NOW + 30, real, tr, 30.0, VIG, ALLOWED)
     assert st["choices"] == {"B": {"strategy": VIG, "since": NOW + 30}}              # perdió 0,65 > 2% de 30
-    assert st["banned"]["A|" + VIG] == NOW + 30 + 24 * 3600 and "2% del capital" in st["history"][-2]["why"]
+    assert st["banned"]["A|*"] == NOW + 30 + 24 * 3600 and "2% del capital" in st["history"][-2]["why"]
     real_b = [{"ts": NOW + 40 + i, "sym": "B", "pnl": -0.003, "notional": 30} for i in range(10)]
     paper_b = _p("B", VIG, [0.05] * 3, t0=NOW + 40)
     st = selector.update(st, sc, {"auto": 1}, NOW + 60, real_b, tr + paper_b, 30.0, VIG, ALLOWED)
@@ -96,3 +96,17 @@ def test_latido_e_informe_muestran_el_selector():
     st = {"ts": NOW, "books": [], "live": {"auth": {"capital_eur": 100, "todo": True, "auto": 1}, "books": []}}
     md = digest({"status": st, "selector": b["selector"]}, None, now=NOW)
     assert "Selector: opera XUSDT (v5-tick1); descartadas: YUSDT|v3-vol0.3." in md
+
+
+def test_al_descartar_cambia_de_par_y_no_a_otra_variante_del_mismo():
+    """26-oct: ZRO vigente perdió y el selector pasó a ZRO control, que en ZRO operaba igual."""
+    from nexus import selector
+    tr = (_p("A", VIG, [0.05, 0.04] * 10) + _p("A", "control", [0.05, 0.04] * 10)
+          + _p("B", VIG, [0.03, 0.02] * 10))
+    sc = selector.combo_scores(tr, NOW)
+    st = selector.update({}, sc, {"auto": 1}, NOW, [], tr, 30.0, VIG, ALLOWED)
+    assert list(st["choices"]) == ["A"]
+    real = [{"ts": NOW + 10, "sym": "A", "pnl": -0.7, "notional": 30}]
+    st = selector.update(st, sc, {"auto": 1}, NOW + 20, real, tr, 30.0, VIG, ALLOWED)
+    assert st["choices"] == {"B": {"strategy": VIG, "since": NOW + 20}}          # no A control: otro par
+    assert selector.pick(sc, {"symbols": ["A"]}, st["banned"], VIG, ALLOWED) == {}   # con pares fijos, espera
