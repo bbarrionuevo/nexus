@@ -11,7 +11,10 @@ por otra que en ese momento esté ganando. Reglas fijadas de antemano (no se aju
   la mejor variante de cada par autorizado; si ninguna tiene evidencia todavía, la vigente.
 - Rotación: si desde que se eligió una combinación el real pierde ROTATE_LOSS_PCT % del capital, o con
   al menos CALIB_N vueltas reales pierde mientras el paper de esa misma combinación gana en el mismo
-  período, se descarta BAN_H horas y se elige la siguiente. El cambio se hace sin posición abierta.
+  período, se descarta BAN_H horas **el par entero** (todas sus variantes) y se elige la siguiente. Antes
+  se descartaba solo la variante y el selector pasaba a otra del mismo par que en ese par operaba igual
+  (26-oct: ZRO vigente → ZRO control, mismas vueltas): no era cambiar de estrategia. El cambio se hace
+  sin posición abierta.
 - Los límites del gestor de riesgo (por día, semana y total) siguen valiendo: son la red final si
   todo lo que se prueba pierde.
 """
@@ -26,6 +29,10 @@ CONTROL = "control"
 
 def key(sym, strategy):
     return f"{sym}|{strategy}"
+
+
+def banned_pair(sym, banned):
+    return key(sym, "*") in banned
 
 
 def pct(t):
@@ -56,7 +63,8 @@ def pick(scores, auth, banned, vigente, allowed):
     """{par: variante} para el dinero real según la autorización. `allowed` = variantes que el agente
     sabe operar en real (vigente, control y las de lab.variants)."""
     good = sorted((v for k, v in scores.items() if v["score"] is not None and v["score"] > 0
-                   and k not in banned and v["strategy"] in allowed), key=lambda v: -v["score"])
+                   and k not in banned and not banned_pair(v["sym"], banned) and v["strategy"] in allowed),
+                  key=lambda v: -v["score"])
     best = {}
     for v in good:
         best.setdefault(v["sym"], v["strategy"])
@@ -65,6 +73,8 @@ def pick(scores, auth, banned, vigente, allowed):
         return {s: best[s] for s in ranked[:auth["auto"]]}
     out = {}
     for s in auth.get("symbols") or []:
+        if banned_pair(s, banned):
+            continue
         if s in best:
             out[s] = best[s]
         elif key(s, vigente) not in banned:
@@ -92,7 +102,7 @@ def update(state, scores, auth, now, real, paper, capital, vigente, allowed):
     for sym, c in list(choices.items()):
         why = check(c, sym, real, paper, capital, now)
         if why:
-            banned[key(sym, c["strategy"])] = now + BAN_H * 3600
+            banned[key(sym, "*")] = now + BAN_H * 3600       # el par entero: cambiar de verdad
             history.append({"ts": now, "sym": sym, "strategy": c["strategy"], "event": "descartada", "why": why})
             del choices[sym]
     picked = pick(scores, auth or {}, banned, vigente, allowed) if auth else {}

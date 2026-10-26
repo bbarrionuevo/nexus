@@ -98,7 +98,8 @@ El repositorio nunca activa el modo real: lo activás **vos en la PC** con una a
    El **selector** opera las mejores combinaciones (par + variante de la estrategia) que hoy ganan en
    el laboratorio (`--auto 1` a `--auto 3`; el capital se reparte entre ellas). Cada 5 minutos vuelve a
    puntuar. Si una combinación pierde en real el 2% del capital desde que se eligió, o pierde mientras
-   su gemela en paper gana, la descarta 24 h y pasa a la siguiente que esté ganando. Cambia **solo sin
+   su gemela en paper gana, descarta **ese par** 24 h (con todas sus variantes) y pasa a la siguiente
+   que esté ganando. Cambia **solo sin
    posición abierta**: nunca abandona una posición. Si no hay ninguna combinación con ventaja, espera
    en USDT hasta que la haya. Mismos topes (100 €, 7 días); los límites de pérdida del día, la semana
    y el total quedan como red final.
