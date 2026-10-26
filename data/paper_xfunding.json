@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792987200.0,
-   "long_last": 1792987200.0,
-   "funding": 0.16959999999999997,
+   "short_last": 1793016000.0,
+   "long_last": 1793016000.0,
+   "funding": 0.23484999999999998,
    "fees": 0.24,
-   "settlements": 14,
+   "settlements": 18,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,10 +22,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.1696,
+    "funding": 0.2348,
     "basis": 0.1138,
     "fees": 0.24,
-    "net": 0.0434
+    "net": 0.1087
    },
    "last_short_px": 0.0061402,
    "last_long_px": 0.006128
@@ -40,11 +40,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.007408,
    "long_entry": 0.00741,
-   "short_last": 1792987200.0,
-   "long_last": 1792987200.0,
-   "funding": 0.07944999999999999,
+   "short_last": 1793016000.0,
+   "long_last": 1793016000.0,
+   "funding": 0.11239999999999999,
    "fees": 0.16,
-   "settlements": 10,
+   "settlements": 14,
    "realized_at_open": [
     1.111,
     59.3,
@@ -52,10 +52,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0794,
+    "funding": 0.1124,
     "basis": 0.0,
     "fees": 0.16,
-    "net": -0.0806
+    "net": -0.0476
    },
    "last_short_px": 0.007408,
    "last_long_px": 0.00741
@@ -70,11 +70,11 @@
    "long_symbol": "CT_USDT",
    "short_entry": 0.17666,
    "long_entry": 0.1765,
-   "short_last": 1792987200.0,
-   "long_last": 1792987200,
-   "funding": 0.0484,
+   "short_last": 1793016000.0,
+   "long_last": 1793016000,
+   "funding": 0.072,
    "fees": 0.14,
-   "settlements": 6,
+   "settlements": 10,
    "realized_at_open": [
     0.669,
     35.7,
@@ -82,10 +82,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0484,
+    "funding": 0.072,
     "basis": -0.0414,
     "fees": 0.14,
-    "net": -0.133
+    "net": -0.1094
    },
    "last_short_px": 0.1698,
    "last_long_px": 0.1695
@@ -129,11 +129,11 @@
   }
  ],
  "summary": {
-  "ts": 1793001189.3431783,
+  "ts": 1793018018.5427895,
   "open": 3,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": -0.1702,
-  "total_eur": -0.3102
+  "open_net_eur": -0.0483,
+  "total_eur": -0.1883
  }
 }
