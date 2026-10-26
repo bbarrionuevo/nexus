@@ -27,6 +27,11 @@ from .limits import FOUNDRY_ENV, MAX_BUILD_SECONDS, MAX_TEST_SECONDS, repo_in_sc
 TAIL = 40
 
 
+def say(msg):
+    """Progreso en pantalla: compilar con via_ir tarda minutos y sin esto parece colgado."""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 def checkout(repo, workdir, ref=None, url=None):
     """Clon fijado a un commit, con submódulos. Devuelve (carpeta, sha)."""
     d = Path(workdir) / repo.replace("/", "__")
@@ -44,8 +49,10 @@ def forge_run(forge, args, cwd, timeout):
     """Un comando de Foundry con las variables de seguridad forzadas. (código, stdout, stderr, segundos)."""
     t0 = time.time()
     try:
+        # UTF-8 y errors="replace": en Windows (cp1252) el indicador de progreso de forge (byte 0x81) mataba el
+        # hilo lector, forge quedaba trabado sin poder escribir y la corrida parecía colgada (26-oct).
         r = subprocess.run([*forge, *args], cwd=cwd, env={**os.environ, **FOUNDRY_ENV}, capture_output=True,
-                           text=True, timeout=timeout, check=False)
+                           text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
         return r.returncode, r.stdout or "", r.stderr or "", round(time.time() - t0, 1)
     except subprocess.TimeoutExpired:
         return 124, "", f"tiempo agotado ({timeout} s)", float(timeout)
@@ -106,18 +113,22 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     out = results_dir(out or paths.home() / "secresearch" / "validate")
     out.mkdir(parents=True, exist_ok=True)
     rec = {"repo": repo, "program": prog["name"], "when": time.strftime("%Y-%m-%d %H:%M"), "match": match}
+    say(f"{repo}: clonando con submódulos (programa {prog['name']})…")
     try:
         d, rec["sha"] = checkout(repo, results_dir(work or paths.home() / "work"), ref, url)
     except Exception as e:                                       # noqa: BLE001 (se informa)
         rec.update(ok=False, error=f"no se pudo clonar: {str(e)[:300]}")
         return _save(out, rec)
+    say(f"commit {rec['sha'][:10]} · compilando (la primera vez puede tardar varios minutos)…")
     code, so, se, secs = forge_run(forge, ["build"], d, MAX_BUILD_SECONDS)
     rec["build"] = {"exit": code, "seconds": secs}
     if code:
         rec.update(ok=False, tail=(so + se).strip().splitlines()[-TAIL:])
         return _save(out, rec)
     args = ["test", "--json"] + (["--match-path", match] if match else [])
+    say(f"compiló en {secs} s · corriendo tests (puede tardar varios minutos)…")
     code, so, se, secs = forge_run(forge, args, d, MAX_TEST_SECONDS)
+    say(f"tests terminados en {secs} s")
     data = parse(so)
     if data is None:
         rec.update(ok=False, test=None, tail=(so + se).strip().splitlines()[-TAIL:])

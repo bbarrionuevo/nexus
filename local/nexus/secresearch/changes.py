@@ -89,8 +89,11 @@ def recent(repo, paths, budget, done=(), max_commits=10, get=_http_get):
     return out, None
 
 
-def _git(args, cwd=None, timeout=180):
-    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
+def _git(args, cwd=None, timeout=180, exe=("git",)):
+    # UTF-8 explícito y errors="replace": en Windows el texto por defecto es cp1252, que no decodifica bytes
+    # como 0x81 (presentes en salidas UTF-8 válidas); una salida así rompía la lectura (26-oct).
+    r = subprocess.run([*exe, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       timeout=timeout, check=False)
     if r.returncode:
         raise RuntimeError(f"git {args[0]}: {(r.stderr or r.stdout).strip()[:200]}")
     return r.stdout
