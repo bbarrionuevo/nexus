@@ -1,6 +1,8 @@
 name: Arbitraje estadístico en paper (pares cointegrados, sin dinero)
+# 26-oct-2026: el backtest fuera de muestra (45 días, 632 vueltas) dio negativo en las dos versiones
+# (neutral −0,10% por vuelta, cota superior −0,06%; contado −0,18%). Se apaga la corrida automática;
+# queda para correrlo a mano.
 on:
-  schedule: [{cron: "43 */6 * * *"}]
   workflow_dispatch:
     inputs:
       minutes: {default: "320"}
