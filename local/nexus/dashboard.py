@@ -4,14 +4,20 @@ Muestra lo que hace el agente en la PC (estado, riesgo, evidencia de la estrateg
 grupo de control, resultado por clima, curva de ganancias, laboratorio, últimas vueltas) y las
 oportunidades del radar (rama `data` del repositorio público, refrescada cada 5 minutos).
 
-Seguridad: escucha SOLO en 127.0.0.1 (no es accesible desde otra máquina), solo responde GET, no
-tiene botones ni endpoints que cambien nada, no lee .env y oculta en los logs cualquier cadena con
-forma de clave. Si cambia la versión instalada, se cierra para que su lanzador lo reinicie con el
-código nuevo.
+Botones (agent/controls.py): pausar/reanudar, autorizar, revocar, desbloquear, aprobar una
+actualización, verificar claves. Hacen lo mismo que los comandos de consola, con las mismas frases.
+
+Seguridad: escucha SOLO en 127.0.0.1 (no es accesible desde otra máquina). Los botones van por
+POST /api/action y solo se aceptan si: el Host es 127.0.0.1/localhost con este puerto (frena el
+"DNS rebinding"), el Origin es esta misma página, el cuerpo es JSON (un formulario de otra página no
+puede mandarlo sin permiso, que nunca se da) y trae el token de sesión que se genera al arrancar
+(otra página no lo puede leer). No muestra claves: oculta en los logs cualquier cadena con forma de
+clave. Si cambia la versión instalada, se cierra para que su lanzador lo reinicie con el código nuevo.
 python -m nexus.dashboard [puerto]
 """
 import json
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -28,6 +34,8 @@ RAW = "https://raw.githubusercontent.com/bbarrionuevo/nexus/data/data/"
 RESEARCH_FILES = ("radar.json", "paper_xfunding.json", "paper_carry.json", "stable_mm.json")
 SECRET_LIKE = re.compile(r"[A-Za-z0-9+/=_-]{28,}")
 RESEARCH = {"ts": 0, "data": {}, "error": None}
+TOKEN = secrets.token_urlsafe(24)                  # sesión de los botones: cambia en cada arranque
+MAX_BODY = 10_000
 
 
 def _read_json(name, default=None):
@@ -105,6 +113,14 @@ def log_tail(n=12, every=30):
     return WARN["lines"]
 
 
+def _kill_text():
+    """Qué dice el KILL (nivel y quién lo puso), para mostrarlo junto a los botones."""
+    try:
+        return SECRET_LIKE.sub("[oculto]", paths.kill_file().read_text(encoding="utf-8", errors="ignore").strip()[:120])
+    except OSError:
+        return None
+
+
 def state_payload(now=None):
     now = now or time.time()
     st = _read_json("status.json", {})
@@ -113,7 +129,7 @@ def state_payload(now=None):
     return {"now": now, "status": st, "status_age_s": round(now - st["ts"], 1) if st.get("ts") else None,
             "update": _read_json("update.json", {}),
             "paused": {k: v for k, v in _read_json("lab_paused.json", {}).items() if v > now},
-            "kill_switch": paths.kill_file().exists(), "curves": curves, "last_trades": last,
+            "kill_switch": paths.kill_file().exists(), "kill_text": _kill_text(), "curves": curves, "last_trades": last,
             "warnings": log_tail(), "preflight": _read_json("preflight.json", None),
             "remote": list((_read_json("remote.json", {}) or {}).get("done", {}).values())[-3:]}
 
@@ -168,10 +184,46 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _local(self):
+        """Host de esta PC y este puerto: una página de internet que apunte su dominio a 127.0.0.1
+        (DNS rebinding) llega con otro Host y se rechaza."""
+        port = self.server.server_address[1]
+        return self.headers.get("Host", "") in (f"127.0.0.1:{port}", f"localhost:{port}")
+
+    def do_POST(self):                                                  # noqa: N802
+        path = self.path.split("?")[0]
+        port = self.server.server_address[1]
+        if path != "/api/action":
+            return self._send(404, "no existe", "text/plain; charset=utf-8")
+        if not self._local() or self.headers.get("Origin") not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+            return self._send(403, json.dumps({"ok": False, "out": ["Pedido de otro origen: rechazado."]}), "application/json")
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return self._send(415, json.dumps({"ok": False, "out": ["Se espera JSON."]}), "application/json")
+        n = int(self.headers.get("Content-Length") or 0)
+        if not 0 < n <= MAX_BODY:
+            return self._send(413, json.dumps({"ok": False, "out": ["Pedido demasiado grande."]}), "application/json")
+        try:
+            body = json.loads(self.rfile.read(n))
+        except ValueError:
+            return self._send(400, json.dumps({"ok": False, "out": ["JSON inválido."]}), "application/json")
+        if not secrets.compare_digest(str(body.get("token", "")), TOKEN):
+            return self._send(403, json.dumps({"ok": False, "out": ["Sesión vencida: recargá la página."]}), "application/json")
+        from .agent import controls
+        try:
+            r = controls.run(body.get("action"), body.get("params") or {})
+        except Exception as e:                                          # noqa: BLE001
+            r = {"ok": False, "out": [f"Error: {type(e).__name__}"]}
+        r["out"] = [SECRET_LIKE.sub("[oculto]", str(x)) for x in r.get("out") or []]
+        self._send(200, json.dumps(r, default=str), "application/json")
+
     def do_GET(self):                                                   # noqa: N802 (API de http.server)
         path = self.path.split("?")[0]
+        if not self._local():
+            return self._send(403, "solo desde esta PC", "text/plain; charset=utf-8")
         try:
-            if path == "/":
+            if path == "/api/session":
+                self._send(200, json.dumps({"token": TOKEN}), "application/json")
+            elif path == "/":
                 self._send(200, (HERE / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             elif path == "/api/state":
                 self._send(200, json.dumps(state_payload(), default=str), "application/json")

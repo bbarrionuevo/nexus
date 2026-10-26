@@ -15,6 +15,8 @@ PROTECTED = (
     "local/nexus/agent/live.py",       # ejecución con dinero real (Fase 6)
     "local/nexus/agent/authorize.py",  # autorización local del dueño para operar en real
     "local/nexus/agent/hedge_live.py", # cobertura MEXC→Binance con dinero real
+    "local/nexus/agent/controls.py",   # botones del tablero: autorizar, desbloquear, aprobar
+    "local/nexus/dashboard.py",        # sirve esos botones (token, Host, Origin)
     "local/nexus/exchanges/",          # clientes de exchange (capacidad de operar)
     "local/nexus/paths.py",            # ubicación del interruptor y del estado
     "local/windows/update.py",         # actualizador seguro

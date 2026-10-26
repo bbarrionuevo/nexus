@@ -68,6 +68,23 @@ svg { display: block; width: 100%; height: 260px; }
 .stale { opacity: .55; transition: opacity .2s; }
 .note { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 ul.plain { margin: 0; padding-left: 18px; }
+.ctl { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.ctl fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; min-width: 0; }
+.ctl legend { font-weight: 650; padding: 0 4px; }
+.ctl label { display: block; margin: 6px 0; color: var(--text-secondary); }
+.ctl input[type=text], .ctl input[type=number] { width: 100%; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--page); color: var(--text-primary); font: inherit; }
+.ctl input[type=number] { width: 80px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--page);
+  color: var(--text-primary); cursor: pointer; }
+button:hover { border-color: var(--axis); }
+button:disabled { opacity: .5; cursor: progress; }
+button.warn { border-color: var(--warning); }
+button.danger { border-color: var(--critical); color: var(--bad-text); }
+#ctl-out { margin: 10px 0 0; padding: 8px; border-radius: 6px; background: var(--page); border: 1px solid var(--border);
+  white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, Consolas, monospace; max-height: 260px; overflow: auto; }
+#ctl-out.bad { border-color: var(--critical); }
 </style>
 </head>
 <body>
@@ -80,6 +97,61 @@ ul.plain { margin: 0; padding-left: 18px; }
   </header>
 
   <div class="grid">
+    <section class="card" id="controls">
+      <h2>Controles <span class="muted">hacen lo mismo que los comandos de consola, con las mismas confirmaciones</span></h2>
+      <div class="ctl">
+        <fieldset>
+          <legend>Pausa (KILL)</legend>
+          <div class="row">
+            <button data-act="kill" data-nivel="1" class="warn" title="Termina lo abierto; no abre nada nuevo">Pausar</button>
+            <button data-act="kill" data-nivel="2" class="warn" title="Cancela todas las órdenes puestas">Cancelar órdenes</button>
+            <button data-act="kill" data-nivel="3" class="danger" title="Cancela todo y vende a mercado">Vender todo y parar</button>
+            <button data-act="reanudar">Reanudar</button>
+          </div>
+          <div class="note" id="ctl-kill">—</div>
+        </fieldset>
+        <fieldset id="f-real">
+          <legend>Dinero real en MEXC</legend>
+          <label><input type="radio" name="modo" value="auto" checked> Pares automáticos: los <input type="number" name="auto" value="2" min="1" max="5"> mejores</label>
+          <label><input type="radio" name="modo" value="pares"> Pares fijos <input type="text" name="pares" placeholder="ZROUSDT,QUICKUSDT"></label>
+          <label><input type="checkbox" name="todo" checked> Todo el capital disponible (tope 100 €), o hasta <input type="number" name="capital" value="20" min="1" max="100"> €</label>
+          <label>Días <input type="number" name="dias" value="7" min="1" max="7"> <input type="checkbox" name="calibracion" checked> calibración</label>
+          <label><input type="checkbox" name="clave_sin_retiro"> La clave de MEXC tiene el RETIRO DESACTIVADO y está limitada a la IP de esta PC</label>
+          <label>Escribí <b>AUTORIZO OPERAR CON DINERO REAL</b><input type="text" name="frase" autocomplete="off"></label>
+          <div class="row"><button data-act="autorizar" data-form="f-real" class="warn">Autorizar</button>
+            <button data-act="revocar" class="danger" title="Revoca la autorización del MM y de la cobertura">Revocar todo</button>
+            <button data-act="estado">Ver autorización</button></div>
+        </fieldset>
+        <fieldset id="f-hedge">
+          <legend>Cobertura MEXC → Binance</legend>
+          <label>Pares <input type="text" name="pares" value="QUICKUSDT"></label>
+          <label>Orden de <input type="number" name="lote" value="10" min="6" max="25"> USDT · días <input type="number" name="dias" value="7" min="1" max="7"></label>
+          <label><input type="checkbox" name="clave_sin_retiro"> La clave de BINANCE es solo spot, tiene el RETIRO DESACTIVADO y está limitada a la IP de esta PC</label>
+          <label>Escribí <b>AUTORIZO OPERAR CON DINERO REAL</b><input type="text" name="frase" autocomplete="off"></label>
+          <div class="row"><button data-act="cobertura" data-form="f-hedge" class="warn">Autorizar cobertura</button></div>
+        </fieldset>
+        <fieldset id="f-unblock">
+          <legend>Desbloquear un par</legend>
+          <label>Pares <input type="text" name="pares" placeholder="BDXUSDT"></label>
+          <label><input type="checkbox" name="cobertura"> Es de la cobertura (revisé MEXC y Binance)</label>
+          <label><input type="checkbox" name="revisado"> Revisé en el exchange las órdenes y el saldo de esos pares</label>
+          <div class="row"><button data-act="desbloquear" data-form="f-unblock">Desbloquear</button></div>
+        </fieldset>
+        <fieldset id="f-update">
+          <legend>Actualización</legend>
+          <div class="row"><button data-act="actualizacion">Ver si hay versión nueva</button>
+            <button data-act="actualizar_ya" title="Corre ya el mantenimiento en vez de esperar 10 minutos">Instalar ya</button></div>
+          <label>Si cambia algo protegido, escribí <b id="ctl-phrase">APRUEBO + versión</b><input type="text" name="frase" autocomplete="off"></label>
+          <div class="row"><button data-act="aprobar" data-form="f-update" class="warn">Aprobar versión</button></div>
+        </fieldset>
+        <fieldset>
+          <legend>Diagnóstico</legend>
+          <div class="row"><button data-act="claves">Verificar claves</button><button data-act="chequeo">Chequeo previo</button></div>
+          <div class="note">Las claves nunca se muestran: solo si funcionan y qué permisos tienen.</div>
+        </fieldset>
+      </div>
+      <pre id="ctl-out" aria-live="polite">Los resultados aparecen acá.</pre>
+    </section>
     <section class="card" id="realcard" hidden>
       <h2>Dinero real <span class="muted" id="real-sub"></span></h2>
       <div class="tablewrap"><table id="realbooks"></table></div>
@@ -154,7 +226,7 @@ ul.plain { margin: 0; padding-left: 18px; }
     <section class="card w6">
       <h2>Estado del sistema</h2>
       <div class="tablewrap"><table id="system"></table></div>
-      <div class="note">Tablero de solo lectura: no envía órdenes ni cambia nada. Solo responde en esta PC.</div>
+      <div class="note">Solo responde en esta PC. Los botones de arriba piden las mismas confirmaciones que los comandos.</div>
     </section>
   </div>
 </main>
@@ -274,6 +346,7 @@ function renderState(d) {
   if (d.kill_switch) statusPill("mode", "warning", "KILL activo: no abre posiciones");
   else if (lv && lv.auth) statusPill("mode", "warning", `DINERO REAL · ${lv.auth.todo ? "todo el capital" : "hasta " + num(lv.auth.capital_eur) + " €"} · vence ${hhmm(lv.auth.expires)}`);
   else if (lv) statusPill("mode", "warning", "Dinero real sin autorización: solo cierra lo abierto");
+  setText("ctl-kill", d.kill_switch ? `KILL activo: ${d.kill_text || "1"} (1 no abre nuevas · 2 cancela órdenes · 3 vende todo)` : "Sin pausa: el agente opera normal.");
   $("realcard").hidden = !lv;
   if (lv) {
     const rr = lv.real || {}, rk = lv.risk || {};
@@ -372,6 +445,46 @@ function renderResearch(r) {
     .concat((r.defi || []).map(x => ({ w: x.project + " (" + x.chain + ")", a: x.symbol, apr: x.apy_base, n: "DeFi consolidado · 30 d " + nf(1).format(x.apy_30d_mean) + "%" })));
   table("yield", [{ h: "Dónde", f: x => x.w }, { h: "Activo", f: x => x.a }, { h: "APR", num: true, f: x => pct(x.apr) }, { h: "Nota", f: x => x.n }], y);
 }
+
+// ---------------------------------------------------------------- botones (POST /api/action con token de sesión)
+let token = null;
+async function getToken() { const r = await fetch("/api/session", { cache: "no-store" }); token = r.ok ? (await r.json()).token : null; }
+function formParams(id) {
+  const p = {};
+  for (const i of $(id).querySelectorAll("input")) {
+    if (i.type === "radio") { if (i.checked) p[i.name] = i.value; }
+    else p[i.name] = i.type === "checkbox" ? i.checked : i.type === "number" ? Number(i.value) : i.value.trim();
+  }
+  if (p.modo === "pares") p.auto = 0;
+  return p;
+}
+function showOut(lines, ok) { const o = $("ctl-out"); o.textContent = (lines || []).join("\n") || (ok ? "Listo." : "Sin respuesta."); o.classList.toggle("bad", !ok); }
+async function act(btn) {
+  const action = btn.dataset.act, params = btn.dataset.form ? formParams(btn.dataset.form) : {};
+  if (btn.dataset.nivel) params.nivel = Number(btn.dataset.nivel);
+  if (action === "kill" && params.nivel === 3 && !confirm("Esto cancela todas las órdenes y VENDE A MERCADO lo que haya. ¿Seguir?")) return;
+  if (action === "revocar" && !confirm("Revoca la autorización de dinero real (MM y cobertura). ¿Seguir?")) return;
+  const buttons = $("controls").querySelectorAll("button"); buttons.forEach(b => b.disabled = true);
+  showOut(["Ejecutando…"], true);
+  try {
+    let r;
+    for (let i = 0; i < 2; i++) {                      // si el tablero se reinició (versión nueva), el token cambió
+      if (!token) await getToken();
+      r = await fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, action, params }) });
+      if (r.status !== 403 || i) break;
+      token = null;
+    }
+    const d = await r.json(); showOut(d.out, d.ok);
+    if (d.candidate) { $("ctl-phrase").textContent = "APRUEBO " + d.candidate; }
+    if (d.ok && btn.dataset.form) for (const i of $(btn.dataset.form).querySelectorAll("input[name=frase], input[name=clave_sin_retiro], input[name=revisado]")) {
+      if (i.type === "checkbox") i.checked = false; else i.value = "";
+    }
+    poll("/api/state", renderState);
+  } catch (e) { showOut(["No se pudo hablar con el tablero: " + e.message], false); }
+  finally { buttons.forEach(b => b.disabled = false); }
+}
+for (const b of $("controls").querySelectorAll("button[data-act]")) b.addEventListener("click", () => act(b));
 
 async function poll(url, fn) { try { const r = await fetch(url, { cache: "no-store" }); if (r.ok) fn(await r.json()); } catch (e) { $("chartbox").classList.add("stale"); } }
 poll("/api/state", renderState); poll("/api/research", renderResearch);

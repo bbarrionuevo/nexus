@@ -28,6 +28,13 @@ cd $env:USERPROFILE\nexus\local; ..\.venv\Scripts\python -m nexus.check_keys
 `check_keys` muestra los permisos, los saldos y la comisión real **sin mostrar las claves**.
 
 ## Día a día
+**Sin PowerShell: el tablero (http://localhost:8765) tiene la tarjeta "Controles"** para pausar,
+cancelar órdenes, vender todo, reanudar, autorizar dinero real o la cobertura, revocar, desbloquear un
+par, ver y aprobar una versión nueva, instalarla ya, verificar las claves y el chequeo previo. Los
+botones piden lo mismo que los comandos (confirmar que la clave no tiene retiro y escribir la frase
+exacta; `APRUEBO xxxxxxx` para una versión) y muestran la respuesta debajo. Rearmar tras un halt
+permanente sigue siendo solo por consola, a propósito.
+
 | Acción | Comando |
 |---|---|
 | Ver estado | `Get-Content $env:LOCALAPPDATA\nexus\state\status.json` |
@@ -51,8 +58,11 @@ Se actualiza solo: el estado del agente cada 5 segundos y las oportunidades cada
   pausa), las últimas vueltas, los avisos del agente, el riesgo del día y de la semana, y las
   oportunidades del radar (rulo, P2P, diferencias de funding, paper de funding y carry, rendimiento
   seguro).
-- **Seguridad:** es de **solo lectura**: no tiene botones ni puede enviar órdenes. Solo responde en
-  esta PC (127.0.0.1): no se puede abrir desde otra máquina. No lee el `.env`.
+- **Seguridad:** solo responde en esta PC (127.0.0.1): no se puede abrir desde otra máquina. Los
+  botones solo funcionan desde la propia página: cada pedido lleva un token que cambia en cada
+  arranque y se rechaza si viene de otro sitio (Origin/Host distinto), así que una página de internet
+  abierta en el navegador no puede apretarlos. Nunca muestra las claves. Claude no usa los botones:
+  son tuyos.
 - **Cómo corre:** la tarea `nexus-dashboard` lo lanza al iniciar sesión y lo relanza sola si se cae.
   El mantenimiento crea esa tarea si no existe, así que llega sola a una PC ya instalada (en menos
   de 30 minutos después de actualizarse). Cuando se instala una versión nueva, el tablero se
