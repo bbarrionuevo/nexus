@@ -99,8 +99,8 @@ def test_humo_agente_completo_sin_red(tmp_path, monkeypatch):
 
         def trades(self, s):
             n = next(calls)
-            return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True},
-                    {"time": n, "price": "10.05", "qty": "5", "isBuyerMaker": False}]
+            return [{"time": n, "price": "9.99", "qty": "5", "isBuyerMaker": True},     # atraviesan (modelo 5)
+                    {"time": n, "price": "10.06", "qty": "5", "isBuyerMaker": False}]
 
     monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
     monkeypatch.setattr(ma.time, "sleep", lambda s: None)
@@ -263,7 +263,7 @@ def test_segundo_arranque_con_estado_y_posicion_abierta(tmp_path, monkeypatch):
             def trades(self, s):
                 # el primer sondeo de cada libro solo marca operaciones previas (defecto 3); el segundo llena
                 n = tr_n[s] = tr_n.get(s, -1) + 1
-                return [{"time": n, "price": "10.0", "qty": "5", "isBuyerMaker": True}] if n < 4 else []
+                return [{"time": n, "price": "9.99", "qty": "5", "isBuyerMaker": True}] if n < 4 else []
 
         monkeypatch.setattr(ma, "MexcReadOnly", FakeClient)
         ma.main()
@@ -301,8 +301,8 @@ class FakeMexc:
 
     def trades(self, s):
         n = next(_TRADE_IDS) * 10
-        return [{"time": n, "price": "1.000", "qty": "50", "isBuyerMaker": True},     # cola 1 + orden de 40
-                {"time": n + 1, "price": "1.003", "qty": "50", "isBuyerMaker": False}]
+        return [{"time": n, "price": "0.999", "qty": "50", "isBuyerMaker": True},     # atraviesan (modelo 5)
+                {"time": n + 1, "price": "1.004", "qty": "50", "isBuyerMaker": False}]
 
 
 LAB = {"enabled": True, "max_symbols": 12, "min_quote_volume_usdt": 200000, "min_spread_pct": 0.1,

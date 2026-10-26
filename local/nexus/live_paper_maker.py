@@ -1,10 +1,10 @@
 """Market making long-only con modelo de cola, para paper trading en vivo (Binance/MEXC).
 
-Entrada: orden límite de compra en el mejor bid, al final de la cola visible. Cada operación
-agresora vendedora a ese precio consume primero la cola de adelante y después NUESTRA orden: se
-cuenta llenada recién cuando pasó volumen para toda la orden (modelo 3; antes bastaba con pasar la
-cola por una unidad y se llenaban los 40 € con una fracción del volumen). Si se opera por debajo de
-nuestro precio, llenado total. Si el mejor bid se mueve, cancelamos y volvemos a entrar al final.
+Entrada: orden límite de compra en el mejor bid, al final de la cola visible. Modelo de llenado 5:
+se cuenta llenada SOLO si se opera por debajo de nuestro precio (lo atraviesa); las operaciones justo a
+nuestro precio no alcanzan, porque no se sabe si la cola de adelante se terminó (con el modelo 4, que
+las contaba, el paper se llenaba mucho más seguido que el real y ganaba más). Si el mejor bid se mueve,
+cancelamos y volvemos a entrar al final.
 
 Salida: venta límite en max(mejor ask, piso). El piso = entrada * (1 + 2*maker + margen mínimo):
 como maker NUNCA se vende a pérdida. Si el piso queda por encima del mejor ask, no conocemos la
@@ -77,9 +77,8 @@ class Book:
 
     def on_book(self, b, bq, a, aq):
         self.bid, self.bq, self.ask, self.aq = b, bq, a, aq
-        # modelo 4: la cola de ADELANTE nunca supera lo visible en nuestro nivel. Si los demás cancelan,
-        # avanzamos (antes se suponía que nadie cancelaba y el paper esquivaba justo las compras que en
-        # real se llenan cuando el nivel se vacía y el precio está por bajar).
+        # cola visible adelante en nuestro nivel (nunca más que lo visible): ya no decide el llenado del
+        # paper (modelo 5: solo si atraviesa), queda como dato del libro y para la orden real.
         if self.px is not None and self.queue is not None:
             ref, lvl = (b, bq) if self.state == "flat" else (a, aq)
             if ref is not None and lvl is not None and abs(ref - self.px) < 1e-12:
@@ -147,7 +146,7 @@ class Book:
         if self.px is None:
             return
         if self.state == "flat" and buyer_is_maker:           # vendedor agresor golpea bids
-            if price < self.px or (price == self.px and self._consume(qty, self.notional / self.px)):
+            if price < self.px:                               # modelo 5: solo si atraviesa
                 self.state, self.entry, self.entry_ts = "long", self.px, self.now()
                 er, ret = self.trend()
                 self.entry_ctx = {"spread_pct": round((self.ask / self.bid - 1) * 100, 4)
@@ -160,15 +159,8 @@ class Book:
                 if self.ask is not None:
                     self._quote(*self._ask_target(self.ask, self.aq, self.bid))
         elif self.state == "long" and not buyer_is_maker:     # comprador agresor levanta asks
-            if price > self.px or (price == self.px and self._consume(qty, self.qty)):
+            if price > self.px:
                 self._close(self.px, self.maker, kind="maker")
-
-    def _consume(self, qty, own):
-        """Operación a nuestro precio: se come la cola de adelante y después nuestra orden (own)."""
-        if self.queue is None:                                # cola desconocida: solo si atraviesa
-            return False
-        self.queue -= qty
-        return self.queue <= -own
 
     def _close(self, px, fee, kind):
         exit_fee = self.qty * px * fee / 100

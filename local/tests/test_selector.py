@@ -45,7 +45,7 @@ def test_rota_si_el_real_pierde_el_2_por_ciento_o_diverge_del_paper():
 
 
 def test_agente_opera_la_variante_elegida_y_rota_con_la_compra_puesta(monkeypatch):
-    from nexus import paths
+    from nexus import evidence, paths
     from nexus.agent import live
     import nexus.agent.maker_agent as ma
     import nexus.exchanges.mexc_trade as mt
@@ -65,7 +65,7 @@ def test_agente_opera_la_variante_elegida_y_rota_con_la_compra_puesta(monkeypatc
                                                            "sin_retiro_confirmado": True})
     with open(paths.state("trades.jsonl"), "w") as f:
         for t in _p("XUSDT", "v5-tick1", [0.08, 0.07] * 10, t0=now - 3600) + _p("YUSDT", VIG, [0.03, 0.02] * 10, t0=now - 3600):
-            f.write(json.dumps(t | {"model": 4}) + "\n")
+            f.write(json.dumps(t | {"model": evidence.FILL_MODEL}) + "\n")
     st = ma.selector_tick(cfg, None)
     assert ma.real_choices() == {"XUSDT": "v5-tick1"} and st["top"][0]["sym"] == "XUSDT"
     desk = ma.build_desk(cfg, fake, 0.0, 0.05)

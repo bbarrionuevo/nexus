@@ -1,9 +1,8 @@
 """Paper EN VIVO de market making cubierto: maker en MEXC (0%) + cobertura taker en Binance.
 
 Por cada par se cotiza el mejor bid y el mejor ask de MEXC, solo si al precio actual de Binance la
-vuelta cubierta deja al menos `min_edge_pct`. Llenado con el mismo modelo de cola conservador que
-el resto del sistema (hay que agotar la cola visible Y nuestra orden, o que se opere atravesando el
-precio).
+vuelta cubierta deja al menos `min_edge_pct`. Llenado con el mismo modelo que el resto del sistema
+(modelo 5: solo cuando se opera atravesando nuestro precio).
 En cada sondeo primero se evalúan las operaciones contra las órdenes que estaban puestas y después
 se re-cotiza (al revés se esquivan llenados adversos). La cobertura NO se hace al precio del momento:
 se usa el precio de Binance del sondeo SIGUIENTE a la detección, para incluir demora y movimiento adverso.
@@ -22,6 +21,8 @@ import time
 
 import requests
 
+from .evidence import FILL_MODEL
+
 # Costo en USDT de un rebalanceo (moneda en un sentido + USDT en el otro), red más barata.
 # Medido en el PC con capital/config el 24-oct-2026 (reportes/20261024-1250.md en pc-sesion).
 TRANSFER_USDT = {"IOSTUSDT": 0.02, "QUICKUSDT": 0.08, "DCRUSDT": 0.15, "TREEUSDT": 0.10, "PORTOUSDT": 0.45}
@@ -31,15 +32,14 @@ BINANCE = "https://data-api.binance.vision/api/v3"
 
 
 class Side:
-    """Una orden maker en MEXC (compra en el bid o venta en el ask) con modelo de cola."""
+    """Una orden maker en MEXC (compra en el bid o venta en el ask). Se llena solo si la atraviesan."""
 
     def __init__(self, kind):
         self.kind, self.px, self.queue = kind, None, None
 
     def quote(self, px, queue, own=0.0):
-        """queue = cola visible adelante; own = tamaño de nuestra orden. Se llena recién cuando el
-        volumen operado a nuestro precio cubre las dos (modelo 3). Modelo 4: en el mismo precio, la cola
-        de adelante nunca supera lo visible (si los demás cancelan, avanzamos)."""
+        """queue = cola visible adelante; own = tamaño de nuestra orden. La cola queda como dato (nunca
+        más que lo visible); el llenado no depende de ella (modelo 5)."""
         if px != self.px:
             self.px, self.queue = px, queue + own
         elif self.queue is not None:
@@ -53,17 +53,9 @@ class Side:
         if self.px is None:
             return False
         if self.kind == "buy" and buyer_is_maker:            # vendedor agresor golpea bids
-            if price < self.px:
-                return True
-            if price == self.px:
-                self.queue -= qty
-                return self.queue <= 0
+            return price < self.px                           # modelo 5: solo si atraviesa (evidence.FILL_MODEL)
         if self.kind == "sell" and not buyer_is_maker:       # comprador agresor levanta asks
-            if price > self.px:
-                return True
-            if price == self.px:
-                self.queue -= qty
-                return self.queue <= 0
+            return price > self.px
         return False
 
 
@@ -150,7 +142,7 @@ class HedgedPair:
     def mark(self, minutes):
         net = self.pnl - self.transfer_cost
         cap, inv = self.capital(), self.inventory_change()
-        return {"sym": self.sym, "model": 4, "fills": self.fills, "pnl_eur": round(self.pnl, 4),
+        return {"sym": self.sym, "model": FILL_MODEL, "fills": self.fills, "pnl_eur": round(self.pnl, 4),
                 "capital_eur": cap, "inventory_eur": None if inv is None else round(inv, 4),
                 "net_pct_day": round(net / max(minutes, 1e-9) * 1440 / cap * 100, 3) if cap else None,
                 "per_fill_eur": round(self.pnl / self.fills, 4) if self.fills else None,
@@ -182,7 +174,7 @@ def to_markdown(snap):
     md += ["", "Bloqueado = minutos sin inventario para ese lado (con capital chico, el límite real). "
            "El rebalanceo es manual (las claves no pueden retirar) y se modela cada 12 h.",
            f"Capital por par: {cap} € (moneda y USDT en los dos exchanges). Inventario € = cuánto cambió el "
-           "valor de la moneda que hay que tener (riesgo de precio, aparte de la ganancia). Modelo de cola 4."]
+           "valor de la moneda que hay que tener (riesgo de precio, aparte de la ganancia). Modelo de llenado 5: solo si el precio atraviesa la orden."]
     return "\n".join(md) + "\n"
 
 
