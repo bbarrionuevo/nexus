@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-REQUIRED = ("name", "rules_url", "repos")
+from .limits import program_problems as problems  # la regla vive en el archivo protegido
 
 
 def load(path):
@@ -31,21 +31,6 @@ def load(path):
         return []
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     return list(data.get("programs") or [])
-
-
-def problems(prog):
-    """Qué le falta a un programa para ser accionable (lista vacía = listo)."""
-    out = [f"falta '{k}'" for k in REQUIRED if not prog.get(k)]
-    if not str(prog.get("rules_url", "")).startswith("https://"):
-        out.append("rules_url debe ser la página oficial (https)")
-    if prog.get("in_scope") is not True:
-        out.append("in_scope no está en true (confirmar el alcance publicado)")
-    if prog.get("verified_by_owner") is not True:
-        out.append("verified_by_owner no está en true (el dueño debe leer el reglamento vigente)")
-    for r in prog.get("repos") or []:
-        if "/" not in str(r.get("repo", "")):
-            out.append(f"repo inválido: {r.get('repo')!r} (formato owner/name)")
-    return out
 
 
 def actionable(programs):
