@@ -142,3 +142,67 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     plan = {name: (cmd, cwd) for name, cmd, cwd in devcheck.steps("py")}
     assert plan["rutas protegidas"][1] == devcheck.REPO                                # rutas relativas a la raíz
     assert "-p" not in plan["tests"][0]                                                # --lf necesita el caché
+
+
+FAKE_FORGE = r'''
+import json, os, sys
+log = os.environ["FAKE_LOG"]
+with open(log, "a") as f:
+    f.write(json.dumps({"argv": sys.argv[1:], "ffi": os.environ.get("FOUNDRY_FFI"), "cwd": os.getcwd()}) + "\n")
+if sys.argv[1] == "build":
+    print("Compiling 42 files")
+    sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))
+print("Compiling... (ruido antes del JSON)")
+print(json.dumps({"test/V.t.sol:VaultTest": {"test_results": {
+    "testDepositRedeem(uint256)": {"status": "Success", "reason": None, "counterexample": None},
+    "testNoDilution(uint256)": {"status": "Failure", "reason": "assertion failed: 7 < 8",
+                                "counterexample": {"calldata": "0xabc", "args": "2"}},
+    "testSkip()": {"status": "Skipped", "reason": None, "counterexample": None}}}}))
+sys.exit(1)
+'''
+
+
+def _foundry_repo(tmp_path):
+    import subprocess
+    src = tmp_path / "upstream"
+    src.mkdir()
+    g = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+    subprocess.run(["git", "init", "-q", "-b", "main", str(src)], check=True)
+    (src / "foundry.toml").write_text("[profile.default]\nffi = true\n")
+    (src / "src").mkdir()
+    (src / "src" / "V.sol").write_text("contract V {}\n")
+    subprocess.run(g + ["-C", str(src), "add", "-A"], check=True)
+    subprocess.run(g + ["-C", str(src), "commit", "-qm", "v1"], check=True)
+    return src
+
+
+def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
+    import sys
+
+    from nexus.secresearch import validate
+    src = _foundry_repo(tmp_path)
+    fake = tmp_path / "forge.py"
+    fake.write_text(FAKE_FORGE)
+    log = tmp_path / "forge.log"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    monkeypatch.setenv("FOUNDRY_FFI", "true")                                         # aunque el entorno diga true
+    progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}]}]
+    rec = validate.validate("o/v", match="test/V.t.sol", out=tmp_path / "out", programs=progs,
+                            forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work")
+    calls = [json.loads(x) for x in log.read_text().splitlines()]
+    assert [c["argv"][0] for c in calls] == ["build", "test"] and all(c["ffi"] == "false" for c in calls)
+    assert calls[1]["argv"] == ["test", "--json", "--match-path", "test/V.t.sol"]
+    assert not rec["ok"] and rec["test"]["counts"] == {"Success": 1, "Failure": 1, "Skipped": 1}
+    assert rec["test"]["failures"][0]["counterexample"]["args"] == "2" and len(rec["sha"]) == 40
+    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text()
+    assert "1 pasan · 1 fallan" in md and "testNoDilution" in md and "NO es una vulnerabilidad" in md
+    hist = [json.loads(x) for x in (tmp_path / "out" / "history.jsonl").read_text().splitlines()]
+    assert hist[-1]["counts"]["Failure"] == 1 and hist[-1]["sha"] == rec["sha"]
+    monkeypatch.setenv("FAKE_BUILD_EXIT", "1")                                         # no compila: no testea
+    log.write_text("")
+    rec = validate.validate("o/v", out=tmp_path / "out", programs=progs, forge=[sys.executable, str(fake)],
+                            url=f"file://{src}", work=tmp_path / "work")
+    assert not rec["ok"] and rec["build"]["exit"] == 1 and "test" not in rec
+    assert [json.loads(x)["argv"][0] for x in log.read_text().splitlines()] == ["build"]
+    assert "Compilación: FALLÓ" in validate.report(rec)

@@ -58,3 +58,20 @@ def test_cada_corrida_respeta_el_tope_de_red(tmp_path):
     assert s["network_ops"] == limits.MAX_NETWORK_OPS and any("tope" in n for n in s["notes"])
     assert 0 < limits.MAX_NETWORK_OPS <= 100 and 0 < limits.MAX_COMMITS <= 50 and 0 < limits.MAX_SECONDS <= 1800
     assert isinstance(changes.Budget(limits.MAX_NETWORK_OPS), changes.Budget)
+
+
+def test_validacion_solo_sobre_repos_de_programas_verificados_y_sin_ffi(tmp_path):
+    from nexus.secresearch import validate
+    ok = {"name": "P", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+          "repos": [{"repo": "o/v"}]}
+    sin_verificar = dict(ok, verified_by_owner=False, repos=[{"repo": "o/w"}])
+    assert limits.repo_in_scope("o/v", [ok]) is ok
+    assert limits.repo_in_scope("o/w", [ok, sin_verificar]) is None                 # programa sin verificar
+    assert limits.repo_in_scope("x/y", [ok]) is None                                # fuera del catálogo
+    nunca = ["/bin/false-forge-no-debe-correr"]
+    for repo in ("o/w", "x/y"):
+        rec = validate.validate(repo, out=tmp_path / "o", programs=[ok, sin_verificar], forge=nunca,
+                                work=tmp_path / "w")
+        assert not rec["ok"] and "no pertenece" in rec["error"] and not (tmp_path / "w").exists()
+    assert limits.FOUNDRY_ENV == {"FOUNDRY_FFI": "false"}
+    assert 0 < limits.MAX_BUILD_SECONDS <= 7200 and 0 < limits.MAX_TEST_SECONDS <= 7200
