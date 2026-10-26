@@ -18,8 +18,12 @@ MIN_DAYS, MIN_TRADES, MIN_POS_DAYS, EXTRA_FEE_PCT = 7, 300, 5, 0.02
 # la cola de adelante MÁS la orden entera (defecto 4, 25-oct-2026: antes bastaba con pasar la cola por
 # una unidad). 4 = la cola de adelante nunca supera lo visible en nuestro nivel: si los demás cancelan,
 # avanzamos (defecto 5, 25-oct-2026: el real se llenaba justo cuando el nivel se vaciaba antes de una
-# baja y el paper no). Las vueltas de modelos anteriores quedan en el diario pero no cuentan.
-FILL_MODEL = 4
+# baja y el paper no). 5 = una orden maker se llena SOLO si el precio la atraviesa (defecto 6, 26-oct-2026:
+# con el modelo 4 el gemelo paper se llenaba de 2 a 30 veces más seguido que el real y ganaba más por
+# vuelta en todos los pares: AGT +0,60% contra −0,23% real, RUNE +0,19% contra −0,07%, ZRO 0,00% contra
+# −0,22%. Llenarse a nuestro precio depende de la cola, que desde la PC no se ve bien; se supone lo peor).
+# Las vueltas de modelos anteriores quedan en el diario pero no cuentan.
+FILL_MODEL = 5
 
 
 def load(path, since=None, min_model=FILL_MODEL):

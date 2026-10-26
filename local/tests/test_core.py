@@ -182,70 +182,48 @@ def test_interruptor_de_emergencia(tmp_path):
 
 
 # ---------------------------------------------------------------- modelo de cola / estrategia
-def test_cola_y_ganancia_real():
+def test_llenado_solo_si_atraviesa_y_ganancia_real():
     from nexus.live_paper_maker import Book
     b = Book("X", notional=100, maker=0.0)                 # orden de 10 unidades
     b.on_book(10.0, 50, 10.1, 50)
-    b.on_trade(10.0, 30, True)
+    b.on_trade(10.0, 10_000, True)                         # mucho volumen JUSTO a nuestro precio: no alcanza
     assert b.state == "flat"
-    b.on_trade(10.0, 25, True)                             # pasó la cola, pero solo 5 de nuestras 10
-    assert b.state == "flat"
-    b.on_trade(10.0, 5, True)                              # cola 50 + orden 10 operadas
+    b.on_trade(9.99, 1, True)                              # se operó por debajo: nos atravesó
     assert b.state == "long" and b.entry == 10.0
-    b.on_trade(10.1, 59, False)
+    b.on_trade(10.1, 10_000, False)
     assert b.state == "long"
-    b.on_trade(10.1, 1, False)
+    b.on_trade(10.11, 1, False)
     assert b.state == "flat" and b.wins == 1 and b.mark()["pnl_eur"] > 0
 
 
-def test_regresion_defecto4_pasar_la_cola_por_poco_no_llena_la_orden_entera():
-    """El modelo 2 llenaba los 40 € en cuanto la cola se agotaba por una unidad: con colas largas
-    (pares de un solo tick de spread) inventaba cientos de vueltas que el mercado no podía darnos."""
+def test_regresion_defecto6_a_nuestro_precio_no_alcanza():
+    """Con el modelo 4 (cola visible que avanza) el gemelo paper se llenaba de 2 a 30 veces más seguido
+    que el real y ganaba más por vuelta en todos los pares (26-oct: AGT +0,60% paper contra −0,23% real).
+    Modelo 5: solo cuenta si el precio atraviesa la orden, en el laboratorio y en la cobertura."""
+    from nexus.evidence import FILL_MODEL
     from nexus.live_paper_hedge import Side
     from nexus.live_paper_maker import Book
-    b = Book("X", notional=40, maker=0.0)                  # 4 unidades a 10
-    b.on_book(10.0, 1000, 10.01, 1000)
-    b.on_trade(10.0, 1001, True)
+    assert FILL_MODEL == 5
+    b = Book("X", notional=40, maker=0.0)
+    b.on_book(10.0, 30, 10.01, 1000)
+    b.on_trade(10.0, 10_000, True)
     assert b.state == "flat"
-    b.on_trade(10.0, 3, True)
-    assert b.state == "long"
-    t = Book("X", notional=40)                             # operar ATRAVESANDO el precio llena siempre
-    t.on_book(10.0, 1000, 10.01, 1000)
-    t.on_trade(9.99, 1, True)
-    assert t.state == "long"
     s = Side("buy")
-    s.quote(10.0, 1000, own=4)
-    assert not s.hit(10.0, 1001, True) and s.hit(10.0, 3, True)
-
-
-def test_regresion_defecto5_la_cola_avanza_si_los_demas_cancelan():
-    """Modelo 4: la cola de adelante nunca supera lo visible en nuestro nivel. Con el modelo 3 la cola
-    quedaba fija aunque los demás cancelaran, y el paper esquivaba las compras que en real se llenan
-    justo cuando el nivel se vacía y el precio está por bajar (25-oct, ZROUSDT)."""
-    from nexus.live_paper_maker import Book
-    b = Book("X", notional=40, maker=0.0)                  # 4 unidades a 10
-    b.on_book(10.0, 1000, 10.01, 1000)
-    assert b.queue == 1000
-    b.on_book(10.0, 30, 10.01, 1000)                       # quedan 30 visibles: a lo sumo 30 adelante
-    assert b.queue == 30
-    b.on_book(10.0, 500, 10.01, 1000)                      # los que llegan después quedan detrás
-    assert b.queue == 30
-    b.on_trade(10.0, 34, True)                             # 30 de adelante + nuestras 4
-    assert b.state == "long" and b.px == 10.01 and b.queue == 1000
-    b.on_book(10.0, 1000, 10.01, 8)                        # en el ask también avanza
-    assert b.queue == 8
-    b.on_trade(10.01, 12, False)
-    assert b.state == "flat" and b.wins == 1
+    s.quote(10.0, 0, own=4)                                # aun sin nadie adelante
+    assert not s.hit(10.0, 10_000, True) and s.hit(9.99, 1, True)
+    v = Side("sell")
+    v.quote(10.01, 0, own=4)
+    assert not v.hit(10.01, 10_000, False) and v.hit(10.02, 1, False)
 
 
 def test_regresion_defecto2_no_vende_bajo_entrada_como_maker():
     from nexus.live_paper_maker import Book
     b = Book("X", notional=100, maker=0.0, stop_pct=1.0)
     b.on_book(10.00, 1, 10.01, 1)
-    b.on_trade(10.00, 11, True)
+    b.on_trade(9.99, 1, True)
     b.on_book(9.95, 1, 9.96, 1)              # cae 0.5%: el ask queda bajo la entrada
     assert b.px == 10.00                     # la venta se mantiene en el piso, no persigue
-    b.on_trade(9.96, 5, False)
+    b.on_trade(9.97, 5, False)
     assert b.state == "long" and b.rt == 0
 
 
@@ -253,7 +231,7 @@ def test_piso_incluye_comisiones():
     from nexus.live_paper_maker import Book
     b = Book("X", notional=100, maker=0.1)
     b.on_book(10.0, 1, 10.01, 1)
-    b.on_trade(10.0, 11, True)
+    b.on_trade(9.99, 1, True)
     assert abs(b.px - 10.02) < 1e-9          # 10 * (1 + 0.2%) > ask 10.01
 
 
@@ -261,10 +239,10 @@ def test_stop_y_timeout_cuentan_como_perdida():
     from nexus.live_paper_maker import Book
     clock = Clock()
     b = Book("X", notional=100, maker=0.0, taker=0.1, stop_pct=1.0, max_hold_s=60, now=clock)
-    b.on_book(10.0, 1, 10.01, 1); b.on_trade(10.0, 11, True)
+    b.on_book(10.0, 1, 10.01, 1); b.on_trade(9.99, 1, True)
     b.on_book(9.89, 1, 9.9, 1)
     assert b.stops == 1 and b.wins == 0 and b.mark()["pnl_eur"] < 0
-    b.on_book(10.0, 1, 10.01, 1); b.on_trade(10.0, 11, True)
+    b.on_book(10.0, 1, 10.01, 1); b.on_trade(9.99, 1, True)
     clock.t += 61
     b.on_book(9.99, 1, 10.0, 1)
     assert b.timeouts == 1 and b.state == "flat"
@@ -287,7 +265,7 @@ def test_veto_de_riesgo_cancela_compra(tmp_path):
 def test_estado_del_libro_persiste():
     from nexus.live_paper_maker import Book
     b = Book("X", notional=100)
-    b.on_book(10.0, 1, 10.01, 1); b.on_trade(10.0, 11, True)
+    b.on_book(10.0, 1, 10.01, 1); b.on_trade(9.99, 1, True)
     b2 = Book("X", notional=100)
     b2.load(b.to_dict())
     assert b2.state == "long" and b2.entry == 10.0 and b2.px is None
@@ -386,7 +364,7 @@ def test_cobertura_en_vivo_cubre_con_el_precio_siguiente():
     hp = HedgedPair("X", notional=100, taker_b_pct=0.1, min_edge_pct=0.05)
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)          # bid MEXC 1% bajo Binance: cotiza compra
     assert hp.buy.px == 0.990 and hp.sell.px is None          # el ask de MEXC no deja margen
-    hp.on_trade(0.990, 120, True)                             # sondeo 2: cola 10 + orden de 101: llenada
+    hp.on_trade(0.989, 1, True)                               # sondeo 2: se operó bajo nuestra compra: llenada
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001)           # libros del sondeo 2: todavía no se cubre
     assert hp.fills == 0 and hp.pending                       # se cubre en el sondeo siguiente
     hp.on_books(0.990, 10, 1.000, 10, 0.995, 0.996)           # sondeo 3: Binance cayó antes de cubrir
@@ -505,7 +483,7 @@ def test_cobertura_con_inventario_limitado_se_bloquea_y_rebalancea():
     from nexus.live_paper_hedge import HedgedPair
     hp = HedgedPair("IOSTUSDT", notional=25, taker_b_pct=0.1, min_edge_pct=0.05, lots=1)
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=0)       # MEXC barato: cotiza compra
-    hp.on_trade(0.990, 40, True)                                  # compra llenada: usa el único lote
+    hp.on_trade(0.989, 1, True)                                   # compra llenada: usa el único lote
     assert hp.pos == 1 and not hp.can("buy") and hp.can("sell")
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.001, now=60)
     assert hp.buy.px is None and hp.fills == 0                    # sin USDT en MEXC: no cotiza compra
@@ -519,18 +497,18 @@ def test_cobertura_con_inventario_limitado_se_bloquea_y_rebalancea():
     assert libre.can("buy") and libre.can("sell") and libre.transfer == 1.0
 
 
-def test_cobertura_modelo_4_capital_y_riesgo_del_inventario():
+def test_cobertura_modelo_5_capital_y_riesgo_del_inventario():
     from nexus.live_paper_hedge import HedgedPair, Side, to_markdown
     s = Side("buy")
     s.quote(1.0, 1000, own=25)
     s.quote(1.0, 10, own=25)                                      # los demás cancelaron: quedan 10 adelante
-    assert s.queue == 35 and not s.hit(1.0, 30, True) and s.hit(1.0, 5, True)
+    assert s.queue == 35 and not s.hit(1.0, 10_000, True) and s.hit(0.999, 1, True)   # solo si atraviesa
     hp = HedgedPair("IOSTUSDT", notional=25, taker_b_pct=0.1, min_edge_pct=0.05, lots=1)
     hp.on_books(0.990, 10, 1.000, 10, 1.000, 1.002, now=0)
     hp.on_books(0.990, 10, 1.000, 10, 0.950, 0.952, now=60)      # la moneda cae 5% en Binance
     m = hp.mark(1440)
     assert m["capital_eur"] == 100 and m["inventory_eur"] == round(50 * (0.951 / 1.001 - 1), 4)
-    assert m["model"] == 4 and m["net_pct_day"] == 0.0
+    assert m["model"] == 5 and m["net_pct_day"] == 0.0
     md = to_markdown({"ts": 1_800_000_000, "elapsed_min": 60, "notional": 25, "lots": 1, "taker_b_pct": 0.1,
                       "errors": 0, "pairs": [m]})
     assert "Capital por par: 100 €" in md and "riesgo de precio" in md

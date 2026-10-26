@@ -165,7 +165,7 @@ def test_mejora_de_un_tick_queda_primera_sin_perseguirse_ni_vender_a_perdida():
     b.on_book(1.0008, 500, 1.0010, 500)                        # 2 ticks: sin lugar para ganar, va al final
     assert b.px == 1.0008                                      # (igual al bid: se queda)
     b.on_book(1.0000, 500, 1.0010, 500)
-    b.on_trade(1.0001, 10.0, True)                             # basta el volumen de NUESTRA orden
+    b.on_trade(1.0000, 1.0, True)                              # se operó en el bid real: nos atraviesa
     assert b.state == "long" and b.entry == 1.0001 and b.px == 1.0009 and b.queue == 0.0
     b.on_book(1.0000, 500, 1.0003, 500)                        # el ask baja: un tick abajo, nunca bajo el piso
     assert b.px == 1.0002
