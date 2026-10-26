@@ -10,6 +10,7 @@ sola vez (solo los que fallaron) para separar un fallo intermitente de uno real;
 No instala nada ni toca el sistema: usa el intérprete con el que se lo llama.
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,8 @@ TIMEOUT_S, TAIL, MAX_RETRIES = 900, 25, 1
 def _run(cmd, cwd=LOCAL, timeout=TIMEOUT_S):
     t0 = time.time()
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env={**os.environ, "PYTHONUTF8": "1"}, timeout=timeout, check=False)
         code, log = r.returncode, (r.stdout or "") + (r.stderr or "")
     except subprocess.TimeoutExpired:
         code, log = 124, f"tiempo agotado ({timeout} s)"

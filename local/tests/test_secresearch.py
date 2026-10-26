@@ -76,6 +76,16 @@ def test_cambios_por_git_con_repo_local_y_sin_red(tmp_path):
     assert [r["message"] for r in again] == ["nuevo"] and budget.used == 2       # 1 clon + 1 fetch
 
 
+def test_salida_de_git_con_bytes_indecodificables_no_rompe(tmp_path):
+    """26-oct, PC con Windows: la salida de un subproceso con el byte 0x81 (cp1252 no lo decodifica) mataba
+    el hilo lector. Un git simulado que escribe bytes inválidos reproduce esa clase de falla en cualquier SO."""
+    import sys
+    fake = tmp_path / "git.py"
+    fake.write_text("import sys\nsys.stdout.buffer.write(b'progreso \\x81\\xff listo')\n")
+    out = changes._git(["log"], exe=(sys.executable, str(fake)))
+    assert out.startswith("progreso") and out.endswith("listo")
+
+
 def test_tests_mocks_y_scripts_no_estan_en_alcance():
     ok = ["src/TokenizedStrategy.sol", "contracts/VaultV3.vy", "src/EVault/modules/Vault.sol",
           "src/libraries/TokenizedStrategyLib.sol"]
@@ -152,6 +162,10 @@ with open(log, "a") as f:
 if sys.argv[1] == "build":
     print("Compiling 42 files")
     sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))
+# Indicador de progreso como el de forge en Windows (26-oct): bytes que cp1252 no decodifica (0x81) y que
+# tampoco son UTF-8 válido. Antes mataban el hilo lector de subprocess y forge quedaba trabado.
+sys.stderr.buffer.write(b"\xe2\xa0\x81 compilando \x81\xff\n" * 2000)
+sys.stderr.flush()
 print("Compiling... (ruido antes del JSON)")
 print(json.dumps({"test/V.t.sol:VaultTest": {"test_results": {
     "testDepositRedeem(uint256)": {"status": "Success", "reason": None, "counterexample": None},
