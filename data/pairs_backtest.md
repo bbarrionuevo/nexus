@@ -1,6 +1,6 @@
 # Arbitraje estadístico: backtest fuera de muestra (45 días, velas de 15 min)
 
-Universo (25): BTC, ETH, ZEC, SOL, XRP, NEAR, BNB, ENA, SUI, QNT, WLD, PEPE, UNI, XAUT, DOGE, TRX, BMT, SOXLB, SNDKB, ERA, HYPE, LINK, PUMP, TAO, ADA.
+Universo (25): BTC, ETH, ZEC, SOL, XRP, NEAR, BNB, ENA, SUI, QNT, WLD, PEPE, UNI, XAUT, DOGE, TRX, BMT, SOXLB, SNDKB, ERA, HYPE, LINK, PUMP, ADA, TAO.
 Forma 14 días, opera los 3 siguientes; entra con |z| ≥ 2, sale en 0, stop 4. Costos por lado y pata: contado 0.12%, neutral 0.07%.
 
 | Versión | Vueltas | Ganadoras | Media/vuelta | Cota inferior | Capital total | Por día | Ventanas + |
