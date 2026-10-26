@@ -33,7 +33,7 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | Etapa | Qué hace | Estado | Evidencia |
 |---|---|---|---|
 | A. Catálogo | Programas autorizados; el pipeline los ignora hasta que el dueño verifica el reglamento | Implementado, **vacío** | `catalog.py`, tests |
-| A. Cambios | Commits nuevos que tocan contratos en alcance, por git (clon superficial) o API; libro de vistos | Implementado y verificado | Demo real sobre OpenZeppelin: 3 commits, 15 archivos, 2.ª corrida sin repetir |
+| A. Cambios | Commits nuevos que tocan contratos en alcance, por git (clon superficial) o API; libro de vistos; excluye tests, mocks, scripts y specs | Implementado y verificado | Demo sobre OpenZeppelin: 3 commits, 15 archivos, 2.ª corrida sin repetir. Vista previa de los 6 repos de Morpho, Yearn y Euler: el 49% de los archivos eran tests o mocks y daban 11 de 19 alertas "alta"; tras excluirlos, 8 alertas "alta", todas en contratos de producción |
 | B. Triaje | Puntaje determinista **sin IA** de las líneas cambiadas, con señales ERC-4626 | Implementado y verificado | En la demo puso primero el único cambio de vault (ERC7535, puntaje 31) entre 15 archivos |
 | C. Método de invariantes | Modelo de referencia ERC-4626 con aritmética entera y propiedades P0–P6 | Implementado y verificado | Autoverificación: pasa la correcta y atrapa los 5 defectos de referencia |
 | D. Validación contra el código en alcance | Las mismas propiedades como tests de invariantes de Foundry, en local | **Pendiente**: requiere Foundry en la PC (decisión del dueño) | — |
@@ -110,6 +110,19 @@ El informe queda en `%LOCALAPPDATA%\nexus\secresearch\secresearch.md`.
 - Tests ejecutados y aprobados.
 - Informes con evidencia suficiente.
 - **Recompensas cobradas.** Una recompensa estimada no es un ingreso.
+
+## Programas elegidos por el dueño (26-oct-2026): Morpho, Yearn V3 y Euler v2
+
+| Programa | Plataforma | Repos (código de vaults ERC-4626) | Aviso |
+|---|---|---|---|
+| Morpho | Cantina | `morpho-org/metamorpho`, `morpho-org/vault-v2` | Prohíbe probar en cadenas públicas; recomienda forks locales |
+| Yearn V3 | Immunefi | `yearn/yearn-vaults-v3` (Vyper 0.3.10), `yearn/tokenized-strategy` | Su `foundry.toml` tiene `ffi = true`: correr siempre con `FOUNDRY_FFI=false` |
+| Euler v2 | Cantina | `euler-xyz/euler-vault-kit`, `euler-xyz/euler-earn` | El alcance son las direcciones desplegadas, no el repo entero |
+
+El catálogo queda con `in_scope` y `verified_by_owner` en `false` hasta que el dueño lea cada reglamento.
+
+**Seguridad de la PC:** compilar y testear código de terceros es ejecutar código ajeno. FFI de Foundry
+siempre apagado (`FOUNDRY_FFI=false`), y nunca correr scripts de despliegue (`forge script`) de esos repos.
 
 ## Selección de programas (fase 3)
 

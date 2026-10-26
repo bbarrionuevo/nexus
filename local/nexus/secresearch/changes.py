@@ -11,11 +11,17 @@ y commits por repo (nunca tráfico intensivo).
 """
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
 API = "https://api.github.com"
 CONTRACT_EXT = (".sol", ".vy")
+# Tests, mocks, scripts y specs de verificación formal nunca están en el alcance de un bug bounty. En la
+# primera vista previa (26-oct, 6 repos de Morpho, Yearn y Euler) eran el 49% de los archivos y 11 de las
+# 19 alertas de prioridad alta: puro ruido.
+NOT_SCOPE = re.compile(r"(^|/)(tests?|mocks?|scripts?|certora|echidna|medusa|halmos|foundry_tests)/"
+                       r"|\.t\.sol$|\.s\.sol$|(^|/)Mock\w*\.sol$", re.IGNORECASE)
 
 
 class Budget:
@@ -56,7 +62,8 @@ def remember(ledger, rec):
 
 
 def _in_scope(filename, paths):
-    return filename.endswith(CONTRACT_EXT) and (not paths or any(filename.startswith(x) for x in paths))
+    return (filename.endswith(CONTRACT_EXT) and not NOT_SCOPE.search(filename)
+            and (not paths or any(filename.startswith(x) for x in paths)))
 
 
 def recent(repo, paths, budget, done=(), max_commits=10, get=_http_get):

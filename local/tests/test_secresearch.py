@@ -94,6 +94,16 @@ def test_cambios_por_git_con_repo_local_y_sin_red(tmp_path):
     assert [r["message"] for r in again] == ["nuevo"] and budget.used == 2       # 1 clon + 1 fetch
 
 
+def test_tests_mocks_y_scripts_no_estan_en_alcance():
+    ok = ["src/TokenizedStrategy.sol", "contracts/VaultV3.vy", "src/EVault/modules/Vault.sol",
+          "src/libraries/TokenizedStrategyLib.sol"]
+    ruido = ["src/test/Accounting.t.sol", "src/test/handlers/ConstantAccrualHandler.sol", "src/test/mocks/MockStrategy.sol",
+             "src/mocks/ERC20Mock.sol", "script/Deploy.s.sol", "certora/specs/Vault.sol", "foundry_tests/tests/A.sol",
+             "src/MockOracle.sol", "test/Vault.sol"]
+    assert all(changes._in_scope(f, ["src/", "contracts/"]) for f in ok)
+    assert not any(changes._in_scope(f, []) for f in ruido)
+
+
 def test_triaje_puntua_contabilidad_del_vault_y_no_comentarios():
     hi, lo = triage.score(PATCH_4626), triage.score(PATCH_DOCS)
     assert hi["tier"] == "alta" and {"dirección de redondeo", "totalAssets/totalSupply", "decimales / escala"} \
