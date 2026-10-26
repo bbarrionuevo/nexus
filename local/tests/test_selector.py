@@ -110,3 +110,12 @@ def test_al_descartar_cambia_de_par_y_no_a_otra_variante_del_mismo():
     st = selector.update(st, sc, {"auto": 1}, NOW + 20, real, tr, 30.0, VIG, ALLOWED)
     assert st["choices"] == {"B": {"strategy": VIG, "since": NOW + 20}}          # no A control: otro par
     assert selector.pick(sc, {"symbols": ["A"]}, st["banned"], VIG, ALLOWED) == {}   # con pares fijos, espera
+
+
+def test_par_bloqueado_sin_posicion_se_deja_y_se_elige_otro():
+    from nexus import selector
+    tr = _p("A", VIG, [0.05, 0.04] * 10) + _p("B", VIG, [0.03, 0.02] * 10)
+    sc = selector.combo_scores(tr, NOW)
+    st = selector.update({}, sc, {"auto": 1}, NOW, [], tr, 30.0, VIG, ALLOWED)
+    st = selector.update(st, sc, {"auto": 1}, NOW + 60, [], tr, 30.0, VIG, ALLOWED, blocked=["A"])
+    assert list(st["choices"]) == ["B"] and "A|*" in st["banned"] and "bloqueado" in st["history"][-2]["why"]

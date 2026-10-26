@@ -35,6 +35,7 @@ UNBLOCK_FILE = "live_unblock.json"                # pedido humano de desbloqueo 
 MAX_CAPITAL_EUR, MAX_DAYS = 100.0, 7
 MAX_AUTO_PAIRS = 3                               # modo automático: hasta 3 pares promovidos a la vez
 MAX_REJECTS, UNKNOWN_BLOCK_S, BALANCE_TOL_USDT = 5, 120, 0.5
+INSUFFICIENT_POSITION = 30004                    # MEXC: vender más moneda de la que hay
 EXIT_SLIP_PCT, EXIT_REPRICE_S = 0.5, 3   # salida forzada: límite agresivo hasta 0,5% bajo el bid, re-precio cada 3 s
 ONLINE = ("1", "ENABLED", "TRADING")
 DEPTH_LEVELS = 5                                 # niveles del libro que se piden para verlo sin nuestra orden
@@ -258,7 +259,9 @@ class LiveBook(Book):
                 self.rejects += 1
                 self._log("rechazada", cid=cid, error=str(e)[:200])
                 log.warning("real %s: orden rechazada (%s)", self.sym, e)
-                if self.rejects >= MAX_REJECTS:
+                if side == "SELL" and getattr(e, "code", None) == INSUFFICIENT_POSITION and self._adopt_held():
+                    pass                                      # se vende lo que de verdad hay en el próximo ciclo
+                elif self.rejects >= MAX_REJECTS:
                     self.blocked = f"{self.rejects} rechazos seguidos del exchange: revisar ({str(e)[:120]})"
             else:
                 self._set_unknown(cid, e)
@@ -266,6 +269,25 @@ class LiveBook(Book):
             return False
         self.rejects = 0
         self._log("aceptada", cid=cid)
+        self.save_cb()
+        return True
+
+    def _adopt_held(self):
+        """MEXC dice que no hay tanta moneda como creemos (30004): pasa cuando el par cobra la comisión
+        en la moneda comprada y el llenado informa la cantidad bruta (26-oct, BDX: 5 rechazos y bloqueo).
+        Se lee el saldo real y la posición pasa a ser esa: la diferencia es costo de la vuelta. Solo si
+        el saldo es MENOR que lo esperado y la diferencia es chica (≤ 2%); si no, sigue el bloqueo normal."""
+        try:
+            bal = self.trader.account().get("balances", [])
+        except Exception:                                    # noqa: BLE001
+            return False
+        held = sum(float(b.get("free") or 0) + float(b.get("locked") or 0) for b in bal if b.get("asset") == self.rules.base)
+        if not 0 <= held < self.pos_qty or self.pos_qty - held > self.pos_qty * 0.02:
+            return False
+        self._log("ajuste_saldo", esperado=self.pos_qty, real=held)
+        log.warning("real %s: había %s %s y no %s (comisión en moneda): se vende lo que hay", self.sym, held,
+                    self.rules.base, self.pos_qty)
+        self.pos_qty, self.rejects = held, 0
         self.save_cb()
         return True
 

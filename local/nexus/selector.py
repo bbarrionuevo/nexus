@@ -94,13 +94,15 @@ def check(choice, sym, real, paper, capital, now):
     return None
 
 
-def update(state, scores, auth, now, real, paper, capital, vigente, allowed):
-    """Nuevo estado del selector: vence descartes, descarta lo que perdió y elige de nuevo."""
+def update(state, scores, auth, now, real, paper, capital, vigente, allowed, blocked=()):
+    """Nuevo estado del selector: vence descartes, descarta lo que perdió (o quedó bloqueado en el
+    exchange, sin posición: espera la revisión del dueño sin dejar el capital parado) y elige de nuevo."""
     banned = {k: t for k, t in (state.get("banned") or {}).items() if t > now}
     history = list(state.get("history") or [])
     choices = dict(state.get("choices") or {})
     for sym, c in list(choices.items()):
-        why = check(c, sym, real, paper, capital, now)
+        why = ("par bloqueado en el exchange: queda para revisión del dueño" if sym in blocked
+               else check(c, sym, real, paper, capital, now))
         if why:
             banned[key(sym, "*")] = now + BAN_H * 3600       # el par entero: cambiar de verdad
             history.append({"ts": now, "sym": sym, "strategy": c["strategy"], "event": "descartada", "why": why})
