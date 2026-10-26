@@ -163,7 +163,9 @@ día, 4 € por semana y 8 € en total (halt que solo levantás vos).
 ### Cuándo la sesión de Claude pausa (reglas fijadas de antemano)
 Solo **pausa** (no abre posiciones nuevas) o **cancela órdenes**. Nunca vende, nunca reanuda algo que
 vos pausaste y siempre te avisa del motivo. Lo hace si en el latido ve cualquiera de estas cosas:
-- Un par real **bloqueado** o en **estado desconocido** por más de 10 minutos.
+- Un par real en **estado desconocido**, o **bloqueado con posición abierta**, por más de 10 minutos.
+  Un par bloqueado **sin posición** no frena al resto: el selector lo deja (24 h) y sigue con otro;
+  queda bloqueado hasta que lo revises y lo desbloquees.
 - Rechazos del exchange que se repiten (clave, IP, reloj o saldo) o el chequeo previo falla.
 - La calibración muestra que el real **pierde** mientras el gemelo en paper gana en el mismo período,
   con al menos 10 vueltas reales, **y** el selector ya no tiene otra combinación a la que rotar (con

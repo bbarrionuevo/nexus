@@ -208,8 +208,9 @@ def selector_tick(cfg, desk, now=None):
     real = evidence.load(paths.state(REAL_TRADES), since=since, min_model=0)
     auth = live_auth()
     capital = sum(b.notional for b in desk.books.values()) if desk else float((auth or {}).get("capital_eur") or 0)
+    blocked = [s for s, b in (desk.books.items() if desk else []) if b.blocked and b.state == "flat"]
     st = selector.update(paths.read_json(paths.state("selector.json"), {}), selector.combo_scores(paper, now), auth,
-                         now, real, paper, capital, STRATEGY["tag"], real_variants(cfg))
+                         now, real, paper, capital, STRATEGY["tag"], real_variants(cfg), blocked=blocked)
     for h in st["history"][-5:]:
         if h["ts"] == now:
             log.warning("selector: %s %s %s (%s)", h["event"], h["sym"], h["strategy"], h.get("why") or h.get("score"))

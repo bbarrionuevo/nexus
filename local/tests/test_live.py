@@ -233,6 +233,28 @@ def test_rechazos_seguidos_bloquean_el_par(env):
     assert bk.blocked and "rechazos" in bk.blocked and len([c for c in ex.calls if c[0] == "new"]) == 5
 
 
+def test_venta_rechazada_por_comision_en_moneda_vende_lo_que_hay(env):
+    """26-oct, BDX: el par cobra la comisión en la moneda comprada; el llenado informa la cantidad
+    bruta y la venta pedía más de lo que había (30004) hasta bloquear el par."""
+    ex, bk = env["ex"], env["make"]()
+    bk.on_book(1.0, 500, 1.001, 500)
+    ex.fill("nx1XUSDT", 20.0)
+    ex.balances["X"] = 19.98                                     # 0,1% de comisión cobrada en X
+    ex.reject["new"] = 1
+    bk.on_book(1.0, 500, 1.001, 500)
+    bk.on_book(1.0, 500, 1.001, 500)                             # la venta de 20 se rechaza: lee el saldo
+    assert bk.pos_qty == 19.98 and bk.rejects == 0 and not bk.blocked
+    bk.on_book(1.0, 500, 1.001, 500)
+    assert [c for c in ex.calls if c[0] == "new"][-1][1:4] == ("SELL", "LIMIT_MAKER", "19.98")
+    ex2, bk2 = env["ex"], env["make"]()                          # si falta mucho más que una comisión: bloqueo normal
+    ex2.balances["X"] = 5.0
+    bk2.state, bk2.pos_qty, bk2.qty, bk2.entry, bk2.entry_ts = "long", 20.0, 20.0, 1.0, env["clock"]()
+    ex2.reject["new"] = 99
+    for _ in range(6):
+        bk2.on_book(1.0, 500, 1.001, 500)
+    assert bk2.blocked and "rechazos" in bk2.blocked
+
+
 def test_sin_autorizacion_no_entra_pero_sale(env):
     ex, bk = env["ex"], env["make"]()
     bk.entry_allowed = lambda: False
