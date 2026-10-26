@@ -3,3 +3,9 @@
 __pycache__/
 .venv/
 .pytest_cache/
+
+# Herramientas de verificación con EDR (tools/edr)
+tools/edr/node_modules/
+tools/edr/*.out.json
+tools/edr/*.log
+tools/edr/seq_*.json
