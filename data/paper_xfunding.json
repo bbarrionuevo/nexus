@@ -10,11 +10,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.0066445,
    "long_entry": 0.006615,
-   "short_last": 1792958400.0,
-   "long_last": 1792958400.0,
-   "funding": 0.13499999999999998,
+   "short_last": 1792972800.0,
+   "long_last": 1792972800.0,
+   "funding": 0.14755,
    "fees": 0.24,
-   "settlements": 10,
+   "settlements": 12,
    "realized_at_open": [
     1.725,
     92.1,
@@ -22,10 +22,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.135,
+    "funding": 0.1475,
     "basis": 0.1479,
     "fees": 0.24,
-    "net": 0.0429
+    "net": 0.0554
    },
    "last_short_px": 0.0069061,
    "last_long_px": 0.006895
@@ -40,11 +40,11 @@
    "long_symbol": "JCTUSDT",
    "short_entry": 0.007408,
    "long_entry": 0.00741,
-   "short_last": 1792958400.0,
-   "long_last": 1792958400.0,
+   "short_last": 1792972800.0,
+   "long_last": 1792972800.0,
    "funding": 0.07164999999999999,
    "fees": 0.16,
-   "settlements": 6,
+   "settlements": 8,
    "realized_at_open": [
     1.111,
     59.3,
@@ -70,11 +70,11 @@
    "long_symbol": "CT_USDT",
    "short_entry": 0.17666,
    "long_entry": 0.1765,
-   "short_last": 1792958400.0,
-   "long_last": 1792958400,
-   "funding": 0.013499999999999998,
+   "short_last": 1792972800.0,
+   "long_last": 1792972801,
+   "funding": 0.02915,
    "fees": 0.14,
-   "settlements": 2,
+   "settlements": 4,
    "realized_at_open": [
     0.669,
     35.7,
@@ -82,10 +82,10 @@
     6.8
    ],
    "mark": {
-    "funding": 0.0135,
+    "funding": 0.0291,
     "basis": -0.0414,
     "fees": 0.14,
-    "net": -0.1679
+    "net": -0.1523
    },
    "last_short_px": 0.1698,
    "last_long_px": 0.1695
@@ -129,11 +129,11 @@
   }
  ],
  "summary": {
-  "ts": 1792961819.8738492,
+  "ts": 1792974433.4868157,
   "open": 3,
   "closed": 1,
   "realized_eur": -0.14,
-  "open_net_eur": -0.2134,
-  "total_eur": -0.3534
+  "open_net_eur": -0.1853,
+  "total_eur": -0.3253
  }
 }
