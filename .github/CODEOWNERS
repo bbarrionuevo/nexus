@@ -5,6 +5,8 @@
 /local/nexus/agent/live.py      @bbarrionuevo
 /local/nexus/agent/authorize.py @bbarrionuevo
 /local/nexus/agent/hedge_live.py @bbarrionuevo
+/local/nexus/agent/controls.py  @bbarrionuevo
+/local/nexus/dashboard.py       @bbarrionuevo
 /local/nexus/exchanges/         @bbarrionuevo
 /local/nexus/paths.py           @bbarrionuevo
 /local/windows/update.py        @bbarrionuevo

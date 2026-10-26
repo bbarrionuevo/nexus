@@ -141,20 +141,26 @@ def record(**kw):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), kw)
 
 
-def approve():
+def candidate():
+    """(actual, candidata, cambios protegidos, log) sin aprobar nada: lo muestra el tablero."""
     git("fetch", "-q", "origin", BRANCH)
     cur, new = git("rev-parse", "HEAD"), git("rev-parse", f"origin/{BRANCH}")
-    prot = protected_changes(cur, new)
-    print(f"Versión candidata {new[:7]} (actual {cur[:7]}). Cambios protegidos: {prot or 'ninguno'}")
-    print(git("log", "--oneline", f"{cur}..{new}"))
+    return cur, new, protected_changes(cur, new) if cur != new else [], git("log", "--oneline", f"{cur}..{new}")
+
+
+def approve(ask=input, out=print):
+    """Aprobación local del dueño: desde la consola o desde el tablero (misma frase exacta)."""
+    cur, new, prot, history = candidate()
+    out(f"Versión candidata {new[:7]} (actual {cur[:7]}). Cambios protegidos: {prot or 'ninguno'}")
+    out(history)
     phrase = f"APRUEBO {new[:7]}"
-    if input(f'Escribí exactamente "{phrase}" para aprobarla: ').strip() != phrase:
-        print("No se aprobó nada.")
+    if ask(f'Escribí exactamente "{phrase}" para aprobarla: ').strip() != phrase:
+        out("No se aprobó nada.")
         return 1
     ap = paths.read_json(paths.state("approvals.json"), {})
     ap[new] = {"ts": time.time(), "protected": prot}
     paths.write_json_atomic(paths.state("approvals.json"), ap)
-    print("Aprobada. Se activará en el próximo ciclo si el CI está verde y no hay posiciones abiertas.")
+    out("Aprobada. Se activará en el próximo ciclo si el CI está verde y no hay posiciones abiertas.")
     return 0
 
 

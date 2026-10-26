@@ -91,7 +91,7 @@ def test_investigacion_conserva_lo_ultimo_si_falla(dash):
     assert "radar.json: ConnectionError" in r["error"] and r["radar_ts"] == 5 and r["stable"] == [{"pair": "USDT/ARS"}]
 
 
-def test_servidor_solo_lectura(dash):
+def test_servidor_y_botones_seguros(dash):
     server = dash.Server(("127.0.0.1", 0), dash.Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
@@ -107,9 +107,34 @@ def test_servidor_solo_lectura(dash):
         with pytest.raises(urllib.error.HTTPError) as e:
             urlopen(base + "/../.env")
         assert e.value.code == 404
-        with pytest.raises(urllib.error.HTTPError) as e:   # nada que cambie estado: POST no existe
+        with pytest.raises(urllib.error.HTTPError) as e:   # POST solo en /api/action
             urlopen(urllib.request.Request(base + "/api/state", data=b"x", method="POST"))
-        assert e.value.code == 501
+        assert e.value.code == 404
+        port = server.server_address[1]
+        with urlopen(base + "/api/session") as r:
+            token = json.loads(r.read())["token"]
+
+        def post(body, headers=None):
+            h = {"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{port}"} | (headers or {})
+            req = urllib.request.Request(base + "/api/action", data=json.dumps(body).encode(), headers=h, method="POST")
+            try:
+                with urlopen(req) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, None
+        assert post({"action": "estado", "token": token})[0] == 200
+        assert post({"action": "kill", "token": "otro"})[0] == 403                          # sin la sesión
+        assert post({"action": "kill", "token": token}, {"Origin": "https://malo.com"})[0] == 403   # otra página
+        assert post({"action": "kill", "token": token}, {"Host": f"malo.com:{port}"})[0] == 403     # DNS rebinding
+        assert post({"action": "kill", "token": token}, {"Content-Type": "text/plain"})[0] == 415   # formulario
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urlopen(urllib.request.Request(base + "/api/session", headers={"Host": f"malo.com:{port}"}))
+        assert e.value.code == 403
+        assert not dash.paths.kill_file().exists()                   # ninguno de los pedidos malos hizo nada
+        code, r = post({"action": "kill", "params": {"nivel": 1}, "token": token})
+        assert code == 200 and r["ok"] and dash.paths.kill_file().read_text().startswith("1 dueño")
+        code, r = post({"action": "reanudar", "token": token})
+        assert r["ok"] and not dash.paths.kill_file().exists()
     finally:
         server.shutdown()
         server.server_close()
