@@ -1,1 +1,1 @@
-"""nexus: bot de arbitraje cripto/fiat (modo simulación por defecto)."""
+"""nexus: motor de investigación de seguridad DeFi (bug bounties autorizados)."""

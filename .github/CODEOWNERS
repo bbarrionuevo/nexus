@@ -1,14 +1,6 @@
-# Rutas protegidas (categoría C): cambios solo con aprobación del dueño. Ver docs/REGLAS.md.
-/backtest/                      @bbarrionuevo
-/.github/                       @bbarrionuevo
-/local/nexus/agent/risk.py      @bbarrionuevo
-/local/nexus/agent/live.py      @bbarrionuevo
-/local/nexus/agent/authorize.py @bbarrionuevo
-/local/nexus/agent/hedge_live.py @bbarrionuevo
-/local/nexus/agent/controls.py  @bbarrionuevo
-/local/nexus/dashboard.py       @bbarrionuevo
-/local/nexus/exchanges/         @bbarrionuevo
-/local/nexus/paths.py           @bbarrionuevo
-/local/windows/update.py        @bbarrionuevo
-/local/config/                  @bbarrionuevo
-/docs/REGLAS.md                 @bbarrionuevo
+# Rutas protegidas: cambios solo con aprobación del dueño. Ver docs/REGLAS.md y tools/protected_paths.py.
+/.github/                            @bbarrionuevo
+/tools/protected_paths.py            @bbarrionuevo
+/local/nexus/secresearch/limits.py   @bbarrionuevo
+/local/tests/test_limits.py          @bbarrionuevo
+/docs/REGLAS.md                      @bbarrionuevo

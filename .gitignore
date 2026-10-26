@@ -2,8 +2,4 @@
 *.pyc
 __pycache__/
 .venv/
-logs/*
-!logs/.gitkeep
-state/
 .pytest_cache/
-node_modules/

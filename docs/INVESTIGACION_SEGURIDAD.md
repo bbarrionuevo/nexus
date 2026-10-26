@@ -1,20 +1,21 @@
-# Investigación de seguridad DeFi (línea nueva, aislada del trading)
+# Investigación de seguridad DeFi
 
 Pedido del dueño del 26-oct-2026: investigar vulnerabilidades económicas y lógicas en protocolos DeFi
-con programa de bug bounty **autorizado**, con pruebas locales y sin poner dinero. Esta línea **no
-promete ingresos**: solo cuenta una recompensa cuando se cobra.
+con programa de bug bounty **autorizado**, con pruebas locales y sin poner dinero. Ese mismo día el dueño
+suspendió el bot de trading y dedicó el repo entero a esta línea. **No promete ingresos**: solo cuenta
+una recompensa cuando se cobra. Las reglas están en [REGLAS.md](REGLAS.md).
 
-## Decisión de arquitectura
+## Decisiones de arquitectura
 
-- **Módulo aislado dentro del repo** (`local/nexus/secresearch/`), no un proyecto aparte. Reutiliza
-  pytest, el CI, la disciplina de evidencia (reglas fijadas de antemano, sin sobreajuste) y el modelo de
-  "la IA propone, el dueño decide". No importa ni toca el código de trading ni las rutas de dinero; un
-  test lo verifica. Si crece, se separa después.
-- **Sin Docker, base de datos, servicios pagos ni nube nueva**: Python + git, que la PC ya tiene.
-- **Los resultados son privados**: catálogo y resultados en `NEXUS_HOME` (en la PC,
-  `%LOCALAPPDATA%\nexus\secresearch`). El repo es público, y un posible hallazgo publicado sería divulgar
-  una vulnerabilidad sin reportar. El orquestador se niega a escribir dentro del repo, y ningún workflow
-  publica estos resultados en la rama `data`.
+- **Python y git**, que la PC ya tiene, más Foundry y Vyper para la etapa D. Sin Docker, base de datos,
+  servicios pagos ni nube nueva.
+- **Límites en un archivo protegido** (`limits.py`): topes, verificación del alcance, carpeta de
+  resultados y prohibiciones. Solo los cambia el dueño (R-9).
+- **Los resultados son privados**: catálogo, clones y resultados en `NEXUS_HOME` (en la PC,
+  `%LOCALAPPDATA%\nexus`). El repo es público, y un posible hallazgo publicado sería divulgar una
+  vulnerabilidad sin reportar. El orquestador se niega a escribir dentro del repo (R-4).
+- Se conserva del proyecto anterior la disciplina de evidencia: reglas fijadas de antemano, medir antes
+  de afirmar, "la IA propone, el dueño decide" y rutas protegidas.
 
 ## Especialidad del primer prototipo: contabilidad de vaults ERC-4626
 
@@ -55,17 +56,10 @@ explotan después de una pérdida del vault (precio de la share < 1) y roban a l
 Se agregaron las pérdidas al modelo y la propiedad P6. Es exactamente el tipo de falso negativo que
 el método tiene que ir cerrando.
 
-## Límites de seguridad (no se cruzan)
+## Límites de seguridad
 
-- Solo código, activos y actividades **explícitamente autorizados** por el reglamento vigente de cada programa.
-- **Nunca** se prueba nada contra contratos en producción, testnets públicas, billeteras ajenas ni
-  sistemas de terceros. La validación es en local; un fork local solo si el reglamento lo permite.
-- Solo se **lee** historial público (git). No se transacciona en ninguna cadena; un test verifica que
-  el módulo no contiene envíos ni transacciones.
-- **Nada se envía automáticamente.** Cada informe lo revisa y lo envía el dueño.
-- Sin tráfico intensivo: un clon superficial por repo y corrida, y topes de tiempo y operaciones.
-- Sin secretos ni datos personales en los informes.
-- No se exageran severidades ni impactos.
+Ver [REGLAS.md](REGLAS.md) (R-1 a R-10). Se hacen cumplir con `limits.py` y `tests/test_limits.py`
+(protegidos).
 
 ## Uso de IA y costo
 
@@ -84,17 +78,13 @@ Cada hipótesis va a quedar registrada con los comandos y tests que la confirmar
 En PowerShell, desde `%USERPROFILE%\nexus\local`:
 
 ```powershell
-# Verificación local completa (sintaxis, lint si hay ruff, tests, control de límites, método):
+# Verificación local completa (sintaxis, lint si hay ruff, tests, rutas protegidas, método):
 ..\.venv\Scripts\python -m nexus.devcheck
 
 # Autoverificación del método de invariantes:
 ..\.venv\Scripts\python -m nexus.secresearch.run --selfcheck
 
-# Demostración del circuito sobre un repo público (no es un objetivo):
-..\.venv\Scripts\python -m nexus.secresearch.run --demo OpenZeppelin/openzeppelin-contracts contracts/token/ERC20/extensions/
-
-# Uso real: copiar nexus\secresearch\catalogo.ejemplo.yaml a %LOCALAPPDATA%\nexus\secresearch.yaml,
-# completarlo DESPUÉS de leer cada reglamento oficial, y correr:
+# Corrida real: usa %LOCALAPPDATA%\nexus\secresearch.yaml (programas verificados por el dueño):
 ..\.venv\Scripts\python -m nexus.secresearch.run
 ```
 

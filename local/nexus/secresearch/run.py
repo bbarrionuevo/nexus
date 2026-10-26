@@ -21,10 +21,8 @@ from pathlib import Path
 
 from .. import paths
 from . import catalog, changes, invariants, triage
+from .limits import MAX_COMMITS, MAX_NETWORK_OPS, MAX_SECONDS, results_dir
 
-REPO = Path(__file__).resolve().parents[3]
-
-MAX_API_CALLS, MAX_COMMITS, MAX_SECONDS = 40, 10, 300   # API: 1 por lista + 1 por commit; git: 1 por repo
 REFERENCE = {                                    # (implementación, propiedades que DEBEN fallar)
     "correcta": (lambda: invariants.Vault(), set()),
     "depósito hacia arriba": (lambda: invariants.Vault(deposit_up=True), {"P1", "P6"}),
@@ -49,7 +47,7 @@ def scan(targets, out_dir, get=changes._http_get, now=time.time, source="git"):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ledger = out / "seen.jsonl"
-    done, budget, t0 = changes.seen(ledger), changes.Budget(MAX_API_CALLS), now()
+    done, budget, t0 = changes.seen(ledger), changes.Budget(MAX_NETWORK_OPS), now()
     found, notes = [], []
     for label, repo, scope in targets:
         if now() - t0 > MAX_SECONDS:
@@ -109,11 +107,8 @@ def report(summary, ranked, targets):
 
 
 def out_dir(arg=None):
-    """Carpeta de resultados: por defecto NEXUS_HOME/secresearch; nunca dentro del repo público."""
-    out = Path(arg) if arg else paths.home() / "secresearch"
-    if out.resolve().is_relative_to(REPO):
-        raise SystemExit(f"Los resultados no pueden quedar dentro del repo público ({REPO}): usá otra carpeta.")
-    return out
+    """Carpeta de resultados: por defecto NEXUS_HOME/secresearch, nunca dentro del repo público."""
+    return results_dir(arg or paths.home() / "secresearch")
 
 
 def main(argv):

@@ -1,4 +1,4 @@
-name: CI (tests + control de seguridad)
+name: CI (tests + rutas protegidas)
 on:
   push:
   pull_request:
@@ -11,18 +11,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with: {python-version: "3.12"}
-      - run: pip install -r local/requirements.txt
-      - name: Control de seguridad (límites aprobados, modo real apagado)
-        run: python backtest/run.py
-      - name: Tests (incluye tests de las reglas)
+      - run: pip install -r local/requirements.txt ruff==0.16.9
+      - name: Lint
+        run: cd local && ruff check --line-length 120 nexus tests
+      - name: Tests (incluye los límites de seguridad)
         run: cd local && python -m pytest -q
+      - name: Método de invariantes (debe atrapar los defectos de referencia)
+        run: cd local && python -m nexus.secresearch.run --selfcheck
+      - name: Autoprueba del control de rutas protegidas
+        run: python tools/protected_paths.py --self-test
   protected-paths:
-    # Rojo = el PR toca algo de categoría C: solo lo puede aprobar y fusionar una persona.
+    # Rojo = el PR toca límites de seguridad, reglas o CI: solo lo aprueba y fusiona el dueño.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: {fetch-depth: 0}
-      - run: pip install PyYAML==6.0.3
-      - run: python backtest/protected_paths.py origin/${{ github.base_ref }} HEAD
+      - run: python tools/protected_paths.py origin/${{ github.base_ref }} HEAD

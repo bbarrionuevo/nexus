@@ -1,10 +1,10 @@
 """Circuito de verificación LOCAL: corre las pruebas del proyecto y deja un informe, sin depender de GitHub.
 
-  python -m nexus.devcheck [OUT_DIR]         (desde la carpeta local/, con el Python del entorno del bot;
+  python -m nexus.devcheck [OUT_DIR]         (desde la carpeta local/, con el Python del entorno de nexus;
                                              por defecto el informe queda en NEXUS_HOME/devcheck)
 
-Pasos, en orden: sintaxis (compileall) · lint del código nuevo (ruff, solo si está instalado) · tests
-(pytest) · control de límites (backtest/run.py) · autoverificación del método de invariantes. De cada
+Pasos, en orden: sintaxis (compileall) · lint (ruff, solo si está instalado) · tests (pytest) ·
+autoprueba del control de rutas protegidas · autoverificación del método de invariantes. De cada
 paso registra código de salida, duración y el final del log. Si fallan tests, los vuelve a correr UNA
 sola vez (solo los que fallaron) para separar un fallo intermitente de uno real; nunca entra en bucle.
 No instala nada ni toca el sistema: usa el intérprete con el que se lo llama.
@@ -35,15 +35,13 @@ def _run(cmd, cwd=LOCAL, timeout=TIMEOUT_S):
 
 
 def steps(py=sys.executable):
-    """(nombre, comando o None si falta la herramienta, carpeta). El control de límites corre desde la raíz
-    del repo, como en el CI (usa rutas relativas a ella). pytest guarda su caché: `--lf` lo necesita."""
+    """(nombre, comando o None si falta la herramienta, carpeta). pytest guarda su caché: `--lf` lo necesita."""
     ruff = shutil.which("ruff")
     return [
         ("sintaxis", [py, "-m", "compileall", "-q", "nexus", "tests"], LOCAL),
-        ("lint (código nuevo)", [ruff, "check", "--line-length", "120", "nexus/secresearch", "nexus/devcheck.py",
-                                 "tests/test_secresearch.py"] if ruff else None, LOCAL),
+        ("lint", [ruff, "check", "--line-length", "120", "nexus", "tests"] if ruff else None, LOCAL),
         ("tests", [py, "-m", "pytest", "-q"], LOCAL),
-        ("control de límites", [py, "backtest/run.py"], REPO),
+        ("rutas protegidas", [py, "tools/protected_paths.py", "--self-test"], REPO),
         ("método de invariantes", [py, "-m", "nexus.secresearch.run", "--selfcheck"], LOCAL),
     ]
 

@@ -1,8 +1,8 @@
-"""Investigación de seguridad DeFi: catálogo, cambios, triaje, invariantes y orquestador (sin red)."""
+"""Motor de investigación: cambios, triaje, invariantes, orquestador y circuito local (sin red)."""
 import json
 from pathlib import Path
 
-from nexus.secresearch import catalog, changes, invariants, run, triage
+from nexus.secresearch import changes, invariants, run, triage
 
 PKG = Path(__file__).resolve().parents[1] / "nexus" / "secresearch"
 
@@ -17,24 +17,6 @@ PATCH_DOCS = """@@ -1,3 +1,3 @@
 +// SPDX-License-Identifier: MIT OR Apache-2.0
  pragma solidity ^0.8.20;
 """
-
-
-def test_catalogo_solo_habilita_lo_que_el_dueno_verifico(tmp_path):
-    y = tmp_path / "c.yaml"
-    y.write_text("""programs:
-  - {name: Sin verificar, rules_url: "https://example.org/a", in_scope: true, repos: [{repo: o/a}]}
-  - {name: Fuera de alcance, rules_url: "https://example.org/b", in_scope: false, verified_by_owner: true,
-     repos: [{repo: o/b}]}
-  - {name: Mal URL, rules_url: "http://x", in_scope: true, verified_by_owner: true, repos: [{repo: o/c}]}
-  - {name: Listo, rules_url: "https://example.org/d", in_scope: true, verified_by_owner: true,
-     repos: [{repo: o/d, paths: [src/]}]}
-""")
-    progs = catalog.load(y)
-    assert [p["name"] for p in catalog.actionable(progs)] == ["Listo"]
-    assert any("verified_by_owner" in x for x in catalog.problems(progs[0]))
-    assert any("in_scope" in x for x in catalog.problems(progs[1]))
-    assert any("https" in x for x in catalog.problems(progs[2]))
-    assert catalog.load(tmp_path / "no-existe.yaml") == []
 
 
 def _fake_github(commits):
@@ -139,15 +121,6 @@ def test_orquestador_informa_y_se_reanuda_sin_repetir(tmp_path):
     assert "No es un objetivo ni un hallazgo" in demo
 
 
-def test_limites_no_envia_nada_ni_toca_el_trading():
-    src = "\n".join(p.read_text(encoding="utf-8") for p in PKG.glob("*.py"))
-    for forbidden in ("requests.post", ".post(", "requests.put", "eth_sendRawTransaction", "sendTransaction",
-                      "private_key", "mexc_trade", "binance_trade", "agent.live", "hedge_live"):
-        assert forbidden not in src, forbidden
-    trading = Path(__file__).resolve().parents[1] / "nexus" / "agent"
-    assert not any("secresearch" in p.read_text(encoding="utf-8") for p in trading.glob("*.py"))
-
-
 def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     from nexus import devcheck
     calls = []
@@ -167,18 +140,5 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     md = devcheck.report(rep)
     assert "FALLÓ" in md and "omitido" in md and "final del log" in md
     plan = {name: (cmd, cwd) for name, cmd, cwd in devcheck.steps("py")}
-    assert plan["control de límites"][1] == devcheck.REPO                              # rutas relativas a la raíz
+    assert plan["rutas protegidas"][1] == devcheck.REPO                                # rutas relativas a la raíz
     assert "-p" not in plan["tests"][0]                                                # --lf necesita el caché
-
-
-def test_resultados_nunca_dentro_del_repo_publico(tmp_path, monkeypatch):
-    import pytest
-    monkeypatch.setenv("NEXUS_HOME", str(tmp_path / "home"))
-    assert run.out_dir() == tmp_path / "home" / "secresearch"                           # privado, en la PC
-    assert run.out_dir(str(tmp_path / "x")) == tmp_path / "x"
-    with pytest.raises(SystemExit, match="repo público"):
-        run.out_dir(str(run.REPO / "data"))
-    ejemplo = catalog.load(PKG / "catalogo.ejemplo.yaml")
-    assert ejemplo and catalog.actionable(ejemplo) == []                                 # el ejemplo nunca se analiza
-    assert run.main([str(PKG / "catalogo.ejemplo.yaml"), str(tmp_path / "o")]) == 0
-    assert not (tmp_path / "o").exists()                                                 # sin habilitados: no hace nada
