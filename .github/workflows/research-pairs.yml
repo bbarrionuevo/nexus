@@ -1,0 +1,29 @@
+name: Arbitraje estadístico en paper (pares cointegrados, sin dinero)
+on:
+  schedule: [{cron: "43 */6 * * *"}]
+  workflow_dispatch:
+    inputs:
+      minutes: {default: "320"}
+permissions: {contents: write}
+concurrency: research-pairs
+jobs:
+  pairs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: {ref: data, path: datawt}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: {python-version: "3.12"}
+      - run: pip install -r local/requirements.txt
+      # Backtest fuera de muestra con 60 días (rápido) y después paper en vivo casi continuo: 5,3 h cada 6 h.
+      - run: cd local && python -m nexus.research_pairs backtest ../datawt/data 60 > /dev/null && cat ../datawt/data/pairs_backtest.md >> $GITHUB_STEP_SUMMARY
+      - run: cd local && python -m nexus.research_pairs live ../datawt/data ${{ inputs.minutes || 320 }}
+      - run: cat datawt/data/paper_pairs.md >> $GITHUB_STEP_SUMMARY
+      - if: always()
+        run: |
+          cd datawt
+          git config user.name nexus-bot; git config user.email bot@users.noreply.github.com
+          git add data/; git commit -m "pares $(date -u +%FT%TZ)" || exit 0
+          git pull -q --rebase origin data && git push origin HEAD:data
