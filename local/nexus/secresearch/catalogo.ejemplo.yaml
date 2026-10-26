@@ -1,0 +1,17 @@
+# Ejemplo del catálogo de programas AUTORIZADOS. NO es una lista de objetivos.
+# El catálogo real va FUERA del repo (es público): %LOCALAPPDATA%\nexus\secresearch.yaml en la PC.
+# Un programa se analiza solo cuando el dueño leyó su reglamento vigente en la página oficial y marcó
+# in_scope y verified_by_owner en true. Recompensas, exclusiones, KYC y requisitos de PoC se copian de ahí.
+programs:
+  - name: Nombre del protocolo
+    platform: Immunefi                     # o Cantina, Sherlock, HackenProof, programa propio...
+    rules_url: https://immunefi.com/bug-bounty/xxxxx/   # página oficial: única fuente de verdad
+    in_scope: false                        # true solo si los contratos de abajo están en el alcance publicado
+    verified_by_owner: false               # true solo después de leer el reglamento vigente
+    specialty: erc4626
+    rewards_note: "copiar de la página oficial (crítico/alto/medio) y la fecha en que se leyó"
+    poc_required: "copiar de la página oficial"
+    exclusions: "copiar de la página oficial (problemas conocidos, auditorías previas, fuera de alcance)"
+    repos:
+      - repo: owner/name                   # repo público con el código EN ALCANCE
+        paths: ["src/"]                    # solo cambios bajo estas rutas
