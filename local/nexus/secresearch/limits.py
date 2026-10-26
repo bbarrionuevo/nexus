@@ -11,6 +11,13 @@ MAX_NETWORK_OPS = 40          # git: 1 por repo; API: 1 por lista + 1 por commit
 MAX_COMMITS = 10              # commits nuevos por repo
 MAX_SECONDS = 300             # duración máxima de una corrida
 
+# Validación local con Foundry (etapa D): tiempos máximos por paso; los repos compilan con via_ir (lento).
+MAX_BUILD_SECONDS = 2400
+MAX_TEST_SECONDS = 3600
+# Variables que se fuerzan en CADA comando de Foundry, sin importar lo que diga el foundry.toml del repo:
+# FFI apagado (si no, los tests de un repo ajeno pueden ejecutar comandos en la PC; Yearn lo trae prendido).
+FOUNDRY_ENV = {"FOUNDRY_FFI": "false"}
+
 REPO = Path(__file__).resolve().parents[3]
 
 # Lo que el código de investigación NUNCA contiene: enviar informes o datos a terceros, firmar o
@@ -35,6 +42,15 @@ def program_problems(prog):
         if "/" not in str(r.get("repo", "")):
             out.append(f"repo inválido: {r.get('repo')!r} (formato owner/name)")
     return out
+
+
+def repo_in_scope(repo, programs):
+    """Programa verificado al que pertenece `repo`, o None. La etapa D (que compila y ejecuta código
+    ajeno en la PC) solo corre sobre repos de programas que el dueño verificó."""
+    for prog in programs:
+        if not program_problems(prog) and any(r.get("repo") == repo for r in prog.get("repos") or []):
+            return prog
+    return None
 
 
 def results_dir(path):

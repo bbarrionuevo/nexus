@@ -16,12 +16,13 @@ Reglas: [docs/REGLAS.md](docs/REGLAS.md). Plan, estado y métricas: [docs/INVEST
 | A. Cambios | Commits nuevos que tocan contratos en alcance, por git (solo lectura); excluye tests, mocks y scripts | Funciona |
 | B. Triaje | Puntaje determinista sin IA, con señales de contabilidad de vaults ERC-4626 | Funciona |
 | C. Método de invariantes | Propiedades P0–P6 de un vault ERC-4626, verificadas contra implementaciones de referencia | Funciona |
-| D. Validación con Foundry | Las propiedades como tests de invariantes contra el código en alcance, en local | Pendiente: próximo paso |
+| D. Validación local con Foundry | `forge build` + `forge test` sobre repos de programas verificados, fijado a un commit, FFI apagado | Implementado; falta la primera corrida real en la PC |
+| D'. Propiedades del vault en Foundry | P0–P6 como tests de invariantes contra el vault en alcance | Próximo paso |
 
 ## Estructura
 
 ```
-local/nexus/secresearch/   el motor: catalog, changes, triage, invariants, run, limits (protegido)
+local/nexus/secresearch/   el motor: catalog, changes, triage, invariants, run, validate, limits (protegido)
 local/nexus/devcheck.py    verificación local: sintaxis, lint, tests, rutas protegidas, método
 local/nexus/paths.py       carpeta privada NEXUS_HOME (fuera del repo)
 local/tests/               tests (test_limits.py está protegido)
@@ -35,6 +36,7 @@ docs/                      REGLAS (protegido) e INVESTIGACION_SEGURIDAD
 ..\.venv\Scripts\python -m nexus.devcheck                    # verificación completa
 ..\.venv\Scripts\python -m nexus.secresearch.run --selfcheck  # el método atrapa los defectos de referencia
 ..\.venv\Scripts\python -m nexus.secresearch.run              # corrida real con el catálogo
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho   # Foundry, en local
 ```
 
 El informe queda en `%LOCALAPPDATA%\nexus\secresearch\secresearch.md`.

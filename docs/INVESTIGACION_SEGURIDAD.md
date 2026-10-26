@@ -37,7 +37,8 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | A. Cambios | Commits nuevos que tocan contratos en alcance, por git (clon superficial) o API; libro de vistos; excluye tests, mocks, scripts y specs | Implementado y verificado | Demo sobre OpenZeppelin: 3 commits, 15 archivos, 2.ª corrida sin repetir. Vista previa de los 6 repos de Morpho, Yearn y Euler: el 49% de los archivos eran tests o mocks y daban 11 de 19 alertas "alta"; tras excluirlos, 8 alertas "alta", todas en contratos de producción |
 | B. Triaje | Puntaje determinista **sin IA** de las líneas cambiadas, con señales ERC-4626 | Implementado y verificado | En la demo puso primero el único cambio de vault (ERC7535, puntaje 31) entre 15 archivos |
 | C. Método de invariantes | Modelo de referencia ERC-4626 con aritmética entera y propiedades P0–P6 | Implementado y verificado | Autoverificación: pasa la correcta y atrapa los 5 defectos de referencia |
-| D. Validación contra el código en alcance | Las mismas propiedades como tests de invariantes de Foundry, en local | **Pendiente**: requiere Foundry en la PC (decisión del dueño) | — |
+| D. Validación local con Foundry | `validate.py`: solo repos de programas verificados; clona fijado a un commit con submódulos; `forge build` + `forge test --json` con FFI apagado forzado y topes de tiempo; informe privado e historial | Implementado. Probado con un `forge` simulado; el clon real de MetaMorpho (commit `ded84e5`, 16 submódulos, 19 s) funciona. **Falta la primera corrida con Foundry real, en la PC** | Línea base: la suite propia de cada repo |
+| D'. Propiedades del vault en Foundry | P0–P6 como tests de invariantes contra el vault en alcance | Pendiente: siguiente paso, después de la línea base | `lib/openzeppelin-contracts/lib/erc4626-tests` ya viene en MetaMorpho |
 | E. Duplicados y alcance | Auditorías previas, problemas conocidos, exclusiones | Parcial: el catálogo guarda exclusiones; la búsqueda de auditorías está pendiente | — |
 | F. Expediente | Informe por candidato confirmado | Pendiente: plantilla abajo | — |
 
@@ -89,6 +90,16 @@ En PowerShell, desde `%USERPROFILE%\nexus\local`:
 ```
 
 El informe queda en `%LOCALAPPDATA%\nexus\secresearch\secresearch.md`.
+
+Validación local con Foundry (etapa D), solo sobre repos de programas verificados:
+
+```powershell
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho
+..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --match-path test/ERC4626Test.sol
+```
+
+El informe queda en `%LOCALAPPDATA%\nexus\secresearch\validate\` y los clones en `%LOCALAPPDATA%\nexus\work\`.
+La primera corrida de cada repo es su **línea base**: un test que falla ahí no es una vulnerabilidad.
 
 ## Métricas (lo único que cuenta)
 
