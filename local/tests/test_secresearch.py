@@ -155,6 +155,16 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     assert "-p" not in plan["tests"][0]                                                # --lf necesita el caché
 
 
+def test_circuito_local_usa_el_ruff_del_venv_sin_activarlo(tmp_path, monkeypatch):
+    from nexus import devcheck
+    exe = tmp_path / ("ruff.exe" if os.name == "nt" else "ruff")                      # junto al python del venv
+    exe.write_text("")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", "")
+    lint = {name: cmd for name, cmd, _ in devcheck.steps(str(tmp_path / "python"))}["lint"]
+    assert lint and Path(lint[0]).parent == tmp_path and lint[1:] == ["check", "--line-length", "120", "nexus", "tests"]
+
+
 FAKE_FORGE = r'''
 import json, os, sys
 log = os.environ["FAKE_LOG"]
@@ -176,7 +186,10 @@ print(json.dumps({"test/V.t.sol:VaultTest": {"test_results": {
     "testNoDilution(uint256)": {"status": "Failure", "reason": "assertion failed: 7 < 8",
                                 "counterexample": {"calldata": "0xabc", "args": "2"}},
     "testSkip()": {"status": "Skipped", "reason": None, "counterexample": None},
-    "invariant_x()": {"status": "Success", "kind": {"Invariant": {"runs": 4, "calls": 40, "reverts": 30}}}}}}))
+    "invariant_x()": {"status": "Success", "kind": {"Invariant": {"runs": 4, "calls": 40, "reverts": 30, "metrics": {
+                          "H.deposit": {"calls": 25, "reverts": 1, "discards": 0},
+                          "H.huntInflation": {"calls": 15, "reverts": 29, "discards": 0}}}},
+                      "decoded_logs": ["cazador: leyes evaluadas: 99", "cazador: depositos con 0 acciones: 3"]}}}}))
 sys.exit(1)
 '''
 
@@ -211,7 +224,7 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
                             forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work")
     calls = [json.loads(x) for x in log.read_text().splitlines()]
     assert [c["argv"][0] for c in calls] == ["build", "test"] and all(c["ffi"] == "false" for c in calls)
-    assert calls[1]["argv"] == ["test", "--json", "--match-path", "test/V.t.sol"]
+    assert calls[1]["argv"] == ["test", "--json", "-vv", "--match-path", "test/V.t.sol"]
     assert not rec["ok"] and rec["test"]["counts"] == {"Success": 2, "Failure": 1, "Skipped": 1}
     assert rec["test"]["failures"][0]["counterexample"]["args"] == "2" and len(rec["sha"]) == 40
     md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text()
@@ -252,11 +265,14 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     rec = validate.validate("o/v", harness="h", seed="0x2a", fuzz={"FOUNDRY_INVARIANT_DEPTH": "9"}, **kw)
     build, test = (json.loads(x) for x in log.read_text().splitlines())
     assert build["harness"] == ["P.t.sol"]                                   # copiado antes de compilar
-    assert test["argv"] == ["test", "--json", "--match-contract", "^Nexus"] and test["ffi"] == "false"
+    assert test["argv"] == ["test", "--json", "-vv", "--match-contract", "^Nexus"] and test["ffi"] == "false"
     assert test["fuzz"] == {"FOUNDRY_FUZZ_RUNS": "7", "FOUNDRY_INVARIANT_DEPTH": "9", "FOUNDRY_FUZZ_SEED": "0x2a"}
     assert rec["harness_files"] == ["P.t.sol"] and rec["test"]["activity"][0]["reverts"] == 30
+    assert rec["test"]["activity"][0]["logs"][0] == "cazador: leyes evaluadas: 99"  # el log aunque la prueba pase
     md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}+h@0x2a.md").read_text()
     assert "--harness h --seed 0x2a" in md and "en vacío" in md                # 30 de 40 llamadas revirtieron
+    assert "cazador: leyes evaluadas: 99 · cazador: depositos con 0 acciones: 3" in md
+    assert "por acción: deposit 25/1 · huntInflation 15/29" in md            # métricas por acción de forge
 
     log.write_text("")                                                       # línea base: sin código de nexus
     validate.validate("o/v", **kw)
@@ -273,12 +289,22 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     assert log.read_text() == ""                                             # ninguno llegó a forge
 
 
+def test_metricas_por_accion_con_la_misma_funcion_en_dos_contratos():
+    from nexus.secresearch import validate
+    # La suite ESR de euler-vault-kit llama `transfer` del token y del vault: ordenar comparaba los diccionarios.
+    metrics = {"src/ESR.sol:EulerSavingsRate.transfer": {"calls": 9, "reverts": 1},
+               "test/lib/MockToken.sol:MockToken.transfer": {"calls": 7, "reverts": 0},
+               "src/ESR.sol:EulerSavingsRate.gulp": {"calls": 3, "reverts": 0}}
+    assert validate.per_action(metrics) == "EulerSavingsRate.transfer 9/1 · MockToken.transfer 7/0 · gulp 3/0"
+
+
 def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__metamorpho")
     assert man["repo"] == "morpho-org/metamorpho" and man["match_contract"] == "^NexusMetaMorpho"
     assert {f.name for f in files} == {"NexusMetaMorphoBase.sol", "NexusMetaMorphoERC4626.t.sol",
-                                       "NexusMetaMorphoInvariant.t.sol"}
+                                       "NexusMetaMorphoInvariant.t.sol", "NexusVulnerabilityHunter.sol",
+                                       "NexusMetaMorphoHunter.t.sol"}
     # Ni FFI, ni forks/RPC, ni archivos, ni transacciones: solo cheatcodes de la EVM local.
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
@@ -309,7 +335,10 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
         rec = {"repo": repo, "sha": "a" * 40, "ok": harness is None, "build": {"seconds": 1},
                "test": {"seconds": 2, "counts": {"Success": 3, "Failure": int(harness is not None), "Skipped": 0},
                         "failures": [{"suite": "t.sol:T", "test": "invariant_x()", "reason": "precio bajo",
-                                      "counterexample": {"args": "7"}, "logs": ["log 1"]}] if harness else []}}
+                                      "counterexample": {"args": "7"}, "logs": ["log 1"]}] if harness else [],
+                        "activity": [{"suite": "t.sol:T", "test": "invariant_x()", "type": "Invariant", "runs": 4,
+                                      "calls": 40, "reverts": 1, "logs": ["cazador: leyes evaluadas: 99"],
+                                      "metrics": {"H.donate": {"calls": 40, "reverts": 1}}}]}}
         if harness:
             rec["fuzz"] = {"FOUNDRY_FUZZ_SEED": "0x2a"}
         name = f"{repo.replace('/', '__')}@aaaaaaaaaa" + (f"+{harness}@0x2a" if harness else "")
@@ -331,6 +360,9 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     assert "CON FALLAS" in (out / "ciclo.md").read_text() and not (out / "ciclo.lock").exists()
     digest = (out / "para_claude.md").read_text()
     assert "Fallas distintas: 1" in digest and "semilla 0x2a" in digest and '"args": "7"' in digest
+    assert "Cobertura de la última corrida" in digest and "40 llamadas · 1 reversiones" in digest
+    assert "cazador: leyes evaluadas: 99" in digest                          # métricas del cazador para Claude
+    assert "por acción: donate 40/1" in digest
     assert "| o/v | aaaaaaaaaa | 3 pasan · 0 fallan" in digest
 
     calls.clear()                                                            # al otro día: falta solo o/z

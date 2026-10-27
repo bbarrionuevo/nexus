@@ -1,37 +1,23 @@
 [
-[
-"M1 deposit redondea acciones hacia arriba",
-"shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Floor);",
-"shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"
-],
-[
-"M2 maxWithdraw ignora la liquidez",
-"assets -= _simulateWithdrawMorpho(assets);",
-"assets -= 0;"
-],
-[
-"M3 deposit no actualiza lastTotalAssets (cobra comision sobre depositos)",
-"_updateLastTotalAssets(lastTotalAssets + assets);",
-"_updateLastTotalAssets(lastTotalAssets);"
-],
-[
-"M4 mint redondea el costo hacia abajo",
-"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);",
-"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);"
-],
-[
-"M5 totalAssets solo cuenta el primer mercado",
-"for (uint256 i; i < withdrawQueue.length; ++i) {",
-"for (uint256 i; i < withdrawQueue.length && i < 1; ++i) {"
-],
-[
-"M6 redeem redondea activos hacia arriba",
-"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);",
-"assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"
-],
-[
-"M7 comision calculada sin restar feeAssets (cobra de mas)",
-"_convertToSharesWithTotals(feeAssets, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);",
-"_convertToSharesWithTotals(feeAssets * 2, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);"
-]
+["M1 deposit redondea acciones hacia arriba", "shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Floor);", "shares = _convertToSharesWithTotals(assets, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"],
+["M2 maxWithdraw ignora la liquidez", "assets -= _simulateWithdrawMorpho(assets);", "assets -= 0;"],
+["M3 deposit no actualiza lastTotalAssets (cobra comision sobre depositos)", "_updateLastTotalAssets(lastTotalAssets + assets);", "_updateLastTotalAssets(lastTotalAssets);"],
+["M4 mint redondea el costo hacia abajo", "assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);", "assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);"],
+["M5 totalAssets solo cuenta el primer mercado", "for (uint256 i; i < withdrawQueue.length; ++i) {", "for (uint256 i; i < withdrawQueue.length && i < 1; ++i) {"],
+["M6 redeem redondea activos hacia arriba", "assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Floor);", "assets = _convertToAssetsWithTotals(shares, totalSupply(), newTotalAssets, Math.Rounding.Ceil);"],
+["M7 comision calculada sin restar feeAssets (cobra de mas)", "_convertToSharesWithTotals(feeAssets, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);", "_convertToSharesWithTotals(feeAssets * 2, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);"],
+["M8 habilitar un mercado con supply no suma su reclamo a lastTotalAssets (cobra comision sobre el)", "_updateLastTotalAssets(lastTotalAssets + MORPHO.expectedSupplyAssets(marketParams, address(this)));", "_updateLastTotalAssets(lastTotalAssets);"],
+["M9 updateWithdrawQueue remueve un mercado con supply sin esperar el timelock", "if (block.timestamp < config[id].removableAt) {", "if (block.timestamp + 1 weeks < config[id].removableAt) {"],
+["M10 los timelocks vencen un segundo antes", "if (block.timestamp < validAt) revert ErrorsLib.TimelockNotElapsed();", "if (block.timestamp + 1 < validAt) revert ErrorsLib.TimelockNotElapsed();"],
+["M11 _supplyMorpho redondea el supply hacia abajo (pasa el tope por 1 wei)", "uint256 supplyAssets = supplyShares.toAssetsUp(market.totalSupplyAssets, market.totalSupplyShares);", "uint256 supplyAssets = supplyShares.toAssetsDown(market.totalSupplyAssets, market.totalSupplyShares);"],
+["M12 withdraw no descuenta lo retirado de lastTotalAssets (comision de menos)", "_updateLastTotalAssets(newTotalAssets.zeroFloorSub(assets));", "_updateLastTotalAssets(newTotalAssets);"],
+["M13 reallocate no controla el tope del mercado", "if (supplyAssets + suppliedAssets > supplyCap) revert ErrorsLib.SupplyCapExceeded(id);", "if (false) revert ErrorsLib.SupplyCapExceeded(id);"],
+["M14 totalAssets suma la cola de suministro en lugar de la de retiro", "assets += MORPHO.expectedSupplyAssets(_marketParams(withdrawQueue[i]), address(this));", "if (i < supplyQueue.length) assets += MORPHO.expectedSupplyAssets(_marketParams(supplyQueue[i]), address(this));"],
+["M15 acciones de comision redondeadas hacia arriba (1 accion de mas)", "_convertToSharesWithTotals(feeAssets, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Floor);", "_convertToSharesWithTotals(feeAssets, totalSupply(), newTotalAssets - feeAssets, Math.Rounding.Ceil);"],
+["M16 deposit no acumula la comision pendiente (se pierde al reiniciar lastTotalAssets)", "uint256 newTotalAssets = _accrueFee();", "(, uint256 newTotalAssets) = _accruedFeeShares();"],
+["M17 deposit deja lastTotalAssets 1 wei arriba", "_updateLastTotalAssets(lastTotalAssets + assets);", "_updateLastTotalAssets(lastTotalAssets + assets + 1);"],
+["B1 Morpho devenga un segundo de mas", "uint256 interest = market[id].totalBorrowAssets.wMulDown(borrowRate.wTaylorCompounded(elapsed));", "uint256 interest = market[id].totalBorrowAssets.wMulDown(borrowRate.wTaylorCompounded(elapsed + 1));", "lib/morpho-blue/src/Morpho.sol"],
+["B2 Morpho supply redondea las shares hacia arriba", "if (assets > 0) shares = assets.toSharesDown(market[id].totalSupplyAssets, market[id].totalSupplyShares);", "if (assets > 0) shares = assets.toSharesUp(market[id].totalSupplyAssets, market[id].totalSupplyShares);", "lib/morpho-blue/src/Morpho.sol"],
+["B3 Morpho no descuenta la deuda incobrable del suministro", "market[id].totalSupplyAssets -= badDebtAssets.toUint128();", "market[id].totalSupplyAssets -= 0;", "lib/morpho-blue/src/Morpho.sol"],
+["B4 Morpho withdraw redondea las shares quemadas hacia abajo", "if (assets > 0) shares = assets.toSharesUp(market[id].totalSupplyAssets, market[id].totalSupplyShares);", "if (assets > 0) shares = assets.toSharesDown(market[id].totalSupplyAssets, market[id].totalSupplyShares);", "lib/morpho-blue/src/Morpho.sol"]
 ]

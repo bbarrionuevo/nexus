@@ -7,8 +7,8 @@
    cada corrida explora entradas distintas y la semilla queda en el informe para reproducir.
 3. Etapa D: líneas base de hasta N repos del catálogo sin una en los últimos 7 días (primero los que nunca la
    tuvieron). Muestran qué compila y qué pasa antes de escribir un harness para cada repo.
-4. Resumen del ciclo (ciclo.md, ciclo.jsonl) y un acumulado para pegarle a Claude (para_claude.md), todo en
-   NEXUS_HOME/secresearch: privado, nunca en el repo.
+4. Resumen del ciclo (ciclo.md, ciclo.jsonl), un acumulado para pegarle a Claude (para_claude.md) y el dashboard
+   (dashboard.html), todo en NEXUS_HOME/secresearch: privado, nunca en el repo.
 
 Corre UNA vez y termina: el Programador de tareas de Windows decide cuándo vuelve a correr; el ciclo nunca se
 reprograma ni se encadena solo. Un candado evita dos ciclos a la vez. No envía ni publica nada: el único
@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from .. import paths
-from . import catalog, run, validate
+from . import catalog, dashboard, run, validate
 from .limits import repo_in_scope, results_dir
 
 LOCK_STALE_S = 12 * 3600          # un candado más viejo es de un ciclo que murió (corte de luz, reinicio)
@@ -142,6 +142,10 @@ def cycle(max_minutes=180, baselines=2, programs=None, home=None, now=time.time,
             (out / "para_claude.md").write_text(digest(out), encoding="utf-8")
         except Exception as e:                                   # noqa: BLE001 (el resumen del ciclo ya quedó)
             print(f"para_claude.md: {type(e).__name__}: {e}")
+        try:
+            dashboard.write(base)
+        except Exception as e:                                   # noqa: BLE001 (el resumen del ciclo ya quedó)
+            print(f"dashboard: {type(e).__name__}: {e}")
         return rep
     finally:
         lock.unlink(missing_ok=True)
@@ -161,6 +165,30 @@ def report(rep):
     lines += ["", ("Informes completos: secresearch.md (cambios) y validate/*.md (Foundry). Un test que falla NO es "
                    "una vulnerabilidad: es algo para revisar con el contraejemplo y la semilla del informe.")]
     return "\n".join(lines) + "\n"
+
+
+def coverage(out, runs):
+    """Última corrida de cada harness: actividad de cada invariante y su log de afterInvariant (métricas del cazador:
+    leyes evaluadas, depósitos con 0 acciones, ventana de redondeo, polvo, comisiones). Sirve para decidir el próximo
+    cambio aunque no haya fallas."""
+    latest = {}
+    for h in runs:
+        latest[h["harness"]] = h
+    lines = ["", "## Cobertura de la última corrida de cada harness", ""]
+    for name, h in sorted(latest.items()):
+        rec = Path(out) / "validate" / f"{h.get('report')}.json" if h.get("report") else None
+        if not (rec and rec.exists()):
+            continue
+        acts = (json.loads(rec.read_text(encoding="utf-8")).get("test") or {}).get("activity") or []
+        lines.append(f"### `{name}` · semilla {h.get('seed')} · {(h.get('sha') or '?')[:10]}")
+        for a in acts:
+            lines.append(f"- `{a['suite'].split(':')[-1]}::{a['test']}`: {a.get('runs')} corridas · {a.get('calls')} "
+                         f"llamadas · {a.get('reverts')} reversiones")
+            if a.get("metrics"):
+                lines.append("  - llamadas/reversiones por acción: " + validate.per_action(a["metrics"]))
+            if a.get("logs"):
+                lines.append("  - " + " · ".join(a["logs"][:20]))
+    return lines
 
 
 def digest(out, last_cycles=10):
@@ -193,6 +221,7 @@ def digest(out, last_cycles=10):
     for (name, sha), a in seen.items():
         lines.append(f"- `{name}` @ {(sha or '?')[:10]}: {a['runs']} corridas, {a['fail_runs']} con fallas · "
                      f"semillas {', '.join(str(s) for s in a['seeds'][-5:])}")
+    lines += coverage(out, runs)
     fails = {}
     for h in hist:
         rec = out / "validate" / f"{h.get('report')}.json" if h.get("report") else None

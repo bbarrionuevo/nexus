@@ -38,10 +38,11 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | B. Triaje | Puntaje determinista **sin IA** de las líneas cambiadas, con señales ERC-4626 | Implementado y verificado | En la demo puso primero el único cambio de vault (ERC7535, puntaje 31) entre 15 archivos |
 | C. Método de invariantes | Modelo de referencia ERC-4626 con aritmética entera y propiedades P0–P6 | Implementado y verificado | Autoverificación: pasa la correcta y atrapa los 5 defectos de referencia |
 | D. Validación local con Foundry | `validate.py`: solo repos de programas verificados; clona fijado a un commit con submódulos; `forge build` + `forge test --json` con FFI apagado forzado y topes de tiempo; informe privado e historial | Implementado y verificado en la PC (26-oct) | Línea base de MetaMorpho `ded84e5`: compila en 350,7 s; 148 pasan · 0 fallan · 0 omitidos (354,2 s) |
-| D'. Propiedades del vault en Foundry | `harness/morpho-org__metamorpho/`: la suite ERC-4626 de a16z y un test de invariantes con handler, en 3 variantes; `validate --harness` los copia al clon y los corre con una semilla nueva | Implementado. Verificado en la nube **sin forge** (solc-js + EDR, el motor de tests de Hardhat 3). **Falta la primera corrida con forge en la PC** | 81/81 pasan en `ded84e5` con 4 semillas; detecta 7 de 7 mutaciones de referencia (abajo) |
-| Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md` | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
+| D'. Propiedades del vault en Foundry | `harness/morpho-org__metamorpho/`: la suite ERC-4626 de a16z y un test de invariantes con handler, en 3 variantes; `validate --harness` los copia al clon y los corre con una semilla nueva. Desde el 27-oct, con el cazador (`NexusVulnerabilityHunter.sol`) y una suite multi-mercado con gobierno | Implementado. Verificado en la nube **sin forge** (solc-js + EDR, el motor de tests de Hardhat 3) y en la PC con forge (26-oct: 84 pasan, 0 fallan) | 81/81 pasan en `ded84e5` con 4 semillas; detecta 7 de 7 mutaciones de referencia (abajo). Con el cazador: sin falsos positivos en 1,5 M de llamadas; detecta 21 de 21 mutaciones, también en Morpho Blue, contra 11 de 21 del harness original ([detalle](CAZADOR_METAMORPHO.md#verificación)) |
+| Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md`. Este último trae las fallas y, desde el 27-oct, la cobertura de la última corrida: llamadas y reversiones por acción del handler, que forge reporta, y el log de `afterInvariant` (verificaciones y métricas del cazador; por eso `validate` corre forge con `-vv`) | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
 | E. Duplicados y alcance | Auditorías previas, problemas conocidos, exclusiones | Parcial: el catálogo guarda exclusiones; la búsqueda de auditorías está pendiente | — |
-| F. Expediente | Informe por candidato confirmado | Pendiente: plantilla abajo | — |
+| F. Expediente | Informe por candidato confirmado: `python -m nexus.secresearch.expediente INFORME` arma el borrador privado en `NEXUS_HOME/secresearch/expedientes/` con el programa y sus reglas, el commit, la semilla, la ley que falló, el contraejemplo y el comando para reproducir, más las secciones del punto 5 de "Qué falta para un primer informe válido". También sirve para descartar una falla con su razón (`estado: descartado`) | Implementado (27-oct); lo completa, firma y envía el dueño | Tests: arma todas las secciones, no pisa uno existente y no escribe en el repo |
+| Dashboard | `python -m nexus.secresearch.dashboard`: una página local (`NEXUS_HOME/secresearch/dashboard.html`), sin nada de internet, con las fallas para revisar, la cobertura por acción, las métricas del cazador, las corridas, los programas, los cambios pendientes, los ciclos y los expedientes. La regeneran el ciclo y `validate` | Implementado (27-oct) | Tests: escapa el texto de los informes y no carga recursos externos |
 
 Propiedades del método (etapa C):
 
@@ -114,15 +115,35 @@ Las mutaciones de referencia, cada una inyectada en una copia de MetaMorpho, tie
 - **Versión de solc.** Con via_ir, la suite de a16z da "stack too deep" en solc ≤ 0.8.24. Por eso el
   adaptador exige `^0.8.26`, y forge baja ese compilador solo para ese archivo.
 
+### Cazador de vulnerabilidades: contabilidad fantasma y leyes exactas (27-oct)
+
+`NexusVulnerabilityHunter.sol` se hereda en el handler (la API no cambia). Cada acción queda envuelta en
+`hunted(...)`, que toma una foto antes y otra después y evalúa las leyes de esa operación contra un modelo
+independiente de los `view` del vault: estado crudo de Morpho en un solo `extSloads`, aritmética propia, L, colas,
+topes y timelocks fantasma, y libros por tenedor y de comisiones. Caza tres familias:
+
+- inflación y redondeo;
+- desincronización de comisiones;
+- fugas por deuda incobrable o reasignación entre mercados.
+
+`NexusMetaMorphoHunter.t.sol` agrega el entorno que faltaba:
+
+- 4 mercados (uno sin habilitar) con topes que se alcanzan y colas en distinto orden;
+- gobierno con timelock, comparado contra la predicción del cazador;
+- saltos a la frontera exacta de cada timelock;
+- macros de ataque: inflación, comisión relámpago, ciclo de reasignaciones, tokens sueltos y fronteras de tope y de
+  remoción.
+
+Modelo, ecuaciones, leyes, auditoría del handler anterior e integración: [CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md).
+
 **Qué NO cubre todavía:**
 
-- varios mercados con préstamos y colas de retiro largas;
 - tokens no estándar (con comisión por transferencia o con callbacks);
 - reentrada;
 - `permit` y `multicall`;
-- las funciones con timelock del curador y del guardián (topes, remoción de mercados);
 - préstamos flash;
-- una tasa de interés que cambie con el uso.
+- una tasa de interés que cambie con el uso;
+- el harness de Vault V2 (las ecuaciones de la adaptación están en CAZADOR_METAMORPHO.md).
 
 Son los próximos frentes, en ese orden de valor.
 
@@ -195,6 +216,37 @@ Los resultados quedan en `%LOCALAPPDATA%\nexus\secresearch\`:
 - `ciclo.log`: el progreso.
 
 Para quitarlo: `Unregister-ScheduledTask nexus-ciclo -Confirm:$false`.
+
+### Iteración PC ↔ Claude
+
+La sesión de Claude en la nube no llega a la PC. Los resultados nunca van al repo, que es público (R-4). El ciclo
+de mejora es:
+
+1. **Traer el código a la PC.** Desde `%USERPROFILE%\nexus`: `git fetch` y `git checkout <rama>` para probar una rama
+   sin fusionar, o `git pull` en `main` después de fusionar el PR.
+2. **Correr.**
+   ```powershell
+   ..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho
+   ```
+   La primera vez conviene a mano, para ver el tiempo de compilación. Después alcanza con el ciclo programado.
+3. **Devolverle a Claude `%LOCALAPPDATA%\nexus\secresearch\para_claude.md`.** Se puede pegar en la sesión, o abrir
+   Claude Code en la PC, en la carpeta de nexus (app de escritorio o `claude remote-control`), que lo lee directo y
+   puede reproducir con forge. Trae:
+   - las fallas distintas, con su ley (`H-...`), el contraejemplo y la semilla;
+   - la cobertura de la última corrida: llamadas y reversiones por cada acción y macro del handler (métricas de
+     forge) y el log de `afterInvariant`: el contador de verificaciones (que la corrida no pasó en vacío) y las
+     métricas del cazador. `validate` corre forge con `-vv` porque, sin eso, forge borra los logs del JSON.
+4. **Qué hace Claude con eso.**
+   - Una falla con código `H-...` se reproduce con la misma semilla y se clasifica: error del harness (se corrige) o
+     candidato (se aísla en un test mínimo y se revisa contra auditorías previas, etapas E y F).
+   - Sin fallas, las métricas dicen hacia dónde empujar: por ejemplo, si una macro casi nunca corrió o revierte
+     siempre, si las reversiones pasan del 5 % o si nunca hubo depósitos con 0 acciones.
+5. **Ver el estado sin pegar nada:** `python -m nexus.secresearch.dashboard` abre la página local con lo mismo que
+   `para_claude.md`, más los programas, los cambios pendientes y los expedientes. Se regenera sola al terminar cada
+   ciclo y cada `validate`.
+6. **Si una falla se confirma como candidato:** `python -m nexus.secresearch.expediente INFORME` arma el expediente con
+   todo lo que el motor ya sabe. Claude ayuda a completar la causa raíz, la prueba de concepto independiente del
+   harness, el impacto y la revisión de auditorías previas; el dueño lo revisa y lo envía por la plataforma oficial.
 
 ## Métricas (lo único que cuenta)
 

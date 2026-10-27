@@ -7,7 +7,7 @@
 1. El repo tiene que pertenecer a un programa que el dueño verificó (limits.repo_in_scope): compilar y
    testear es ejecutar código ajeno en la PC, así que nunca se hace sobre algo fuera del catálogo.
 2. Clona el repo en NEXUS_HOME/work, fijado a un commit (por defecto el último), con sus submódulos.
-3. forge build y forge test --json, con FOUNDRY_FFI=false forzado y topes de tiempo.
+3. forge build y forge test --json -vv, con FOUNDRY_FFI=false forzado y topes de tiempo.
 4. Informe privado en NEXUS_HOME/secresearch/validate: tests pasados, fallados y contraejemplos, más
    una línea por corrida en history.jsonl para medir.
 Todo es local: sin RPC ni forks, sin desplegar ni transmitir nada. La primera corrida de un repo es su
@@ -28,15 +28,17 @@ import time
 from pathlib import Path
 
 from .. import paths
-from . import catalog
+from . import catalog, dashboard
 from .changes import NO_WINDOW, _git
 from .limits import FOUNDRY_ENV, MAX_BUILD_SECONDS, MAX_TEST_SECONDS, repo_in_scope, results_dir
 
 TAIL = 40
+MAX_LOGS = 20
 HARNESS_DIR = Path(__file__).resolve().parent / "harness"
 HARNESS_DEST = Path("test") / "nexus"
 FUZZ_ENV = ("FOUNDRY_FUZZ_RUNS", "FOUNDRY_FUZZ_SEED", "FOUNDRY_FUZZ_MAX_TEST_REJECTS", "FOUNDRY_INVARIANT_RUNS",
-            "FOUNDRY_INVARIANT_DEPTH")
+            "FOUNDRY_INVARIANT_DEPTH",
+            "FOUNDRY_INVARIANT_SHOW_METRICS")   # solo salida: llamadas y reversiones por acción del handler
 
 
 def say(msg):
@@ -105,13 +107,23 @@ def parse(stdout):
 
 
 def _kind(t):
-    """{"type": "Invariant", "runs", "calls", "reverts"} desde el `kind` de forge ({"Invariant": {...}})."""
+    """{"type": "Invariant", "runs", "calls", "reverts", "metrics"} desde el `kind` de forge ({"Invariant": {...}}).
+    `metrics` son las métricas por acción del handler ({"Handler.deposit": {"calls", "reverts", "discards"}}); forge las
+    incluye por defecto (invariant.show_metrics) y dicen qué acciones y macros corrió de verdad la campaña."""
     k = t.get("kind")
     if not isinstance(k, dict) or len(k) != 1:
         return None
     (name, v), = k.items()
     v = v if isinstance(v, dict) else {}
-    return {"type": name, **{x: v[x] for x in ("runs", "calls", "reverts") if x in v}}
+    metrics = v.get("metrics") if isinstance(v.get("metrics"), dict) else {}
+    return {"type": name, **{x: v[x] for x in ("runs", "calls", "reverts") if x in v},
+            **({"metrics": metrics} if metrics else {})}
+
+
+def per_action(metrics, limit=40):
+    """'deposit 120/2 · mint 98/0 · …' (llamadas/reversiones por acción, sin el nombre del contrato)."""
+    return " · ".join(f"{name} {m.get('calls', 0)}/{m.get('reverts', 0)}"
+                      for name, m in dashboard.action_rows(metrics)[:limit])
 
 
 def summarize(results):
@@ -124,8 +136,9 @@ def summarize(results):
 
 
 def activity(results):
-    """Invariantes: corridas, llamadas y reversiones (si casi todo revierte, la prueba pasa en vacío)."""
-    return [{"suite": suite, "test": name, **k}
+    """Invariantes: corridas, llamadas, reversiones (si casi todo revierte, la prueba pasa en vacío) y el log de
+    afterInvariant, también cuando pasan: ahí van las métricas del cazador (cuánto del espacio de ataque se exploró)."""
+    return [{"suite": suite, "test": name, **k, "logs": [str(x) for x in (t.get("decoded_logs") or [])][:MAX_LOGS]}
             for suite, data in (results or {}).items() for name, t in (data.get("test_results") or {}).items()
             if (k := _kind(t)) and k["type"] == "Invariant"]
 
@@ -155,6 +168,10 @@ def report(rec):
                          f"{a.get('calls')} llamadas · {a.get('reverts')} reversiones")
             if a.get("calls") and (a.get("reverts") or 0) * 2 > a["calls"]:
                 lines.append("  - **Más de la mitad de las llamadas revirtieron: puede estar pasando en vacío.**")
+            if a.get("metrics"):
+                lines.append("  - llamadas/reversiones por acción: " + per_action(a["metrics"]))
+            if a.get("logs"):
+                lines.append("  - " + " · ".join(a["logs"]))
         for f in t["failures"][:30]:
             lines += ["", f"### FALLA `{f['suite']}::{f['test']}`", f"Motivo: {f['reason']}"]
             if f["counterexample"]:
@@ -209,7 +226,9 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     if code:
         rec.update(ok=False, tail=(so + se).strip().splitlines()[-TAIL:])
         return _save(out, rec)
-    args = ["test", "--json"] + (["--match-path", match] if match else []) + (
+    # -vv: sin eso, forge vacía los logs del JSON y el informe pierde el log de afterInvariant (verificaciones,
+    # métricas del cazador). Solo cambia la salida; las trazas siguen apagadas (empiezan en -vvv).
+    args = ["test", "--json", "-vv"] + (["--match-path", match] if match else []) + (
         ["--match-contract", contract] if contract else [])
     say(f"compiló en {secs} s · corriendo tests (puede tardar varios minutos)…")
     code, so, se, secs = forge_run(forge, args, d, MAX_TEST_SECONDS, env)
@@ -251,6 +270,10 @@ def main(argv):
     rec = validate(argv[0], ref=opts.get("--ref"), match=opts.get("--match-path"), out=opts.get("--out"),
                    harness=opts.get("--harness"), seed=opts.get("--seed"), fuzz=fuzz)
     print(report(rec))
+    try:
+        print(f"Dashboard: {dashboard.write()}")
+    except Exception as e:                                       # noqa: BLE001 (el informe ya quedó)
+        print(f"dashboard: {type(e).__name__}: {e}")
     return 0 if rec.get("ok") else 1
 
 

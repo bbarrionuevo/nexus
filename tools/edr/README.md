@@ -19,7 +19,15 @@ mkdir -p $CLON/test/nexus && cp ../../local/nexus/secresearch/harness/morpho-org
 node build.js $CLON base.out.json                # Morpho 0.8.19 · MetaMorpho 0.8.21 · harness 0.8.26 (via_ir)
 node run_edr.js $CLON base.out.json 2000 256 500 - 0x2a        # fuzz, invariantes runs×depth, filtro, semilla
 python3 mutate.py $CLON base.out.json            # cada mutación de mutations.json tiene que romper algo
+python3 mutate.py $CLON base.out.json M12 B1     # solo esas; NEXUS_MUT_RUNS="256 64 100" fija la intensidad
 ```
+
+`mutations.json` tiene entradas `[nombre, original, mutado]` (se muta `src/MetaMorpho.sol`) o
+`[nombre, original, mutado, archivo]`. Con un archivo de `lib/morpho-blue/` se recompila Morpho Blue: así se prueba que
+el cazador también ve errores en la dependencia. El resumen marca qué mutaciones detecta el cazador (motivos `H-...`).
+
+Con via_ir, `forge` y `build.js` tardan varios minutos en compilar el harness. Para iterar conviene sacar
+temporalmente del clon `NexusMetaMorphoERC4626.t.sol`, que es independiente, y volver a ponerlo para la corrida final.
 
 Si una invariante falla, `run_edr.js` imprime la secuencia reducida y la guarda en `seq_<Suite>.json`, para
 reproducirla paso a paso. Así se encontró y se corrigió el falso positivo del redondeo de las acciones de
