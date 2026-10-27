@@ -180,6 +180,42 @@ Supuestos del fantasma, que hay que revisar al cambiar de entorno:
 Con via_ir el optimizador puede reutilizar un `block.timestamp` leído antes de `vm.warp`. Por eso el cazador lee la
 hora con `NexusClock`, en otro contexto de llamada.
 
+## 6. Cómo leer el informe
+
+`validate` imprime el informe al terminar y lo guarda en `%LOCALAPPDATA%\nexus\secresearch\validate\`, es decir
+`C:\Users\<usuario>\AppData\Local\nexus\...`. El Explorador oculta `AppData`; se abre con
+`explorer $env:LOCALAPPDATA\nexus\secresearch\validate`. El ciclo programado escribe además `para_claude.md` en
+`%LOCALAPPDATA%\nexus\secresearch\`.
+
+Los contadores salen de la última corrida de cada campaña: forge la repite al final para juntar los logs de
+`afterInvariant`.
+
+| Línea | Qué es | Cuándo preocupa |
+|---|---|---|
+| corridas · llamadas · reversiones | totales de la campaña | reversiones por encima del 5 % |
+| llamadas/reversiones por acción | métricas de forge por función del handler | una acción que revierte casi siempre no explora nada |
+| `verificaciones` | chequeos de precio del handler original | 0: la corrida pasó en vacío |
+| `cazador: leyes evaluadas` | leyes del cazador evaluadas | 0 |
+| `depositos con 0 acciones` y `precio maximo de una accion` | la ventana de redondeo a cero: un depósito menor que el precio de una acción recibe 0 acciones | nunca por sí sola: H-INF-1 exige el redondeo exacto. Dice si la campaña llegó a precios extremos |
+| `mayor perdida de una victima` | lo que pierde la víctima en la macro de inflación | nunca por sí sola: H-INF-3 ya exige a lo sumo una acción más el polvo |
+| `comision devengada` y `comision acunada (valor)` | Σ F y el valor de las acciones de comisión al acuñarse | nunca por sí sola: H-FEE-1 verifica cada acuñación exacta y H-FEE-3 que no supere lo devengado |
+| `perdida por deuda incobrable` y `por remocion forzada` | pérdidas que provocan a propósito `badDebt*` y la remoción de mercados con supply | nunca por sí sola: H-SOLV-5 y H-GOV-3 las verifican exactas |
+| `gobierno con efecto` | acciones de gobierno que cambiaron algo, por tipo | un tipo en 0: esa parte del gobierno no se exploró |
+
+**Activos de 18 decimales.** `DECIMALS_OFFSET` es 0 y hay una sola acción virtual. MetaMorpho documenta que así la
+protección contra la inflación es baja, y recomienda un depósito inicial al crear el vault (`IMetaMorpho.sol`, en
+`DECIMALS_OFFSET`). Por eso, en las suites de 18 decimales, una donación a un vault casi vacío puede llevar el precio
+de una acción a valores enormes. Desde ese estado:
+
+- hay depósitos que reciben 0 acciones, y la víctima puede perder hasta el precio de una acción;
+- la comisión acuñada puede quedar muy por debajo de la devengada, porque cada acumulación redondea las acciones de
+  comisión hacia abajo y puede perder hasta una acción entera.
+
+Es un comportamiento conocido y documentado, no un hallazgo. Lo que se investiga es una ley `H-...` que falle: por
+ejemplo, un atacante que gana con la inflación (H-INF-5) o una víctima que pierde más de una acción (H-INF-3). Con
+6 decimales, `DECIMALS_OFFSET` es 12: inflar el precio cuesta 10^12 veces más, y en la primera corrida con forge la
+ventana quedó en 1 wei.
+
 ## Verificación
 
 En la nube, sin forge: EDR 0.25 con solc-js (Morpho 0.8.19, MetaMorpho 0.8.21 y harness 0.8.26 con via_ir), sobre
@@ -241,7 +277,15 @@ handler original y 3 multi-mercado):
 Las que solo detectan las suites multi-mercado (M8–M11, M13, M14) necesitan topes que se alcancen o gobierno, que el
 handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el modelo autorreferente no puede ver.
 
-**Falta:** la primera corrida con forge en la PC (`validate --harness morpho-org__metamorpho`).
+**Primera corrida con forge en la PC (26-oct, semilla nueva, 256 × 500).** Pasan los 84 tests y el informe muestra
+`verificaciones`, las métricas por acción y las del cazador. Cambios que salieron de esa corrida:
+
+- En la suite multi-mercado, el `reallocate` heredado revertía en el 78 % de sus llamadas: movía entre el mercado y
+  el idle sin mirar los topes, que el gobierno baja seguido. Ahora respeta topes y habilitación y, si esa dirección no
+  admite movimiento, prueba la inversa. La firma no cambia.
+- Llamar a una acción de gobierno no alcanza: un `acceptCap` sin tope pendiente vencido no explora nada. El informe
+  agrega `gobierno con efecto`, por tipo de acción.
+- La guía para leer el informe (sección 6), porque algunas métricas parecen alarmantes y no lo son.
 
 ## Límites y próximos pasos
 
