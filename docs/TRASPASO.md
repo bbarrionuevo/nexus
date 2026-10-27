@@ -137,25 +137,44 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #74 | `NexusVulnerabilityHunter`, la suite multi-mercado, métricas por acción y `-vv` para que el informe muestre el log de `afterInvariant` |
 | #75 | Con la primera corrida de la PC: `reallocate` respeta topes, `gobierno con efecto` y la guía para leer el informe |
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
+| #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
+| este PR | Primera sesión en la PC: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, y el alcance de Vault V2 y de MetaMorpho quedó contrastado con la página de direcciones de Morpho |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el PR #76, `git pull` en `main` y correr
+1. **Dueño:** fusionar este PR, `git pull` en `main` y correr
    `..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho`.
-   En el informe, `colaSuministro` dentro de `gobierno con efecto` tendría que subir. Después abrir el dashboard.
-2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que falla cada 5 minutos porque apunta a un script del
-   trading que ya no existe: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
-3. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
+   El #76 se fusionó después del ciclo de las 03:17 del 27-oct, así que ninguna corrida de la PC lo probó todavía. En
+   el informe, `colaSuministro` dentro de `gobierno con efecto` tendría que subir. El ciclo siguiente tendría que
+   terminar en verde también con la línea base de Euler, que el 27-oct se cayó por un error de nexus (abajo).
+2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
+   deshabilitada y no falla más, pero sigue registrada. La sesión de la PC no la pudo borrar porque el control de
+   permisos de Claude Code bloquea las bajas: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
+3. **Dueño, alcance (R-1, R-9):** el reglamento de Morpho en Cantina remite a la
+   [página de direcciones](https://docs.morpho.org/developers/contracts/addresses/) como fuente de verdad del alcance.
+   Ahí figuran dos cosas que no están en el catálogo. Agregarlas es decisión del dueño, después de leer el reglamento:
+   - **Morpho Midnight** (`morpho-org/midnight`): préstamos a tasa fija, desplegado y en el alcance del programa.
+   - **MetaMorpho V1.1** (`morpho-org/metamorpho-v1.1`, commit `5a0717b`): es la fábrica actual. nexus prueba
+     `morpho-org/metamorpho`, que corresponde a la fábrica vieja (commit `c5e758d`, que también figura): su
+     `MetaMorpho.sol` difiere de `ded84e5` solo en formato y comentarios, así que lo probado vale para esos vaults.
+4. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Alcance contrastado el 27-oct:
+   - En Ethereum están desplegados `VaultV2Factory`, `MorphoVaultV1AdapterFactory`, `MorphoMarketV1AdapterV2Factory`,
+     `MorphoRegistry` y el Blue Public Allocator.
+   - Su código no cambió desde las auditorías: `VaultV2.sol` desde el tag `2025-09-15`, los adapters desde
+     `2025-12-04` y el allocator desde `2026-08-13`, salvo imports y comentarios. Lo que se pruebe en `main` vale
+     para lo desplegado.
+   - El `MidnightAdapter` del repo y sus ratifiers no figuran desplegados en ninguna red: **fuera de alcance** hasta
+     que aparezcan en la página.
+   - Sigue la etapa E (las 15 auditorías de `audits/`) y después el harness, con el modelo de CAZADOR_METAMORPHO.md
+     ("Límites y próximos pasos"). La línea base es cara en la PC: compila en ~16 min y los tests tardan ~35.
+5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
    Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
    2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.
-4. **Siguiente objetivo:** `morpho-org/vault-v2`, que figura en el programa Morpho de la tabla de
-   INVESTIGACION_SEGURIDAD.md. El modelo ya está derivado en CAZADOR_METAMORPHO.md ("Límites y próximos pasos").
-   **Antes, confirmar con el dueño** que esté en su catálogo con `in_scope` y `verified_by_owner` en `true`: el motor
-   no corre nada fuera del catálogo y ningún agente amplía el alcance (R-9). Después vienen Yearn V3, que es Vyper
-   0.3.10 y necesita `vyper` en la PC, y Euler v2.
-5. **Mejoras del cazador:**
+6. **Yearn V3 y Euler v2:** `yearn-vaults-v3` no compiló dentro del tope de 2400 s del 26-oct; hay que ver si falta
+   `vyper` 0.3.10 en el venv. Después viene Euler v2.
+7. **Mejoras del cazador:**
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;
    - montos escalados por decimales: hoy el fuzzer usa hasta 1e28 unidades también con 6 decimales;
@@ -169,6 +188,12 @@ En orden de prioridad:
   `secresearch.yaml` suelto en la carpeta del repo; quedó en un `git stash` del dueño. No se usa, porque nexus lee el
   de `%LOCALAPPDATA%\nexus`, y no conviene devolverlo a la carpeta del repo: es público.
 - **Ramas viejas del trading:** `pc-status`, `pc-sesion` y `data`. No se usan; borrarlas es decisión del dueño.
+- **Tests en la PC:** `python -m pytest -q` corrido directo en Windows necesita `$env:PYTHONUTF8 = '1'`. Sin eso,
+  tres tests fallan al leer archivos con acentos en la codificación de Windows. `devcheck` ya lo define.
+- **Errores de nexus que no son fallas del objetivo:** el 27-oct la línea base de `euler-vault-kit` pasó entera
+  (483 pasan, 3 omitidos), pero el informe se cayó con un `TypeError`. La suite ESR llama `transfer`, `approve` y
+  `mint` del token y del vault; al quitar el nombre del contrato, ordenar los pares repetidos comparaba diccionarios.
+  Ahora el nombre repetido queda como `Contrato.función`.
 - **Si aparece una falla en la PC:**
   1. Reproducirla con la semilla del informe.
   2. Clasificarla. Si es un error del harness, se corrige. Si es un candidato, se aísla en un test mínimo, independiente

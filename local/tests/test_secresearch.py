@@ -155,6 +155,16 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     assert "-p" not in plan["tests"][0]                                                # --lf necesita el caché
 
 
+def test_circuito_local_usa_el_ruff_del_venv_sin_activarlo(tmp_path, monkeypatch):
+    from nexus import devcheck
+    exe = tmp_path / ("ruff.exe" if os.name == "nt" else "ruff")                      # junto al python del venv
+    exe.write_text("")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", "")
+    lint = {name: cmd for name, cmd, _ in devcheck.steps(str(tmp_path / "python"))}["lint"]
+    assert lint and Path(lint[0]).parent == tmp_path and lint[1:] == ["check", "--line-length", "120", "nexus", "tests"]
+
+
 FAKE_FORGE = r'''
 import json, os, sys
 log = os.environ["FAKE_LOG"]
