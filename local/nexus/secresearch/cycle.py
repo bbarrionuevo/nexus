@@ -163,6 +163,28 @@ def report(rep):
     return "\n".join(lines) + "\n"
 
 
+def coverage(out, runs):
+    """Última corrida de cada harness: actividad de cada invariante y su log de afterInvariant (métricas del cazador:
+    leyes evaluadas, depósitos con 0 acciones, ventana de redondeo, polvo, comisiones). Sirve para decidir el próximo
+    cambio aunque no haya fallas."""
+    latest = {}
+    for h in runs:
+        latest[h["harness"]] = h
+    lines = ["", "## Cobertura de la última corrida de cada harness", ""]
+    for name, h in sorted(latest.items()):
+        rec = Path(out) / "validate" / f"{h.get('report')}.json" if h.get("report") else None
+        if not (rec and rec.exists()):
+            continue
+        acts = (json.loads(rec.read_text(encoding="utf-8")).get("test") or {}).get("activity") or []
+        lines.append(f"### `{name}` · semilla {h.get('seed')} · {(h.get('sha') or '?')[:10]}")
+        for a in acts:
+            lines.append(f"- `{a['suite'].split(':')[-1]}::{a['test']}`: {a.get('runs')} corridas · {a.get('calls')} "
+                         f"llamadas · {a.get('reverts')} reversiones")
+            if a.get("logs"):
+                lines.append("  - " + " · ".join(a["logs"][:20]))
+    return lines
+
+
 def digest(out, last_cycles=10):
     """Lo acumulado en la PC, para pegarle a Claude al volver: líneas base, corridas de harness y fallas distintas."""
     out = Path(out)
@@ -193,6 +215,7 @@ def digest(out, last_cycles=10):
     for (name, sha), a in seen.items():
         lines.append(f"- `{name}` @ {(sha or '?')[:10]}: {a['runs']} corridas, {a['fail_runs']} con fallas · "
                      f"semillas {', '.join(str(s) for s in a['seeds'][-5:])}")
+    lines += coverage(out, runs)
     fails = {}
     for h in hist:
         rec = out / "validate" / f"{h.get('report')}.json" if h.get("report") else None

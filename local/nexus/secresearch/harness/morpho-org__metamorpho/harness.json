@@ -7,5 +7,5 @@
     "FOUNDRY_INVARIANT_RUNS": "256",
     "FOUNDRY_INVARIANT_DEPTH": "500"
   },
-  "verified": "26-oct-2026 en la nube con solc-js + EDR (sin forge): 81/81 pasan en ded84e5 con 4 semillas y atrapa 7 de 7 mutaciones de referencia de MetaMorpho"
+  "verified": "27-oct-2026 en la nube con solc-js + EDR (sin forge), MetaMorpho ded84e5: los 6 invariantes (3 del handler original con el cazador y 3 multi-mercado) pasan 256x500 con 2 semillas (1,5 M de llamadas, sin falsos positivos) y la version final 64x200 con 2 semillas; mutaciones en docs/CAZADOR_METAMORPHO.md"
 }

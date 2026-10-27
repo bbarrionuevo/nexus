@@ -13,15 +13,18 @@ pragma solidity ^0.8.0;
 //      _exactPrice) y además convertToAssets nunca puede valer menos que ese precio.
 //   4. totalSupply = suma de saldos; lo que el vault promete canjear <= totalAssets; el vault no retiene tokens.
 // Las variantes son las mismas que en NexusMetaMorphoERC4626.t.sol.
+//
+// Además cada acción pasa por NexusVulnerabilityHunter (modificador `hunted`): contabilidad fantasma independiente de
+// los view del vault y leyes exactas de redondeo, comisiones y solvencia (ver ese archivo). La API del handler no cambia.
 
 import {Test} from "../../lib/forge-std/src/Test.sol";
 import {Math} from "../../lib/openzeppelin-contracts/contracts/utils/math/Math.sol";
 import {IMorpho, MarketParams} from "../../lib/morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "../../lib/morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {MarketAllocation} from "../../src/interfaces/IMetaMorpho.sol";
-import {NexusMetaMorphoBase} from "./NexusMetaMorphoBase.sol";
+import {NexusVulnerabilityHunter} from "./NexusVulnerabilityHunter.sol";
 
-contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
+contract NexusMetaMorphoHandler is NexusVulnerabilityHunter {
     using MorphoBalancesLib for IMorpho;
 
     uint256 internal constant N_ACTORS = 3;
@@ -46,11 +49,28 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
             CHEATS.prank(actors[i]);
             loanToken.approve(address(vault), type(uint256).max);
         }
+        _hunterInit(_hunterHolders(), _hunterMarkets());
+    }
+
+    /// @dev Tenedores que vigila el cazador: los actores y el receptor de comisiones.
+    function _hunterHolders() internal view returns (address[] memory h) {
+        h = new address[](N_ACTORS + 1);
+        for (uint256 i; i < N_ACTORS; ++i) {
+            h[i] = actors[i];
+        }
+        h[N_ACTORS] = FEE_RECIPIENT;
+    }
+
+    /// @dev Mercados del entorno; `market` es el índice 0 en el cazador.
+    function _hunterMarkets() internal view virtual returns (MarketParams[] memory m) {
+        m = new MarketParams[](2);
+        m[0] = market;
+        m[1] = idle;
     }
 
     /* ACCIONES DE USUARIOS */
 
-    function deposit(uint256 actorSeed, uint256 assets) external {
+    function deposit(uint256 actorSeed, uint256 assets) external hunted(OP_DEPOSIT, _actor(actorSeed), address(0), 0) {
         address a = _actor(actorSeed);
         uint256 max = vault.maxDeposit(a);
         assets = _clamp(assets, 0, _min(max, MAX_ASSETS));
@@ -66,7 +86,7 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "deposit");
     }
 
-    function mint(uint256 actorSeed, uint256 shares) external {
+    function mint(uint256 actorSeed, uint256 shares) external hunted(OP_MINT, _actor(actorSeed), address(0), 0) {
         address a = _actor(actorSeed);
         uint256 max = vault.maxMint(a);
         shares = _clamp(shares, 0, _min(max, vault.previewDeposit(MAX_ASSETS)));
@@ -82,7 +102,7 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "mint");
     }
 
-    function withdraw(uint256 actorSeed, uint256 assets) external {
+    function withdraw(uint256 actorSeed, uint256 assets) external hunted(OP_WITHDRAW, _actor(actorSeed), address(0), 0) {
         address a = _actor(actorSeed);
         uint256 max = vault.maxWithdraw(a);
         assets = _clamp(assets, 0, max);
@@ -97,7 +117,7 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "withdraw");
     }
 
-    function redeem(uint256 actorSeed, uint256 shares) external {
+    function redeem(uint256 actorSeed, uint256 shares) external hunted(OP_REDEEM, _actor(actorSeed), address(0), 0) {
         address a = _actor(actorSeed);
         uint256 max = vault.maxRedeem(a);
         shares = _clamp(shares, 0, max);
@@ -112,7 +132,10 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "redeem");
     }
 
-    function transfer(uint256 fromSeed, uint256 toSeed, uint256 shares) external {
+    function transfer(uint256 fromSeed, uint256 toSeed, uint256 shares)
+        external
+        hunted(OP_TRANSFER, _actor(fromSeed), _actor(toSeed), 0)
+    {
         address from = _actor(fromSeed);
         shares = _clamp(shares, 0, vault.balanceOf(from));
         Snap memory s0 = _snap();
@@ -123,13 +146,13 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
 
     /* MERCADO Y TIEMPO */
 
-    function donate(uint256 assets) external {
+    function donate(uint256 assets) external hunted(OP_DONATE, address(0), address(0), 0) {
         Snap memory s0 = _snap();
         _donate(_clamp(assets, 0, MAX_ASSETS));
         _checkPrice(s0, "donate");
     }
 
-    function borrow(uint256 assets) external {
+    function borrow(uint256 assets) external hunted(OP_BORROW, address(0), address(0), 0) {
         assets = _clamp(assets, 0, _liquidity() / 2); // deja liquidez para los retiros
         if (assets == 0) return;
         Snap memory s0 = _snap();
@@ -137,7 +160,7 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "borrow");
     }
 
-    function repay(uint256 assets) external {
+    function repay(uint256 assets) external hunted(OP_REPAY, address(0), address(0), 0) {
         assets = _clamp(assets, 0, morpho.expectedBorrowAssets(market, BORROWER));
         if (assets == 0) return;
         loanToken.mint(BORROWER, assets);
@@ -153,14 +176,14 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         _checkPrice(s0, "warp");
     }
 
-    function accrue() external {
+    function accrue() external hunted(OP_ACCRUE, address(0), address(0), 0) {
         Snap memory s0 = _snap();
         morpho.accrueInterest(market);
         _checkPrice(s0, "accrueInterest");
     }
 
     /// @dev Pérdida acotada al 10 % de la liquidez para que el vault no quede siempre en cero. El precio PUEDE bajar.
-    function badDebt(uint256 assets) external {
+    function badDebt(uint256 assets) external hunted(OP_BAD_DEBT, address(0), address(0), 0) {
         assets = _clamp(assets, 0, _liquidity() / 10);
         if (assets == 0) return;
         _badDebt(assets);
@@ -168,7 +191,7 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
     }
 
     /// @dev El allocator mueve `assets` entre el mercado con préstamos y el idle (reallocate con el resto en max).
-    function reallocate(bool toIdle, uint256 assets) external {
+    function reallocate(bool toIdle, uint256 assets) external hunted(OP_REALLOCATE, address(0), address(0), 0) {
         (MarketParams memory from, MarketParams memory to) = toIdle ? (market, idle) : (idle, market);
         uint256 supplied = morpho.expectedSupplyAssets(from, address(vault));
         assets = _clamp(assets, 0, toIdle ? _min(supplied, _liquidity()) : supplied);
@@ -240,6 +263,11 @@ contract NexusMetaMorphoHandler is NexusMetaMorphoBase {
         ++checks;
     }
 
+    /// @dev Las violaciones del cazador usan el mismo registro (check() devuelve la primera).
+    function _hunterFlag(string memory what, uint256 x, uint256 y) internal override {
+        _flag(what, x, y);
+    }
+
     function _flag(string memory what, uint256 x, uint256 y) internal {
         if (violations++ == 0) {
             firstViolation = string(abi.encodePacked(what, ": ", _str(x), ", ", _str(y)));
@@ -286,6 +314,14 @@ contract NexusMetaMorphoInvariantTest is Test {
     function afterInvariant() public {
         emit log_named_uint("verificaciones", handler.checks());
         emit log_named_uint("perdidas", handler.losses());
+        (uint256 laws, uint256 zeros, uint256 window, uint256 victimLoss, uint256 dust, uint256 budget,,,,,) =
+            handler.hunterStats();
+        emit log_named_uint("cazador: leyes evaluadas", laws);
+        emit log_named_uint("cazador: depositos con 0 acciones", zeros);
+        emit log_named_uint("cazador: precio maximo de una accion (ventana de redondeo a cero)", window);
+        emit log_named_uint("cazador: mayor perdida de una victima", victimLoss);
+        emit log_named_uint("cazador: polvo de Morpho absorbido (wei)", dust);
+        emit log_named_uint("cazador: cota del polvo (wei)", budget);
     }
 }
 

@@ -17,8 +17,8 @@ Reglas: [docs/REGLAS.md](docs/REGLAS.md). Plan, estado y métricas: [docs/INVEST
 | B. Triaje | Puntaje determinista sin IA, con señales de contabilidad de vaults ERC-4626 | Funciona |
 | C. Método de invariantes | Propiedades P0–P6 de un vault ERC-4626, verificadas contra implementaciones de referencia | Funciona |
 | D. Validación local con Foundry | `forge build` + `forge test` sobre repos de programas verificados, fijado a un commit, FFI apagado | Funciona (MetaMorpho: 148 pasan · 0 fallan) |
-| D'. Propiedades del vault en Foundry | Suite ERC-4626 de a16z + invariantes con handler para MetaMorpho (`validate --harness`) | Verificado en la nube sin forge (81/81, 7 de 7 mutaciones); falta la primera corrida en la PC |
-| Ciclo desatendido | Una vez por día: A–C, harness con semilla nueva y líneas base; resumen para Claude | Lo registra el dueño (`tools/windows/registrar_ciclo.ps1`) |
+| D'. Propiedades del vault en Foundry | Suite ERC-4626 de a16z + invariantes con handler para MetaMorpho (`validate --harness`), con `NexusVulnerabilityHunter`: contabilidad fantasma y leyes exactas en cada acción, más un entorno multi-mercado con gobierno ([docs](docs/CAZADOR_METAMORPHO.md)) | Verificado en la nube sin forge (sin falsos positivos en 1,5 M de llamadas); falta la primera corrida en la PC |
+| Ciclo desatendido | Una vez por día: A–C, harness con semilla nueva y líneas base; resumen para Claude con fallas y métricas de cobertura del cazador | Lo registra el dueño (`tools/windows/registrar_ciclo.ps1`) |
 
 ## Estructura
 

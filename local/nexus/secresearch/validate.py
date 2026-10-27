@@ -33,6 +33,7 @@ from .changes import NO_WINDOW, _git
 from .limits import FOUNDRY_ENV, MAX_BUILD_SECONDS, MAX_TEST_SECONDS, repo_in_scope, results_dir
 
 TAIL = 40
+MAX_LOGS = 20
 HARNESS_DIR = Path(__file__).resolve().parent / "harness"
 HARNESS_DEST = Path("test") / "nexus"
 FUZZ_ENV = ("FOUNDRY_FUZZ_RUNS", "FOUNDRY_FUZZ_SEED", "FOUNDRY_FUZZ_MAX_TEST_REJECTS", "FOUNDRY_INVARIANT_RUNS",
@@ -124,8 +125,9 @@ def summarize(results):
 
 
 def activity(results):
-    """Invariantes: corridas, llamadas y reversiones (si casi todo revierte, la prueba pasa en vacío)."""
-    return [{"suite": suite, "test": name, **k}
+    """Invariantes: corridas, llamadas, reversiones (si casi todo revierte, la prueba pasa en vacío) y el log de
+    afterInvariant, también cuando pasan: ahí van las métricas del cazador (cuánto del espacio de ataque se exploró)."""
+    return [{"suite": suite, "test": name, **k, "logs": [str(x) for x in (t.get("decoded_logs") or [])][:MAX_LOGS]}
             for suite, data in (results or {}).items() for name, t in (data.get("test_results") or {}).items()
             if (k := _kind(t)) and k["type"] == "Invariant"]
 
@@ -155,6 +157,8 @@ def report(rec):
                          f"{a.get('calls')} llamadas · {a.get('reverts')} reversiones")
             if a.get("calls") and (a.get("reverts") or 0) * 2 > a["calls"]:
                 lines.append("  - **Más de la mitad de las llamadas revirtieron: puede estar pasando en vacío.**")
+            if a.get("logs"):
+                lines.append("  - " + " · ".join(a["logs"]))
         for f in t["failures"][:30]:
             lines += ["", f"### FALLA `{f['suite']}::{f['test']}`", f"Motivo: {f['reason']}"]
             if f["counterexample"]:
