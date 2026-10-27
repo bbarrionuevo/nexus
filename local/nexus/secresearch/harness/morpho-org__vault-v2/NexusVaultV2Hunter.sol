@@ -5,11 +5,14 @@ pragma solidity 0.8.28;
 //
 // Contabilidad fantasma y leyes exactas evaluadas tras cada acción del handler, al estilo del cazador de MetaMorpho
 // (NexusVulnerabilityHunter.sol) pero con la contabilidad de V2: devengamiento con tope de tasa, dos comisiones,
-// realización de pérdidas y topes. El modelo formal y las demostraciones están en docs/CAZADOR_VAULT_V2.md (leyes V-...).
+// realización de pérdidas, forceDeallocate y topes. El modelo formal y las demostraciones están en
+// docs/CAZADOR_VAULT_V2.md (leyes V-...).
 //
 // El fantasma NO usa los métodos de vista del vault (totalAssets, previewX, accrueInterestView): esos son lo que se
 // audita. Lee solo estado crudo (los getters de variables públicas: _totalAssets, totalSupply, lastUpdate, maxRate,
-// las comisiones y balanceOf) y los activos reales desde fuera del vault (el token y el adapter).
+// las comisiones, las allocations, firstTotalAssets y balanceOf) y los activos reales desde fuera del vault (el token y
+// el adapter). forge 1.8.6 corre con isolate = true: cada llamada del handler al vault es una transacción aparte, así
+// que lo que depende de una misma transacción lo hace NexusV2Macro.
 //
 // Ninguna ley revierte: las invariantes corren con fail_on_revert = false, así que si el cazador revirtiera, la acción
 // entera se contaría como una reversión más y la violación quedaría oculta.
@@ -139,6 +142,51 @@ contract NexusAdapterMock is IAdapter {
     }
 }
 
+/// @notice Varias operaciones del vault en UNA transacción. forge 1.8.6 corre con isolate = true: cada llamada que el
+/// handler hace al vault es una transacción aparte y la memoria transitoria (firstTotalAssets) se borra entre ellas. Las
+/// llamadas que hace este contrato dentro de la suya comparten la transacción, y acá se lee firstTotalAssets. Es
+/// allocator del vault y los actores le dan allowance.
+contract NexusV2Macro {
+    VaultV2 internal immutable vault;
+    address internal immutable adapter;
+
+    constructor(VaultV2 _vault, address _asset, address _adapter) {
+        vault = _vault;
+        adapter = _adapter;
+        IERC20(_asset).approve(address(_vault), type(uint256).max);
+    }
+
+    /// @dev allocate de `a` y lectura de firstTotalAssets en la misma transacción (0 si el allocate revirtió).
+    function allocateAndRead(uint256 a, bytes memory data) external returns (bool ok, uint256 ft) {
+        try vault.allocate(adapter, data, a) {
+            ok = true;
+        } catch {}
+        ft = vault.firstTotalAssets();
+    }
+
+    /// @dev deposit de `x` (los activos los pone este contrato) a nombre de `who` y allocate de `a`, en la misma
+    /// transacción. Devuelve si el allocate pasó y firstTotalAssets después de cada paso.
+    function depositThenAllocate(address who, uint256 x, uint256 a, bytes memory data)
+        external
+        returns (bool ok, uint256 ftDeposit, uint256 ftAllocate)
+    {
+        vault.deposit(x, who);
+        ftDeposit = vault.firstTotalAssets();
+        try vault.allocate(adapter, data, a) {
+            ok = true;
+        } catch {}
+        ftAllocate = vault.firstTotalAssets();
+    }
+
+    /// @dev forceDeallocate de `a` a nombre de `o` y retiro de `w` para `o`, en la misma transacción. Devuelve
+    /// firstTotalAssets tras forzar.
+    function forceThenWithdraw(address o, uint256 a, uint256 w, bytes memory data) external returns (uint256 ft) {
+        vault.forceDeallocate(adapter, data, a, o);
+        ft = vault.firstTotalAssets();
+        if (w != 0) vault.withdraw(w, o, o);
+    }
+}
+
 /// @notice Base del harness de Vault V2: despliega el vault con un NexusAdapterMock, roles, topes y la comisión elegida.
 abstract contract NexusVaultV2Base is Test {
     uint256 internal constant WAD = 1e18;
@@ -160,6 +208,7 @@ abstract contract NexusVaultV2Base is Test {
     VaultV2 internal vault;
     ERC20Mock internal token;
     NexusAdapterMock internal adapter;
+    NexusV2Macro internal batch;
     bytes internal idData0 = "id-0";
     bytes internal idData1 = "id-1";
 
@@ -169,7 +218,7 @@ abstract contract NexusVaultV2Base is Test {
     string internal firstViolation;
     uint256 internal checks;
 
-    constructor(uint256 fee, uint256 mgmtFee, uint8 assetDecimals) {
+    constructor(uint256 fee, uint256 mgmtFee, uint8 assetDecimals, uint256 penalty) {
         token = new ERC20Mock(assetDecimals);
         vault = VaultV2(new VaultV2Factory().createVaultV2(OWNER, address(token), bytes32(0)));
 
@@ -185,6 +234,9 @@ abstract contract NexusVaultV2Base is Test {
         _curated(abi.encodeCall(IVaultV2.increaseAbsoluteCap, (idData1, ABS_CAP)));
         _curated(abi.encodeCall(IVaultV2.increaseRelativeCap, (idData0, REL_CAP_0)));
         _curated(abi.encodeCall(IVaultV2.increaseRelativeCap, (idData1, WAD)));
+        _curated(abi.encodeCall(IVaultV2.setForceDeallocatePenalty, (address(adapter), penalty)));
+        batch = new NexusV2Macro(vault, address(token), address(adapter));
+        _curated(abi.encodeCall(IVaultV2.setIsAllocator, (address(batch), true)));
 
         vm.prank(ALLOCATOR);
         vault.setMaxRate(MAX_MAX_RATE / 2);
@@ -200,6 +252,8 @@ abstract contract NexusVaultV2Base is Test {
 
         for (uint256 i; i < 4; ++i) {
             actors.push(address(uint160(uint256(keccak256(abi.encode("nexus.v2.actor", i))))));
+            vm.prank(actors[i]);
+            vault.approve(address(batch), type(uint256).max);
         }
     }
 
@@ -244,6 +298,7 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint8 internal constant OP_TRANSFER = 6; // no devenga
     uint8 internal constant OP_DEALLOC = 7; // no devenga
     uint8 internal constant OP_NONE = 8;
+    uint8 internal constant OP_STILL = 9; // no devenga ni mueve nada: intentos que revirtieron y cambios de topes
 
     // Leyes (bit de lawMask). Se informan todas las que fallan, no solo la primera: así cada mutación de referencia
     // muestra qué leyes la ven.
@@ -255,7 +310,9 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint8 internal constant L_LOSS2 = 5; // V-LOSS-2
     uint8 internal constant L_LEDGER = 6; // V-LEDGER
     uint8 internal constant L_SOLV = 7; // V-SOLV-1
-    uint8 internal constant N_LAWS = 8;
+    uint8 internal constant L_FD = 8; // V-FD-1
+    uint8 internal constant L_CAP = 9; // V-CAP-1
+    uint8 internal constant N_LAWS = 10;
 
     uint256 internal constant NONE = 6; // _idx de una cuenta que no se sigue
 
@@ -268,6 +325,12 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         uint256 mr; // maxRate
         uint256 fp; // performanceFee
         uint256 fg; // managementFee
+        uint256 ft; // firstTotalAssets (transient): 0 al empezar la transacción, luego el primer total devengado no nulo
+        uint256 held; // saldo del adapter (su realAssets)
+        uint256 pos; // posición que informó el adapter (Σ changes)
+        uint256 alloc0; // allocation de id-0
+        uint256 alloc1; // allocation de id-1
+        uint256 pen; // forceDeallocatePenalty del adapter
         uint256[6] bal; // actors[0..3], PERF, MGMT
     }
 
@@ -285,6 +348,12 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint256 internal hAllocs;
     uint256 internal hDeallocs;
     uint256 internal hTransfers;
+    uint256 internal hForces; // forceDeallocate con monto
+    uint256 internal hForceExits; // salidas en la misma transacción tras forzar
+    uint256 internal hCapRejects; // allocate que los topes rechazaron, como predijo el modelo
+    uint256 internal hCapEdges; // allocate aceptados justo en el tope efectivo
+    uint256 internal hCapChanges; // cambios de topes
+    uint256 internal hSameTx; // depósito y allocate en la misma transacción
 
     function _hunterInit() internal {
         hClock = new NexusV2Clock();
@@ -304,6 +373,12 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         s.mr = vault.maxRate();
         s.fp = vault.performanceFee();
         s.fg = vault.managementFee();
+        s.ft = vault.firstTotalAssets();
+        s.held = adapter.realAssets();
+        s.pos = adapter.position();
+        s.alloc0 = vault.allocation(keccak256(idData0));
+        s.alloc1 = vault.allocation(keccak256(idData1));
+        s.pen = vault.forceDeallocatePenalty(address(adapter));
         for (uint256 i; i < 4; ++i) {
             s.bal[i] = vault.balanceOf(actors[i]);
         }
@@ -314,6 +389,7 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     /// @dev Comisiones en activos sobre un _totalAssets devengado A (como accrueInterestView): F^p sobre el interés
     /// A ⊖ _TA, F^g sobre A·Δt. Sin gates en el harness, los receptores siempre pueden recibir acciones.
     function _feeAssets(Snap memory p, uint256 A) internal pure returns (uint256 fpA, uint256 fgA) {
+        if (p.ft != 0) return (0, 0); // la transacción ya devengó: no hay comisiones nuevas
         uint256 elapsed = p.ts - p.lu;
         uint256 interest = NexusV2Math.zeroFloorSub(A, p.TA);
         fpA = (interest > 0 && p.fp > 0) ? NexusV2Math.mulDivDown(interest, p.fp, WAD) : 0;
@@ -321,8 +397,9 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     }
 
     /// @dev Devengamiento esperado (replica accrueInterestView): newTA, σ^p, σ^g. Exacto con la misma semántica de
-    /// redondeo (floor) del vault.
+    /// redondeo (floor) del vault. Si la transacción ya devengó (firstTotalAssets ≠ 0), no devenga de nuevo.
     function _expectAccrual(Snap memory p) internal view returns (uint256 newTA, uint256 sp, uint256 sg) {
+        if (p.ft != 0) return (p.TA, 0, 0);
         uint256 maxTA = p.TA + NexusV2Math.mulDivDown(p.TA * (p.ts - p.lu), p.mr, WAD);
         newTA = NexusV2Math.min(p.R, maxTA);
         (uint256 fpA, uint256 fgA) = _feeAssets(p, newTA);
@@ -343,16 +420,19 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     function _hEnd(uint8 op, address who, address to, Snap memory pre) internal {
         Snap memory post = _snap();
         if (op == OP_NONE) return;
-        if (op == OP_TRANSFER || op == OP_DEALLOC) _lawsNoAccrual(op, who, to, pre, post);
+        if (op == OP_TRANSFER || op == OP_DEALLOC || op == OP_STILL) _lawsNoAccrual(op, who, to, pre, post);
         else _lawsAccruing(op, who, pre, post);
     }
 
-    /// @dev transfer y deallocate no devengan: TA, T y R no cambian (deallocate mueve activos del adapter a lo ocioso);
-    /// una transferencia mueve exactamente lo que sale del emisor al receptor.
+    /// @dev transfer, deallocate, los cambios de topes y los intentos que revirtieron no devengan: TA, T y R no cambian
+    /// (deallocate mueve activos del adapter a lo ocioso), ni firstTotalAssets; una transferencia mueve exactamente lo que
+    /// sale del emisor al receptor.
     function _lawsNoAccrual(uint8 op, address who, address to, Snap memory pre, Snap memory post) internal {
         _ok(post.TA == pre.TA, L_TA, "una operacion sin devengamiento cambio _totalAssets (antes, despues)", pre.TA, post.TA);
         _ok(post.T == pre.T, L_LEDGER, "una operacion sin devengamiento cambio totalSupply (antes, despues)", pre.T, post.T);
         _ok(post.R == pre.R, L_SOLV, "una operacion sin devengamiento cambio los activos reales (antes, despues)", pre.R, post.R);
+        _ok(post.ft == pre.ft, L_CAP, "una operacion sin devengamiento cambio firstTotalAssets (antes, despues)", pre.ft, post.ft);
+        _lawAllocation(post);
         if (op == OP_TRANSFER && who != to) {
             uint256 sent = NexusV2Math.zeroFloorSub(pre.bal[_idx(who)], post.bal[_idx(who)]);
             uint256 got = NexusV2Math.zeroFloorSub(post.bal[_idx(to)], pre.bal[_idx(to)]);
@@ -366,7 +446,8 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     /// @dev deposit/mint/withdraw/redeem y las acciones que solo devengan. El estado observado se descompone en el
     /// devengamiento (A = _totalAssets y S = totalSupply justo después, con las comisiones ya acuñadas) y la acción.
     function _lawsAccruing(uint8 op, address who, Snap memory pre, Snap memory post) internal {
-        bool loss = pre.R < pre.TA; // premisa de V-LOSS: pérdida sin realizar al empezar la transacción
+        // premisa de V-LOSS: pérdida sin realizar y la transacción todavía sin devengar (después, _totalAssets queda fijo)
+        bool loss = pre.ft == 0 && pre.R < pre.TA;
         bool enters = op == OP_DEPOSIT || op == OP_MINT;
         bool exits = op == OP_WITHDRAW || op == OP_REDEEM;
         uint256 inA = NexusV2Math.zeroFloorSub(post.R, pre.R); // deposit/mint: lo ocioso sube
@@ -399,8 +480,131 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         _ok(post.T == expT, L_LEDGER, "totalSupply distinto del esperado (esperado, real)", expT, post.T);
         _lawPriceOp(A, S, post);
         _lawBystanders(pre, post, who, address(0), loss);
+        _lawAllocation(post);
         _lawSolvency(post);
         ++checks;
+    }
+
+    /// @dev V-FD-1 (forceDeallocate de `a` activos por `c` a nombre de `o`, con penalidad p): desasigna sin devengar,
+    /// devenga y cobra la penalidad pA = ⌈a·p/W⌉ como un withdraw hacia el propio vault. Entonces:
+    ///   R no cambia; _totalAssets = A − pA (A: lo devengado, del modelo: la desasignación no cambia R);
+    ///   a `o` se le queman exactamente ⌈pA·(S+v)/(A+1)⌉ acciones (S: totalSupply con las comisiones) y, si c ≠ o, la
+    ///   allowance de c baja lo mismo; ningún tercero cambia; una pérdida pendiente se realiza antes de cobrar (V-LOSS-1).
+    /// Demostración en docs/CAZADOR_VAULT_V2.md, §4.
+    function _lawsForce(address c, address o, Snap memory pre, Snap memory post, uint256 alwPre, uint256 alwPost)
+        internal
+    {
+        bool loss = pre.ft == 0 && pre.R < pre.TA;
+        (uint256 newTA, uint256 sp, uint256 sg) = _expectAccrual(pre);
+        uint256 pA = NexusV2Math.mulDivUp(NexusV2Math.zeroFloorSub(pre.held, post.held), pre.pen, WAD);
+        uint256 sP = NexusV2Math.mulDivUp(pA, pre.T + sp + sg + vShares, newTA + 1);
+        uint256 burned = _userBurned(o, pre, post);
+        uint256 gotP = NexusV2Math.zeroFloorSub(post.bal[4], pre.bal[4]);
+        uint256 gotG = NexusV2Math.zeroFloorSub(post.bal[5], pre.bal[5]);
+
+        _ok(post.R == pre.R, L_FD, "la penalidad salio del vault (reales antes, despues)", pre.R, post.R);
+        _ok(post.TA + pA == newTA, L_FD, "_totalAssets no quedo en lo devengado menos la penalidad (esperado, real)", NexusV2Math.zeroFloorSub(newTA, pA), post.TA);
+        _ok(burned == sP, L_FD, "acciones de la penalidad distintas del techo (esperadas, quemadas)", sP, burned);
+        if (c != o && alwPre != type(uint256).max) {
+            _ok(alwPost + burned == alwPre, L_FD, "la allowance no bajo lo que se quemo (antes, despues)", alwPre, alwPost);
+        }
+        if (loss) _lawLoss(pre, post.TA + pA, gotP);
+        _ok(post.lu == pre.ts, L_TA, "lastUpdate no quedo en la hora del devengamiento (hora, lastUpdate)", pre.ts, post.lu);
+        _ok(gotP == sp, L_FEE, "comision de performance distinta del modelo (modelo, real)", sp, gotP);
+        _ok(gotG == sg, L_FEE, "comision de gestion distinta del modelo (modelo, real)", sg, gotG);
+        uint256 expT = NexusV2Math.zeroFloorSub(pre.T + sp + sg, sP);
+        _ok(post.T == expT, L_LEDGER, "totalSupply distinto del esperado (esperado, real)", expT, post.T);
+        _lawPriceAccrual(pre, post.TA + pA, post.T + burned, loss);
+        _lawPriceOp(post.TA + pA, post.T + burned, post);
+        _lawBystanders(pre, post, o, address(0), loss);
+        _lawAllocation(post);
+        _lawSolvency(post);
+        ++checks;
+    }
+
+    /// @dev V-FD-1 en una sola transacción (NexusV2Macro.forceThenWithdraw): forzar `a` a nombre de `o` y retirar `w`
+    /// para `o`. El retiro no vuelve a devengar: se paga al precio que dejó forceDeallocate, con la pérdida realizada y la
+    /// penalidad cobrada. Desde el estado inicial, con pA = ⌈a·p/W⌉, sP = ⌈pA(S+v)/(A+1)⌉, A₁ = A − pA, S₁ = S − sP y
+    /// sW = ⌈w(S₁+v)/(A₁+1)⌉: R baja w, _totalAssets = A₁ − w, a `o` se le queman sP + sW, totalSupply = S₁ − sW, y
+    /// firstTotalAssets (leído dentro de la transacción) es A.
+    function _lawsForceExit(address o, Snap memory pre, Snap memory post, uint256 ftObs) internal {
+        bool loss = pre.ft == 0 && pre.R < pre.TA;
+        (uint256 A, uint256 sp, uint256 sg) = _expectAccrual(pre);
+        uint256 pA = NexusV2Math.mulDivUp(NexusV2Math.zeroFloorSub(pre.held, post.held), pre.pen, WAD);
+        uint256 S = pre.T + sp + sg;
+        uint256 sP = NexusV2Math.mulDivUp(pA, S + vShares, A + 1);
+        uint256 a1 = NexusV2Math.zeroFloorSub(A, pA);
+        uint256 s1 = NexusV2Math.zeroFloorSub(S, sP);
+        uint256 w = NexusV2Math.zeroFloorSub(pre.R, post.R);
+        uint256 sW = NexusV2Math.mulDivUp(w, s1 + vShares, a1 + 1);
+        uint256 burned = _userBurned(o, pre, post);
+        uint256 gotP = NexusV2Math.zeroFloorSub(post.bal[4], pre.bal[4]);
+
+        _ok(post.TA + w == a1, L_FD, "tras forzar y salir, _totalAssets no es lo devengado menos penalidad y retiro (esperado, real)", NexusV2Math.zeroFloorSub(a1, w), post.TA);
+        _ok(burned == sP + sW, L_FD, "quien forzo no pago penalidad y retiro al precio castigado (esperadas, quemadas)", sP + sW, burned);
+        _ok(ftObs == A, L_CAP, "firstTotalAssets no es el primer total devengado no nulo de la transaccion (modelo, real)", A, ftObs);
+        _ok(post.T == NexusV2Math.zeroFloorSub(s1, sW), L_LEDGER, "totalSupply distinto del esperado (esperado, real)", NexusV2Math.zeroFloorSub(s1, sW), post.T);
+        _ok(gotP == sp, L_FEE, "comision de performance distinta del modelo (modelo, real)", sp, gotP);
+        _ok(NexusV2Math.zeroFloorSub(post.bal[5], pre.bal[5]) == sg, L_FEE, "comision de gestion distinta del modelo (modelo, real)", sg, NexusV2Math.zeroFloorSub(post.bal[5], pre.bal[5]));
+        if (loss) _lawLoss(pre, post.TA + pA + w, gotP);
+        _lawPriceAccrual(pre, post.TA + pA + w, post.T + burned, loss);
+        _lawPriceOp(post.TA + pA + w, post.T + burned, post);
+        _lawBystanders(pre, post, o, address(0), loss);
+        _lawAllocation(post);
+        _lawSolvency(post);
+        ++checks;
+    }
+
+    /// @dev V-CAP-1: la allocation de cada id es la suma de los changes que informó el adapter, o sea su posición (el
+    /// adapter devuelve los dos ids en cada allocate y deallocate).
+    function _lawAllocation(Snap memory s) internal {
+        _ok(s.alloc0 == s.pos, L_CAP, "la allocation de id-0 no es la posicion del adapter (posicion, allocation)", s.pos, s.alloc0);
+        _ok(s.alloc1 == s.pos, L_CAP, "la allocation de id-1 no es la posicion del adapter (posicion, allocation)", s.pos, s.alloc1);
+    }
+
+    /// @dev Tope efectivo de la posición del adapter con firstTotalAssets = ft: el mínimo, entre los dos ids, del tope
+    /// absoluto y, si el relativo no es WAD, de ⌊ft·relativo/W⌋. Con un tope absoluto en 0 no se puede asignar nada.
+    function _effCap(uint256 ft) internal view returns (uint256 cap) {
+        cap = type(uint256).max;
+        for (uint256 i; i < 2; ++i) {
+            bytes32 id = keccak256(i == 0 ? idData0 : idData1);
+            uint256 abs = vault.absoluteCap(id);
+            uint256 rel = vault.relativeCap(id);
+            if (abs == 0) return 0;
+            cap = _min(cap, abs);
+            if (rel != WAD) cap = _min(cap, NexusV2Math.mulDivDown(ft, rel, WAD));
+        }
+    }
+
+    /// @dev V-CAP-1, predicado exacto de allocateInternal para una posición nueva `newPos` (los dos ids la reciben):
+    /// tope absoluto > 0, newPos ≤ absoluto y, si el relativo no es WAD, newPos ≤ ⌊firstTotalAssets·relativo/W⌋.
+    function _capsAllow(uint256 newPos, uint256 ft) internal view returns (bool) {
+        for (uint256 i; i < 2; ++i) {
+            if (vault.absoluteCap(keccak256(i == 0 ? idData0 : idData1)) == 0) return false;
+        }
+        return newPos <= _effCap(ft);
+    }
+
+    /// @dev V-CAP-1: allocate de `a` desde el estado `s` (una transacción nueva) pasa si y solo si cumple los topes contra
+    /// el firstTotalAssets que fija su devengamiento. Lo hace NexusV2Macro, que además lee firstTotalAssets dentro de la
+    /// transacción. Pasar un tope es la falla de seguridad; revertir dentro de los topes, la de vivacidad.
+    function _tryAllocate(uint256 a, Snap memory s) internal returns (bool ok) {
+        (uint256 newTA,,) = _expectAccrual(s);
+        uint256 ft = s.ft != 0 ? s.ft : newTA;
+        bool expect = a <= token.balanceOf(address(vault)) && _capsAllow(s.held + a, ft);
+        uint256 ftObs;
+        (ok, ftObs) = batch.allocateAndRead(a, idData0);
+        _lawCaps(ok, expect, s.held + a, ft);
+        // si el allocate revirtió, su devengamiento se deshizo con él
+        uint256 ftExp = ok ? ft : s.ft;
+        _ok(ftObs == ftExp, L_CAP, "firstTotalAssets no es el primer total devengado no nulo de la transaccion (modelo, real)", ftExp, ftObs);
+        if (ok && a != 0) ++hAllocs;
+    }
+
+    function _lawCaps(bool ok, bool expect, uint256 newPos, uint256 ft) internal {
+        _ok(ok == expect, L_CAP, ok ? "allocate paso un tope (posicion nueva, tope efectivo)" : "allocate dentro de los topes revirtio (posicion nueva, tope efectivo)", newPos, _effCap(ft));
+        if (!ok) ++hCapRejects;
+        else if (newPos == _effCap(ft)) ++hCapEdges;
     }
 
     /// @dev V-LOSS-1: con una pérdida sin realizar al empezar la transacción (R < _TA), el primer devengamiento la
@@ -542,6 +746,8 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         if (law == L_LOSS1) return "V-LOSS-1";
         if (law == L_LOSS2) return "V-LOSS-2";
         if (law == L_LEDGER) return "V-LEDGER";
+        if (law == L_FD) return "V-FD-1";
+        if (law == L_CAP) return "V-CAP-1";
         return "V-SOLV-1";
     }
 
@@ -594,5 +800,23 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         )
     {
         return (hLosses, hLossAssets, hFeeDrops, hAllocs, hDeallocs, hTransfers);
+    }
+
+    /// @notice Cobertura de forceDeallocate y de los topes: desasignaciones forzadas con monto, salidas en la misma
+    /// transacción, allocate rechazados por los topes, aceptados justo en el tope, cambios de topes, y depósito y
+    /// allocate en la misma transacción.
+    function coverage2()
+        external
+        view
+        returns (
+            uint256 forces,
+            uint256 forceExits,
+            uint256 capRejects,
+            uint256 capEdges,
+            uint256 capChanges,
+            uint256 sameTx
+        )
+    {
+        return (hForces, hForceExits, hCapRejects, hCapEdges, hCapChanges, hSameTx);
     }
 }

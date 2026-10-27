@@ -2,10 +2,10 @@
 
 Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (línea base `04e5f4a9`; hasta `6047e158` solo
 cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)).
-Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter y las leyes
-del precio por acción (V-INF-2) y de realización de pérdidas (V-LOSS-1, V-LOSS-2). Faltan la variante B (adapter real),
-`forceDeallocate`, los topes como ley (V-CAP-1) y el gobierno con timelock. La etapa E (duplicados) está hecha y vive,
-privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter, las leyes
+del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
+los topes (V-CAP-1). Faltan la variante B (adapter real), el gobierno con timelock y la cota V-BOUND como ley. La etapa E
+(duplicados) está hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
 y `NexusAdapterMock`) y `NexusVaultV2Invariant.t.sol` (el handler y tres variantes: sin comisión, con comisión de
@@ -14,8 +14,14 @@ performance y de gestión, y activo de 6 decimales).
 - El adapter es `NexusAdapterMock`, que cumple la especificación de adapters de V2 (§5): su `realAssets` es su saldo
   del token y la `allocation` del vault es su posición. El handler le acredita rendimiento o le quita tokens, así que
   el fantasma conoce los activos reales exacto y las pérdidas alcanzan al capital asignado, no solo al rendimiento.
-- Topes: absoluto `1e30` en `id-0` e `id-1`; relativo `0,9` en `id-0`, e `id-1` sin tope relativo (`WAD`). El handler
-  asigna dentro del tope efectivo, calculado contra el `firstTotalAssets` que predice el modelo.
+- Topes: arrancan en absoluto `1e30` en `id-0` e `id-1`, relativo `0,9` en `id-0` e `id-1` sin tope relativo
+  (`WAD`), y el handler los sube y los baja (`setCap`: el curador los baja sin demora; subirlos pasa por el timelock,
+  que en el harness es 0). Asigna dentro del tope efectivo, justo en el borde (en el tope, uno más, uno menos) y
+  depositando y asignando en una misma transacción; V-CAP-1 compara cada intento con la predicción.
+- `forceDeallocate`: penalidad de 1 % sin comisión, 2 % (el máximo) con comisión y 0,37 % con 6 decimales. El handler
+  fuerza a nombre propio y de otro actor con allowance finita, y fuerza y sale en una misma transacción.
+- Las secuencias de una sola transacción las hace `NexusV2Macro` (§4): forge 1.8.6 corre con `isolate = true` y cada
+  llamada del handler al vault es una transacción aparte.
 - Los montos de cada acción los **deriva** el cazador del cambio de estado observado (activos: el cambio de lo ocioso;
   acciones: el cambio de balance), no de los argumentos del handler: así una acción acotada a 0 es un no-op consistente.
 - El fantasma no usa las vistas con devengamiento del vault (`totalAssets`, `previewX`, `accrueInterestView`); solo
@@ -24,7 +30,9 @@ performance y de gestión, y activo de 6 decimales).
 - Ninguna ley revierte: con `fail_on_revert = false`, un cazador que revierte esconde la violación como una reversión
   más. El motivo de una falla termina con todas las leyes que fallaron, por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
 - `afterInvariant` informa la cobertura de la corrida: pérdidas realizadas, bajas de precio sin pérdida (solo puede
-  haberlas por la comisión de gestión) y asignaciones, desasignaciones y transferencias con efecto.
+  haberlas por la comisión de gestión), asignaciones, desasignaciones y transferencias con efecto, forceDeallocate con
+  monto, salidas tras forzar, allocate rechazados por los topes y aceptados justo en el tope, cambios de topes, y
+  depósitos con allocate en la misma transacción.
 
 **Verificación en la nube (sin forge), commit `04e5f4a9`, solc 0.8.28 + EDR (27-oct, versión anterior del harness).**
 Las 3 variantes pasaban 256×500 sin falsos positivos con las semillas `0x2a` y `0x3` y detectaban 5 mutaciones de
@@ -71,7 +79,31 @@ Se listan las leyes que fallaron en la primera llamada que rompió el invariante
 | V13 una acción de más al entrar | las 3 | V-INF-1, **V-INF-2** |
 
 V10 y V11 mueven una acción por devengamiento: las ve V-FEE-1, que es bit a bit; V-INF-2 (a) tolera los dos pisos por
-construcción. Las que solo ve la variante con comisión necesitan una comisión distinta de cero.
+construcción, así que la ve solo cuando la primera llamada que falla acumula más de dos acciones de diferencia. Las que
+solo ve la variante con comisión necesitan una comisión distinta de cero.
+
+**V-FD-1 y V-CAP-1 (27-oct, con forge en el proyecto reducido).** Con `forceDeallocate`, los topes con su borde, los
+cambios de topes y las secuencias de una transacción, las 3 variantes pasan 256×500 sin falsos positivos con las
+semillas `0x2a` y `0x3`, con 0 reversiones. Por corrida de 500 llamadas hubo 30 a 38 forceDeallocate con monto, 26 a 30
+salidas en la misma transacción, 62 a 68 allocate rechazados por los topes como predijo el modelo, 8 a 12 aceptados
+justo en el tope, unos 25 cambios de topes, 27 a 41 depósitos con allocate en la misma transacción, 5 a 9 pérdidas
+realizadas y 26 a 36 asignaciones. La referencia, con `validate` sobre el repo entero (`6047e158`, semilla
+`0x2fef01ee4e27ce41`), da 3 de 3 con 1 reversión en 384.000 llamadas (un `mint` que costaba más que los fondos que el
+handler le da al actor). Las 8 mutaciones nuevas se detectan, y la batería completa (21) también:
+
+| Mutación | Variantes que la ven | Leyes |
+|---|---|---|
+| V14 penalidad de forceDeallocate al piso | las 3 | **V-FD-1** (con comisión y 6 decimales, también V-INF-2 y V-LEDGER) |
+| V15 la penalidad sale del vault (hacia quien llama) | las 3 | **V-FD-1** |
+| V16 la penalidad se cobra a quien llama y no a `onBehalf` | las 3 | **V-FD-1**, V-INF-2, V-LEDGER |
+| V17 tope relativo contra el `_totalAssets` actual (se elude con un depósito de la misma transacción) | las 3 | **V-CAP-1** |
+| V18 tope absoluto ignorado | las 3 | **V-CAP-1** |
+| V19 tope relativo con desigualdad estricta (vivacidad) | las 3 | **V-CAP-1** |
+| V20 la `allocation` suma los activos en vez del `change` | las 3 | **V-CAP-1** |
+| V21 `firstTotalAssets` se pisa en cada devengamiento | las 3 | **V-CAP-1** |
+
+V14 es el hallazgo Medium ya corregido de Spearbit 2025-05-19 (5.2.1, "rounding down in forceDeallocate"): V-FD-1 lo
+vería si volviera.
 
 Vault V2 es un ERC-4626 que delega el capital en *adapters*. Cada adapter reporta cuánto valen sus inversiones con
 `realAssets()`; el vault devenga interés y realiza pérdidas a partir de esa suma. Es una contabilidad distinta a la de
@@ -119,8 +151,8 @@ Baja `TA` y `T`, pero los activos quedan en el vault: el precio sube para el res
 
 ## 3. Leyes (exactas y de 512 bits salvo donde el código no lo es)
 
-Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-LEDGER y V-SOLV-1. Las demás
-son el plan.
+Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-FD-1, V-CAP-1, V-LEDGER y
+V-SOLV-1. Las demás son el plan.
 
 | Código | Ley | Caza |
 |---|---|---|
@@ -133,8 +165,8 @@ son el plan.
 | V-FEE-2 | `σ^p` nace solo del interés devengado; `σ^g` es la única que puede existir con `I = 0` | Comisión de performance sobre no-interés |
 | V-LOSS-1 | Si `R < _TA` al empezar la transacción: `A = R` exacto y `σ^p = 0`. La pérdida se realiza entera en el primer devengamiento | Pérdida diferida, parcial u ocultada; comisión de performance sobre una pérdida |
 | V-LOSS-2 | Con pérdida: fuera de quien opera ningún saldo cambia, los de comisión solo suben y `Σ saldos = T`; el precio baja según V-INF-2 (c) | Pérdida repartida en saldos (acciones quemadas o trasladadas) |
-| V-FD-1 | forceDeallocate: `penalty = ⌈assets·p/W⌉`, `TA` y `T` bajan por el `withdraw`, `R` no; quien fuerza no evita su pérdida ni la traslada | Evasión o traslado de pérdidas |
-| V-CAP-1 | Allocate respeta `absoluteCap` y, si `relativeCap ≠ WAD`, `allocation ≤ ⌊firstTotalAssets·relativeCap/W⌋` | Topes ignorados |
+| V-FD-1 | forceDeallocate de `a` a nombre de `o`: `R' = R`, `TA' = A − pA` con `pA = ⌈a·p/W⌉`, a `o` se le queman `⌈pA(S+v)/(A+1)⌉` acciones (y la allowance baja eso), ningún tercero cambia; forzando y saliendo en la misma transacción, el retiro se paga al precio que dejó forceDeallocate. Ver §4 | Penalidad evadida, perdonada o cobrada a otro; pérdida evitada o trasladada |
+| V-CAP-1 | `allocation = posición del adapter` en cada id; allocate pasa **si y solo si** `0 < absoluteCap`, `pos' ≤ absoluteCap` y, si `relativeCap ≠ WAD`, `pos' ≤ ⌊firstTotalAssets·relativeCap/W⌋`; `firstTotalAssets` es el primer total devengado no nulo de la transacción (un depósito de la misma transacción no lo agranda). Ver §4 | Topes ignorados o demasiado estrictos; tope relativo eludido en una transacción |
 | V-GOV-1..n | Cada acción con timelock (addAdapter, caps, fees, registry, penalty) se compara con la predicción: éxito/reversión, efecto y `executableAt` | Timelocks que vencen antes, cambios sin esperar |
 | V-LEDGER | `T = Σ saldos` (incluidas las shares de fee); `T` = el esperado tras cada acción; sin pérdida, fuera de quien opera ningún saldo cambia y los de comisión solo suben | Shares creadas o destruidas por fuera |
 | V-SOLV-1 | `⌊T⁺(TA+1)/(T⁺+v)⌋ ≤ R`: lo reclamable está respaldado por los activos reales | Insolvencia |
@@ -201,6 +233,48 @@ los de comisión solo suben.
 cuenta por cuenta (los 4 actores y los 2 receptores de comisión) y además exige `Σ saldos = totalSupply`, para que
 ninguna acción aparezca en una cuenta que no se sigue. Sin pérdida, la misma comprobación es V-LEDGER. ∎
 
+**V-FD-1: forceDeallocate cobra la penalidad exacta, la deja en el vault y no traslada ni evita pérdidas.**
+
+`forceDeallocate(adapter, data, a, o)` hace, en orden:
+
+1. Desasigna sin devengar: el adapter informa su posición nueva y el vault le retira `a` tokens. `R` no cambia: el
+   adapter baja `a` y lo ocioso sube `a`.
+2. Calcula `pA = ⌈a·p/W⌉`, con `p = forceDeallocatePenalty[adapter] ≤ 2 %`.
+3. Cobra con `withdraw(pA, vault, o)`. Ese `withdraw` devenga (es el primer devengamiento de la transacción, y como `R`
+   no cambió, da el mismo `A` y las mismas comisiones que desde el estado inicial); quema
+   `sP = ⌈pA(S+v)/(A+1)⌉` acciones de `o` (y baja la allowance de quien llama en `sP` si no es `o` ni es infinita); baja
+   `_totalAssets` en `pA`, y transfiere `pA` del vault al vault.
+
+Queda `R' = R`, `TA' = A − pA`, `T' = S − sP` y el saldo de `o` baja `sP`. Por el techo, `sP(A+1) ≥ pA(S+v)`, así que
+`(A − pA + 1)(S+v) ≥ (A+1)(S − sP + v)`: el precio no baja para nadie (V-INF-2 b) y la penalidad queda como exceso
+`R − TA`, que se devenga después bajo `maxRate`, como una donación. Quien fuerza no **evita** su parte de una pérdida:
+el devengamiento del paso 3 la realiza antes de cobrar (`A = R` si `R < _TA`, V-LOSS-1), y dentro de la misma transacción
+no hay otro devengamiento (`firstTotalAssets ≠ 0`), así que si `o` retira `w` enseguida, quema
+`sW = ⌈w(S − sP + v)/(A − pA + 1)⌉`, al precio ya castigado. Y no la **traslada**: ningún otro saldo cambia y el precio
+de los demás no baja. El cazador verifica las dos formas: forceDeallocate solo (propio y por allowance, con allowance
+finita) y forzar y salir en una transacción, con `TA'' = A − pA − w`, `R'' = R − w` y `sP + sW` quemadas a `o`. ∎
+
+**V-CAP-1: los topes, exactos y con su borde.**
+
+- `allocation = posición`. El adapter informa en cada allocate y deallocate `change` = posición nueva − anterior y el
+  vault lo suma a la `allocation` de cada id devuelto. Partiendo de 0, por inducción `allocation = Σ changes = posición`.
+- `allocate(a)` pasa si y solo si `a ≤` lo ocioso y, para cada id, `absoluteCap > 0`, `pos' ≤ absoluteCap` y, si
+  `relativeCap ≠ WAD`, `pos' ≤ ⌊ft·relativeCap/W⌋`, con `pos'` = saldo del adapter + `a` y `ft = firstTotalAssets` al
+  medir. Las demás causas de reversión (rol de allocator, adapter dado de alta, desbordes) están descartadas en el
+  harness, así que el predicado es exacto: pasar un tope es una falla de seguridad y revertir dentro de ellos, una de
+  vivacidad. El handler prueba el borde: justo en el tope, uno más y uno menos.
+- `firstTotalAssets` es el primer total devengado **no nulo** de la transacción (Spearbit 5.1.6): si la transacción
+  empieza con `A ≠ 0`, queda `A` aunque después entre un depósito. Por eso, depositando `x` y asignando en la misma
+  transacción, el tope relativo es `⌊A·rc/W⌋` y no `⌊(A+x)·rc/W⌋`: es la defensa contra préstamos flash. Si `A = 0`, el
+  primer total no nulo es el del allocate, que ya incluye `x`. Entre dos transacciones el depósito sí cuenta: es el L-14
+  de Blackthorn, reconocido, y no es una violación.
+
+**Una sola transacción con forge 1.8.6.** forge corre con `isolate = true`: cada llamada que el handler hace al vault es
+una transacción aparte y la memoria transitoria se borra entre ellas, así que `firstTotalAssets` se lee 0 desde el
+handler. Las secuencias de una transacción (depositar y asignar, forzar y salir, asignar y leer `firstTotalAssets`) las
+hace `NexusV2Macro`, allocator del vault con allowance de los actores, dentro de su propia llamada, y devuelve lo que lee
+ahí. ∎
+
 ## 5. Harness previsto
 
 1. **Variante A — adapter controlable.** VaultV2 + `NexusAdapterMock`, un adapter de nexus que cumple la
@@ -216,8 +290,9 @@ ninguna acción aparezca en una cuenta que no se sigue. Sin pérdida, la misma c
 3. **Tres sub-variantes** cada una, como en MetaMorpho: sin comisión, con comisión, y activo de 6 decimales.
 4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de
    cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida
-   repartida en saldos y dilución al entrar (resultados arriba). Cada una tiene que disparar una ley `V-...`. Faltan las
-   de las leyes que vienen: penalidad de forceDeallocate hacia abajo y tope ignorado.
+   repartida en saldos, dilución al entrar, la penalidad de forceDeallocate (redondeo, destino y a quién se cobra) y
+   los topes (absoluto, relativo contra el total actual, borde estricto, bookkeeping de la allocation y
+   `firstTotalAssets`). Resultados arriba. Cada una tiene que disparar una ley `V-...`.
 
 Build: `src/` de V2 es solc 0.8.28, `via_ir`, `cancun`. forge 1.8.6 compila el repo entero, `MidnightAdapter` (osaka)
 incluido, en ~11 min en la PC. Para iterar alcanza con VaultV2, la factory, el `ERC20Mock`, forge-std y el harness:

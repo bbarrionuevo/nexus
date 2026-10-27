@@ -11,5 +11,13 @@
   ["V10 acciones de comision al techo", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);", "performanceFeeAssets.mulDivUp(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);"],
   ["V11 acciones de comision sobre el total con comisiones", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssets + 1);"],
   ["V12 la perdida quema acciones del receptor de comision", "_totalAssets = newTotalAssets.toUint128();", "if (newTotalAssets < _totalAssets && balanceOf[performanceFeeRecipient] != 0) deleteShares(performanceFeeRecipient, 1); _totalAssets = newTotalAssets.toUint128();"],
-  ["V13 una accion de mas al entrar", "createShares(onBehalf, shares);", "createShares(onBehalf, shares + 1);"]
+  ["V13 una accion de mas al entrar", "createShares(onBehalf, shares);", "createShares(onBehalf, shares + 1);"],
+  ["V14 penalidad de forceDeallocate al piso", "uint256 penaltyAssets = assets.mulDivUp(forceDeallocatePenalty[adapter], WAD);", "uint256 penaltyAssets = assets.mulDivDown(forceDeallocatePenalty[adapter], WAD);"],
+  ["V15 la penalidad sale del vault", "uint256 penaltyShares = withdraw(penaltyAssets, address(this), onBehalf);", "uint256 penaltyShares = withdraw(penaltyAssets, msg.sender, onBehalf);"],
+  ["V16 la penalidad se cobra a quien llama", "uint256 penaltyShares = withdraw(penaltyAssets, address(this), onBehalf);", "uint256 penaltyShares = withdraw(penaltyAssets, address(this), msg.sender);"],
+  ["V17 tope relativo contra el total actual", "_caps.allocation <= firstTotalAssets.mulDivDown(_caps.relativeCap, WAD)", "_caps.allocation <= uint256(_totalAssets).mulDivDown(_caps.relativeCap, WAD)"],
+  ["V18 tope absoluto ignorado", "require(_caps.allocation <= _caps.absoluteCap, ErrorsLib.AbsoluteCapExceeded());", "require(_caps.allocation <= type(uint256).max, ErrorsLib.AbsoluteCapExceeded());"],
+  ["V19 tope relativo estricto", "_caps.allocation <= firstTotalAssets.mulDivDown(_caps.relativeCap, WAD)", "_caps.allocation < firstTotalAssets.mulDivDown(_caps.relativeCap, WAD)"],
+  ["V20 allocation con los activos en vez del change", "_caps.allocation = (int256(_caps.allocation) + change).toUint256();\n\n            require(_caps.absoluteCap > 0", "_caps.allocation = (int256(_caps.allocation) + int256(assets)).toUint256();\n\n            require(_caps.absoluteCap > 0"],
+  ["V21 firstTotalAssets se pisa en cada devengamiento", "if (firstTotalAssets == 0) firstTotalAssets = newTotalAssets;", "firstTotalAssets = newTotalAssets;"]
 ]
