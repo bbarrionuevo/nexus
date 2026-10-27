@@ -126,10 +126,23 @@ def per_action(metrics, limit=40):
                       for name, m in dashboard.action_rows(metrics)[:limit])
 
 
+def _failure(t):
+    """Motivo y contraejemplo de un test. forge 1.8 puede dejar `reason` en null en la falla de un invariante y poner el
+    de cada invariante en `invariant_failures` ([{"name", "reason", "counterexample"}]): sin esto, el informe decía
+    "Motivo: None" y el expediente no encontraba la ley que falló."""
+    reason, ce = t.get("reason"), t.get("counterexample")
+    inv = [f for f in (t.get("invariant_failures") or []) if isinstance(f, dict)]
+    if not reason and inv:
+        reason = " | ".join(str(f.get("reason")) if len(inv) == 1 else f"{f.get('name')}: {f.get('reason')}"
+                            for f in inv)
+    if not ce and inv:
+        ce = inv[0].get("counterexample")
+    return {"reason": reason, "counterexample": ce}
+
+
 def summarize(results):
-    rows = [{"suite": suite, "test": name, "status": t.get("status"), "reason": t.get("reason"),
-             "counterexample": t.get("counterexample"), "logs": (t.get("decoded_logs") or [])[:15],
-             "kind": _kind(t)}
+    rows = [{"suite": suite, "test": name, "status": t.get("status"), **_failure(t),
+             "logs": (t.get("decoded_logs") or [])[:15], "kind": _kind(t)}
             for suite, data in (results or {}).items() for name, t in (data.get("test_results") or {}).items()]
     counts = {s: sum(r["status"] == s for r in rows) for s in ("Success", "Failure", "Skipped")}
     return counts, [r for r in rows if r["status"] == "Failure"]

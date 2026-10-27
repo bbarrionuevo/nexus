@@ -1,0 +1,15 @@
+[
+  ["V1 previewDeposit al techo", "return assets.mulDivDown(newTotalSupply + virtualShares, newTotalAssets + 1);", "return assets.mulDivUp(newTotalSupply + virtualShares, newTotalAssets + 1);"],
+  ["V2 previewMint al piso", "return shares.mulDivUp(newTotalAssets + 1, newTotalSupply + virtualShares);", "return shares.mulDivDown(newTotalAssets + 1, newTotalSupply + virtualShares);"],
+  ["V3 previewWithdraw al piso", "return assets.mulDivUp(newTotalSupply + virtualShares, newTotalAssets + 1);", "return assets.mulDivDown(newTotalSupply + virtualShares, newTotalAssets + 1);"],
+  ["V4 previewRedeem al techo", "return shares.mulDivDown(newTotalAssets + 1, newTotalSupply + virtualShares);", "return shares.mulDivUp(newTotalAssets + 1, newTotalSupply + virtualShares);"],
+  ["V5 tope de tasa ignorado", "uint256 newTotalAssets = MathLib.min(realAssets, maxTotalAssets);", "uint256 newTotalAssets = realAssets;"],
+  ["V6 performance sobre newTotalAssets", "? interest.mulDivDown(performanceFee, WAD)", "? newTotalAssets.mulDivDown(performanceFee, WAD)"],
+  ["V7 perdida diferida", "uint256 newTotalAssets = MathLib.min(realAssets, maxTotalAssets);", "uint256 newTotalAssets = realAssets < _totalAssets ? _totalAssets : MathLib.min(realAssets, maxTotalAssets);"],
+  ["V8 perdida exagerada", "uint256 newTotalAssets = MathLib.min(realAssets, maxTotalAssets);", "uint256 newTotalAssets = realAssets < _totalAssets ? realAssets * 9 / 10 : MathLib.min(realAssets, maxTotalAssets);"],
+  ["V9 gestion sobre el total previo", "? (newTotalAssets * elapsed).mulDivDown(managementFee, WAD)", "? (_totalAssets * elapsed).mulDivDown(managementFee, WAD)"],
+  ["V10 acciones de comision al techo", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);", "performanceFeeAssets.mulDivUp(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);"],
+  ["V11 acciones de comision sobre el total con comisiones", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssetsWithoutFees + 1);", "performanceFeeAssets.mulDivDown(totalSupply + virtualShares, newTotalAssets + 1);"],
+  ["V12 la perdida quema acciones del receptor de comision", "_totalAssets = newTotalAssets.toUint128();", "if (newTotalAssets < _totalAssets && balanceOf[performanceFeeRecipient] != 0) deleteShares(performanceFeeRecipient, 1); _totalAssets = newTotalAssets.toUint128();"],
+  ["V13 una accion de mas al entrar", "createShares(onBehalf, shares);", "createShares(onBehalf, shares + 1);"]
+]

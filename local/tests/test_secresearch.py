@@ -298,6 +298,21 @@ def test_metricas_por_accion_con_la_misma_funcion_en_dos_contratos():
     assert validate.per_action(metrics) == "EulerSavingsRate.transfer 9/1 · MockToken.transfer 7/0 · gulp 3/0"
 
 
+def test_falla_de_invariante_con_el_motivo_en_invariant_failures():
+    from nexus.secresearch import validate
+    # forge 1.8.6 (27-oct): `reason` en null y el motivo en invariant_failures. Antes el informe decía "Motivo: None".
+    ce = {"Sequence": [44, [{"func_name": "deposit", "raw_args": "1, 2"}]]}
+    results = {"test/nexus/V.t.sol:VTest": {"test_results": {
+        "invariant_vaultV2()": {"status": "Failure", "reason": None, "counterexample": None, "invariant_failures": [
+            {"kind": "predicate", "name": "invariant_vaultV2", "counterexample": ce,
+             "reason": "V-INF-1: deposit emitio mas (justas, emitidas): 1, 2 [leyes: V-INF-1 V-INF-2]: 132 != 0"}]},
+        "test_viejo()": {"status": "Failure", "reason": "H-FEE-5: revirtio", "counterexample": None}}}}
+    counts, fails = validate.summarize(results)
+    assert counts["Failure"] == 2
+    assert fails[0]["reason"].startswith("V-INF-1: deposit") and fails[0]["counterexample"] == ce
+    assert fails[1]["reason"] == "H-FEE-5: revirtio"                         # la forma de siempre no cambia
+
+
 def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__metamorpho")
