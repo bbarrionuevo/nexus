@@ -138,7 +138,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #75 | Con la primera corrida de la PC: `reallocate` respeta topes, `gobierno con efecto` y la guía para leer el informe |
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
-| este PR | Primera sesión en la PC: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, y el alcance de Vault V2 y de MetaMorpho quedó contrastado con la página de direcciones de Morpho |
+| #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`): el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, y el alcance de Vault V2 y de MetaMorpho quedó contrastado con la página de direcciones de Morpho |
 
 ## 5. Próximos pasos
 
