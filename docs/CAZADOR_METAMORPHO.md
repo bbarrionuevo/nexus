@@ -280,6 +280,12 @@ handler original y 3 multi-mercado):
 Las que solo detectan las suites multi-mercado (M8–M11, M13, M14) necesitan topes que se alcancen o gobierno, que el
 handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el modelo autorreferente no puede ver.
 
+**Con los cambios del 27-oct** (`reallocate`, `setSupplyQueue` y `_mintFits`), las 21 siguen detectadas, cada una en
+las mismas suites que en la tabla, y los 6 invariantes pasan 256 × 500 con las semillas `0x2a` y `0x3`. Cambió quién
+nota primero M7 y M15, las dos de comisión. En las secuencias nuevas, el chequeo de precio del handler original salta
+en un `donate` antes de que una acumulación llegue a H-FEE-1, y `check()` guarda solo la primera violación. Por eso
+el resumen de `mutate.py` las cuenta como detectadas, pero no como detectadas por una ley `H-...`.
+
 **Primera corrida con forge en la PC (26-oct, semilla nueva, 256 × 500).** Pasan los 84 tests y el informe muestra
 `verificaciones`, las métricas por acción y las del cazador. Cambios que salieron de esa corrida:
 

@@ -156,7 +156,9 @@ En orden de prioridad:
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;
    - montos escalados por decimales: hoy el fuzzer usa hasta 1e28 unidades también con 6 decimales;
-   - una métrica de cuánto pierde la víctima por cada unidad que gasta el atacante en la macro de inflación.
+   - una métrica de cuánto pierde la víctima por cada unidad que gasta el atacante en la macro de inflación;
+   - que `check()` informe también la primera violación del cazador. Hoy guarda solo la primera de todas, y por eso
+     `mutate.py` dejó de atribuirle M7 y M15 a una ley `H-...`, aunque siguen detectadas.
 
 ## 6. Pendientes y cuidados
 
