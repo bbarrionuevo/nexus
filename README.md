@@ -19,11 +19,14 @@ Reglas: [docs/REGLAS.md](docs/REGLAS.md). Plan, estado y métricas: [docs/INVEST
 | D. Validación local con Foundry | `forge build` + `forge test` sobre repos de programas verificados, fijado a un commit, FFI apagado | Funciona (MetaMorpho: 148 pasan · 0 fallan) |
 | D'. Propiedades del vault en Foundry | Suite ERC-4626 de a16z + invariantes con handler para MetaMorpho (`validate --harness`), con `NexusVulnerabilityHunter`: contabilidad fantasma y leyes exactas en cada acción, más un entorno multi-mercado con gobierno ([docs](docs/CAZADOR_METAMORPHO.md)) | Verificado en la nube sin forge (sin falsos positivos en 1,5 M de llamadas; 21 de 21 mutaciones, contra 11 del harness original) y en la PC con forge (84 pasan, 0 fallan) |
 | Ciclo desatendido | Una vez por día: A–C, harness con semilla nueva y líneas base; resumen para Claude con fallas y cobertura por acción | Lo registra el dueño (`tools/windows/registrar_ciclo.ps1`) |
+| Dashboard | Página local con el estado: fallas para revisar, cobertura por acción, métricas del cazador, corridas, programas, cambios pendientes, ciclos y expedientes. Se regenera al terminar cada ciclo y cada `validate` | Funciona |
+| F. Expediente | Borrador del informe para reclamar la recompensa, armado desde una falla: programa y reglas, commit, semilla, contraejemplo, comando para reproducir y las secciones que piden los programas | Funciona; lo completa y envía el dueño |
 
 ## Estructura
 
 ```
-local/nexus/secresearch/   el motor: catalog, changes, triage, invariants, run, validate, cycle, limits (protegido)
+local/nexus/secresearch/   el motor: catalog, changes, triage, invariants, run, validate, cycle, dashboard,
+                           expediente, limits (protegido)
 local/nexus/secresearch/harness/   tests de propiedades e invariantes de nexus por repo (Solidity)
 local/nexus/devcheck.py    verificación local: sintaxis, lint, tests, rutas protegidas, método
 local/nexus/paths.py       carpeta privada NEXUS_HOME (fuera del repo)
@@ -43,6 +46,10 @@ docs/                      REGLAS (protegido) e INVESTIGACION_SEGURIDAD
 ..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho   # Foundry, en local
 ..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho
 ..\.venv\Scripts\python -m nexus.secresearch.cycle                          # el ciclo completo, una vez
+..\.venv\Scripts\python -m nexus.secresearch.dashboard                      # abre el dashboard en el navegador
+..\.venv\Scripts\python -m nexus.secresearch.expediente INFORME              # expediente de una falla confirmada
 ```
 
-El informe queda en `%LOCALAPPDATA%\nexus\secresearch\secresearch.md`.
+Todo queda en `%LOCALAPPDATA%\nexus\secresearch\` (privado, fuera del repo): el dashboard en `dashboard.html`, los
+informes de Foundry en `validate\`, los expedientes en `expedientes\` y el de cambios en `secresearch.md`. El
+Explorador oculta `AppData`; se abre con `explorer $env:LOCALAPPDATA\nexus\secresearch`.

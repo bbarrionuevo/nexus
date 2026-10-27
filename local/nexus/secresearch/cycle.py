@@ -7,8 +7,8 @@
    cada corrida explora entradas distintas y la semilla queda en el informe para reproducir.
 3. Etapa D: líneas base de hasta N repos del catálogo sin una en los últimos 7 días (primero los que nunca la
    tuvieron). Muestran qué compila y qué pasa antes de escribir un harness para cada repo.
-4. Resumen del ciclo (ciclo.md, ciclo.jsonl) y un acumulado para pegarle a Claude (para_claude.md), todo en
-   NEXUS_HOME/secresearch: privado, nunca en el repo.
+4. Resumen del ciclo (ciclo.md, ciclo.jsonl), un acumulado para pegarle a Claude (para_claude.md) y el dashboard
+   (dashboard.html), todo en NEXUS_HOME/secresearch: privado, nunca en el repo.
 
 Corre UNA vez y termina: el Programador de tareas de Windows decide cuándo vuelve a correr; el ciclo nunca se
 reprograma ni se encadena solo. Un candado evita dos ciclos a la vez. No envía ni publica nada: el único
@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from .. import paths
-from . import catalog, run, validate
+from . import catalog, dashboard, run, validate
 from .limits import repo_in_scope, results_dir
 
 LOCK_STALE_S = 12 * 3600          # un candado más viejo es de un ciclo que murió (corte de luz, reinicio)
@@ -142,6 +142,10 @@ def cycle(max_minutes=180, baselines=2, programs=None, home=None, now=time.time,
             (out / "para_claude.md").write_text(digest(out), encoding="utf-8")
         except Exception as e:                                   # noqa: BLE001 (el resumen del ciclo ya quedó)
             print(f"para_claude.md: {type(e).__name__}: {e}")
+        try:
+            dashboard.write(base)
+        except Exception as e:                                   # noqa: BLE001 (el resumen del ciclo ya quedó)
+            print(f"dashboard: {type(e).__name__}: {e}")
         return rep
     finally:
         lock.unlink(missing_ok=True)
