@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 
 from .. import paths
-from . import catalog
+from . import catalog, dashboard
 from .changes import NO_WINDOW, _git
 from .limits import FOUNDRY_ENV, MAX_BUILD_SECONDS, MAX_TEST_SECONDS, repo_in_scope, results_dir
 
@@ -270,6 +270,10 @@ def main(argv):
     rec = validate(argv[0], ref=opts.get("--ref"), match=opts.get("--match-path"), out=opts.get("--out"),
                    harness=opts.get("--harness"), seed=opts.get("--seed"), fuzz=fuzz)
     print(report(rec))
+    try:
+        print(f"Dashboard: {dashboard.write()}")
+    except Exception as e:                                       # noqa: BLE001 (el informe ya quedó)
+        print(f"dashboard: {type(e).__name__}: {e}")
     return 0 if rec.get("ok") else 1
 
 

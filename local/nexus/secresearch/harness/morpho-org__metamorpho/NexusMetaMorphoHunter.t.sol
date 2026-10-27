@@ -258,19 +258,29 @@ contract NexusMetaMorphoHunterHandler is NexusMetaMorphoHandler {
 
     /// @dev Subconjunto ordenado al azar y SIN repetidos: con repetidos maxDeposit promete de más, y MetaMorpho
     /// lo documenta ("May be higher than the actual max deposit due to duplicate markets in the supplyQueue").
+    /// @dev Cola de suministro: subconjunto permutado de mercados distintos. Siete de cada ocho llamadas usan solo
+    /// mercados con tope: en la segunda corrida con forge, con los cuatro mercados al azar, solo 2 a 5 de unas 14
+    /// llamadas por corrida cambiaban la cola (MetaMorpho revierte si alguno tiene tope 0). La octava mezcla todos y
+    /// prueba esa reversión.
     function setSupplyQueue(uint256 seed) external {
         HSnap memory p = _hBegin(address(0));
         uint256 r = _h(seed, 3);
-        uint256 k = hm.length;
-        uint8[] memory perm = new uint8[](k);
-        for (uint256 j; j < k; ++j) {
-            perm[j] = uint8(j);
+        bool capped = r % 8 != 0;
+        uint8[] memory perm = new uint8[](hm.length);
+        uint256 k;
+        for (uint256 j; j < hm.length; ++j) {
+            if (!capped || hCfg[j].cap != 0) perm[k++] = uint8(j);
+        }
+        if (k == 0) {
+            for (uint256 j; j < hm.length; ++j) {
+                perm[k++] = uint8(j); // ningún mercado con tope: cualquier cola revierte
+            }
         }
         for (uint256 j = k - 1; j > 0; --j) {
             uint256 q = (r >> (8 * j)) % (j + 1);
             (perm[j], perm[q]) = (perm[q], perm[j]);
         }
-        uint256 n = 1 + r % k;
+        uint256 n = 1 + (r >> 3) % k;
         uint8[] memory idx = new uint8[](n);
         Id[] memory ids = new Id[](n);
         for (uint256 j; j < n; ++j) {

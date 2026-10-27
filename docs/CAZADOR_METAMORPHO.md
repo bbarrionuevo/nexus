@@ -213,8 +213,9 @@ de una acción a valores enormes. Desde ese estado:
 
 Es un comportamiento conocido y documentado, no un hallazgo. Lo que se investiga es una ley `H-...` que falle: por
 ejemplo, un atacante que gana con la inflación (H-INF-5) o una víctima que pierde más de una acción (H-INF-3). Con
-6 decimales, `DECIMALS_OFFSET` es 12: inflar el precio cuesta 10^12 veces más, y en la primera corrida con forge la
-ventana quedó en 1 wei.
+6 decimales, `DECIMALS_OFFSET` es 12 e inflar el precio cuesta 10^12 veces más. Aun así puede pasar en las suites,
+porque el fuzzer dona hasta 1e28 unidades sin escalar por decimales: con 6 decimales son 10^22 tokens, más de los que
+existen.
 
 ## Verificación
 
@@ -226,7 +227,7 @@ MetaMorpho `ded84e5`. Ver `tools/edr/README.md`.
 sin las macros de frontera, la identidad de valor ni `claimFees`, con `0x2a` y `0x1` (otros 1,5 M). La suite ERC-4626
 de a16z pasa 78 de 78 con 2.000 corridas.
 
-Durante el desarrollo aparecieron siete falsos positivos y se corrigieron en el cazador o en el entorno, nunca
+Durante el desarrollo aparecieron ocho falsos positivos y se corrigieron en el cazador o en el entorno, nunca
 agregando tolerancia:
 
 - comisión pendiente calculada con el L anterior;
@@ -235,7 +236,9 @@ agregando tolerancia:
 - `block.timestamp` cacheado por via_ir después de `vm.warp`;
 - colas de suministro con repetidos, donde MetaMorpho documenta que `maxDeposit` promete de más;
 - retiros de las macros sin acotar a la liquidez;
-- aserciones de ganancia del atacante que no valían con comisión de desempeño.
+- aserciones de ganancia del atacante que no valían con comisión de desempeño;
+- depósitos cuyas acciones no entran en `uint256`: revierten con `Panic(0x11)` en cualquier ERC-4626 (detalle abajo,
+  en la segunda corrida).
 
 **Reversiones.** Están entre 0,3 y 0,4 % en los invariantes del handler original y entre 2 y 4 % en los
 multi-mercado. Con `failOnRevert` en 8 semillas × 3 variantes, todas son `SupplyCapExceeded` o `UnauthorizedMarket`:
@@ -277,6 +280,12 @@ handler original y 3 multi-mercado):
 Las que solo detectan las suites multi-mercado (M8–M11, M13, M14) necesitan topes que se alcancen o gobierno, que el
 handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el modelo autorreferente no puede ver.
 
+**Con los cambios del 27-oct** (`reallocate`, `setSupplyQueue` y `_mintFits`), las 21 siguen detectadas, cada una en
+las mismas suites que en la tabla, y los 6 invariantes pasan 256 × 500 con las semillas `0x2a` y `0x3`. Cambió quién
+nota primero M7 y M15, las dos de comisión. En las secuencias nuevas, el chequeo de precio del handler original salta
+en un `donate` antes de que una acumulación llegue a H-FEE-1, y `check()` guarda solo la primera violación. Por eso
+el resumen de `mutate.py` las cuenta como detectadas, pero no como detectadas por una ley `H-...`.
+
 **Primera corrida con forge en la PC (26-oct, semilla nueva, 256 × 500).** Pasan los 84 tests y el informe muestra
 `verificaciones`, las métricas por acción y las del cazador. Cambios que salieron de esa corrida:
 
@@ -286,6 +295,24 @@ handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el mod
 - Llamar a una acción de gobierno no alcanza: un `acceptCap` sin tope pendiente vencido no explora nada. El informe
   agrega `gobierno con efecto`, por tipo de acción.
 - La guía para leer el informe (sección 6), porque algunas métricas parecen alarmantes y no lo son.
+
+**Segunda corrida con forge (27-oct, semilla nueva).** Pasan los 84 tests. El `reallocate` heredado bajó del 78 % de
+reversiones a 0,1–0,3 %, y las suites multi-mercado, de 3,2–3,8 % a 0,8–0,9 %. La línea `gobierno con efecto` mostró
+que `setSupplyQueue` cambiaba la cola en solo 2 a 5 de unas 14 llamadas por corrida, porque armaba colas al azar con
+los cuatro mercados y MetaMorpho revierte si alguno tiene tope 0. Ahora siete de cada ocho llamadas usan solo mercados
+con tope, y la octava prueba la reversión.
+
+Al verificar ese cambio en la nube, la semilla `0x2a` hizo fallar dos suites multi-mercado: un depósito menor o igual
+a `maxDeposit` revertía. Con las colas cambiando de verdad aparece un estado nuevo:
+
+1. Remociones forzadas de mercados con supply dejan `totalAssets` cerca de 0 con acciones en circulación.
+2. El depósito siguiente acuña cantidades astronómicas de acciones, porque el precio de una acción es casi 0.
+3. Otra remoción y otro depósito, y las acciones ya no entran en `uint256`.
+
+Para clasificarlo, las fallas de vivacidad ahora dicen con qué error revirtió la llamada. Fue `Panic(0x11)`, un
+desborde aritmético. Cualquier ERC-4626 revierte en ese caso, así que no es un error de MetaMorpho: hace falta que el
+curador realice pérdidas totales dos veces. Las macros ahora exigen el depósito solo si sus acciones entran en
+`uint256` (`_mintFits`), una condición exacta de 512 bits que no puede esconder otro error.
 
 ## Límites y próximos pasos
 

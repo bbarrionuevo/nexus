@@ -41,7 +41,8 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | D'. Propiedades del vault en Foundry | `harness/morpho-org__metamorpho/`: la suite ERC-4626 de a16z y un test de invariantes con handler, en 3 variantes; `validate --harness` los copia al clon y los corre con una semilla nueva. Desde el 27-oct, con el cazador (`NexusVulnerabilityHunter.sol`) y una suite multi-mercado con gobierno | Implementado. Verificado en la nube **sin forge** (solc-js + EDR, el motor de tests de Hardhat 3) y en la PC con forge (26-oct: 84 pasan, 0 fallan) | 81/81 pasan en `ded84e5` con 4 semillas; detecta 7 de 7 mutaciones de referencia (abajo). Con el cazador: sin falsos positivos en 1,5 M de llamadas; detecta 21 de 21 mutaciones, también en Morpho Blue, contra 11 de 21 del harness original ([detalle](CAZADOR_METAMORPHO.md#verificación)) |
 | Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md`. Este último trae las fallas y, desde el 27-oct, la cobertura de la última corrida: llamadas y reversiones por acción del handler, que forge reporta, y el log de `afterInvariant` (verificaciones y métricas del cazador; por eso `validate` corre forge con `-vv`) | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
 | E. Duplicados y alcance | Auditorías previas, problemas conocidos, exclusiones | Parcial: el catálogo guarda exclusiones; la búsqueda de auditorías está pendiente | — |
-| F. Expediente | Informe por candidato confirmado | Pendiente: plantilla abajo | — |
+| F. Expediente | Informe por candidato confirmado: `python -m nexus.secresearch.expediente INFORME` arma el borrador privado en `NEXUS_HOME/secresearch/expedientes/` con el programa y sus reglas, el commit, la semilla, la ley que falló, el contraejemplo y el comando para reproducir, más las secciones del punto 5 de "Qué falta para un primer informe válido". También sirve para descartar una falla con su razón (`estado: descartado`) | Implementado (27-oct); lo completa, firma y envía el dueño | Tests: arma todas las secciones, no pisa uno existente y no escribe en el repo |
+| Dashboard | `python -m nexus.secresearch.dashboard`: una página local (`NEXUS_HOME/secresearch/dashboard.html`), sin nada de internet, con las fallas para revisar, la cobertura por acción, las métricas del cazador, las corridas, los programas, los cambios pendientes, los ciclos y los expedientes. La regeneran el ciclo y `validate` | Implementado (27-oct) | Tests: escapa el texto de los informes y no carga recursos externos |
 
 Propiedades del método (etapa C):
 
@@ -240,6 +241,12 @@ de mejora es:
      candidato (se aísla en un test mínimo y se revisa contra auditorías previas, etapas E y F).
    - Sin fallas, las métricas dicen hacia dónde empujar: por ejemplo, si una macro casi nunca corrió o revierte
      siempre, si las reversiones pasan del 5 % o si nunca hubo depósitos con 0 acciones.
+5. **Ver el estado sin pegar nada:** `python -m nexus.secresearch.dashboard` abre la página local con lo mismo que
+   `para_claude.md`, más los programas, los cambios pendientes y los expedientes. Se regenera sola al terminar cada
+   ciclo y cada `validate`.
+6. **Si una falla se confirma como candidato:** `python -m nexus.secresearch.expediente INFORME` arma el expediente con
+   todo lo que el motor ya sabe. Claude ayuda a completar la causa raíz, la prueba de concepto independiente del
+   harness, el impacto y la revisión de auditorías previas; el dueño lo revisa y lo envía por la plataforma oficial.
 
 ## Métricas (lo único que cuenta)
 
