@@ -214,7 +214,7 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
                             forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work")
     calls = [json.loads(x) for x in log.read_text().splitlines()]
     assert [c["argv"][0] for c in calls] == ["build", "test"] and all(c["ffi"] == "false" for c in calls)
-    assert calls[1]["argv"] == ["test", "--json", "--match-path", "test/V.t.sol"]
+    assert calls[1]["argv"] == ["test", "--json", "-vv", "--match-path", "test/V.t.sol"]
     assert not rec["ok"] and rec["test"]["counts"] == {"Success": 2, "Failure": 1, "Skipped": 1}
     assert rec["test"]["failures"][0]["counterexample"]["args"] == "2" and len(rec["sha"]) == 40
     md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text()
@@ -255,7 +255,7 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     rec = validate.validate("o/v", harness="h", seed="0x2a", fuzz={"FOUNDRY_INVARIANT_DEPTH": "9"}, **kw)
     build, test = (json.loads(x) for x in log.read_text().splitlines())
     assert build["harness"] == ["P.t.sol"]                                   # copiado antes de compilar
-    assert test["argv"] == ["test", "--json", "--match-contract", "^Nexus"] and test["ffi"] == "false"
+    assert test["argv"] == ["test", "--json", "-vv", "--match-contract", "^Nexus"] and test["ffi"] == "false"
     assert test["fuzz"] == {"FOUNDRY_FUZZ_RUNS": "7", "FOUNDRY_INVARIANT_DEPTH": "9", "FOUNDRY_FUZZ_SEED": "0x2a"}
     assert rec["harness_files"] == ["P.t.sol"] and rec["test"]["activity"][0]["reverts"] == 30
     assert rec["test"]["activity"][0]["logs"][0] == "cazador: leyes evaluadas: 99"  # el log aunque la prueba pase

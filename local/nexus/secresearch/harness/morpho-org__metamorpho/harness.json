@@ -5,7 +5,8 @@
     "FOUNDRY_FUZZ_RUNS": "1000",
     "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
     "FOUNDRY_INVARIANT_RUNS": "256",
-    "FOUNDRY_INVARIANT_DEPTH": "500"
+    "FOUNDRY_INVARIANT_DEPTH": "500",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
   },
-  "verified": "27-oct-2026 en la nube con solc-js + EDR (sin forge), MetaMorpho ded84e5: los 6 invariantes (3 del handler original con el cazador y 3 multi-mercado) pasan 256x500 con 2 semillas (1,5 M de llamadas, sin falsos positivos) y la version final 64x200 con 2 semillas; mutaciones en docs/CAZADOR_METAMORPHO.md"
+  "verified": "27-oct-2026 en la nube con solc-js + EDR (sin forge), MetaMorpho ded84e5: los 6 invariantes (3 del handler original con el cazador y 3 multi-mercado) pasan 256x500 sin falsos positivos con las semillas 0x2a y 0x3 en la version final y 0x2a y 0x1 en la anterior (3 M de llamadas), la suite a16z 78/78 con 2000 corridas, y se detectan 21 de 21 mutaciones (17 de MetaMorpho y 4 de Morpho Blue)"
 }

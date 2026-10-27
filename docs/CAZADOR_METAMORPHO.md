@@ -186,8 +186,9 @@ En la nube, sin forge: EDR 0.25 con solc-js (Morpho 0.8.19, MetaMorpho 0.8.21 y 
 MetaMorpho `ded84e5`. Ver `tools/edr/README.md`.
 
 **Falsos positivos.** Los 6 invariantes, 3 del handler original con el cazador y 3 multi-mercado, pasan con
-256 corridas × 500 llamadas y las semillas `0x2a` y `0x1`: son 1,5 M de llamadas. La versión final, que agrega las
-macros de frontera, la identidad de valor y `claimFees`, pasa además 64 × 200 con `0x2a` y `0x3`.
+256 corridas × 500 llamadas en la versión final con las semillas `0x2a` y `0x3` (1,5 M de llamadas) y en la anterior,
+sin las macros de frontera, la identidad de valor ni `claimFees`, con `0x2a` y `0x1` (otros 1,5 M). La suite ERC-4626
+de a16z pasa 78 de 78 con 2.000 corridas.
 
 Durante el desarrollo aparecieron siete falsos positivos y se corrigieron en el cazador o en el entorno, nunca
 agregando tolerancia:
@@ -200,13 +201,13 @@ agregando tolerancia:
 - retiros de las macros sin acotar a la liquidez;
 - aserciones de ganancia del atacante que no valían con comisión de desempeño.
 
-**Reversiones.** Están entre 0,3 y 0,4 % en los invariantes del handler original y entre 2 y 3,5 % en los
+**Reversiones.** Están entre 0,3 y 0,4 % en los invariantes del handler original y entre 2 y 4 % en los
 multi-mercado. Con `failOnRevert` en 8 semillas × 3 variantes, todas son `SupplyCapExceeded` o `UnauthorizedMarket`:
 la reasignación original no conoce los topes y `reallocateTo` pide más que el tope a propósito una vez de cada ocho.
 Ninguna sale del cazador.
 
 **Costo.** Con 4 núcleos compartidos entre 6 suites, el handler original con el cazador corre a ~735 llamadas/s por
-suite (antes ~1.000) y el multi-mercado a ~560.
+suite (antes ~1.000) y el multi-mercado a ~560-620.
 
 **Mutaciones.** Corridas con `python3 tools/edr/mutate.py`: 64 × 100 por invariante y 256 corridas de fuzz. Con el
 cazador se detectan **21 de 21**, y en todas dispara una ley `H-...`. El harness original, sin el cazador, no detecta

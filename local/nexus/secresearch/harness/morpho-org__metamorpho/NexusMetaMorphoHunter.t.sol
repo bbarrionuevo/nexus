@@ -400,11 +400,13 @@ contract NexusMetaMorphoHunterTest is Test {
             uint256 badDebt,
             uint256 forced
         ) = handler.hunterStats();
+        emit log_named_uint("verificaciones", handler.checks());
+        emit log_named_uint("perdidas", handler.losses());
         emit log_named_uint("cazador: leyes evaluadas", laws);
         emit log_named_uint("cazador: depositos con 0 acciones", zeros);
         emit log_named_uint("cazador: precio maximo de una accion (ventana de redondeo a cero)", window);
         emit log_named_uint("cazador: mayor perdida de una victima", victimLoss);
-        emit log_named_uint("cazador: polvo de Morpho absorbido / cota (wei)", dust);
+        emit log_named_uint("cazador: polvo de Morpho absorbido (wei)", dust);
         emit log_named_uint("cazador: cota del polvo (wei)", budget);
         emit log_named_uint("cazador: comision devengada", feeAccrued);
         emit log_named_uint("cazador: comision acunada (valor)", feeValue);

@@ -39,7 +39,7 @@ recurrente y bien documentada en vaults. Se prueba de forma determinista, que es
 | C. Método de invariantes | Modelo de referencia ERC-4626 con aritmética entera y propiedades P0–P6 | Implementado y verificado | Autoverificación: pasa la correcta y atrapa los 5 defectos de referencia |
 | D. Validación local con Foundry | `validate.py`: solo repos de programas verificados; clona fijado a un commit con submódulos; `forge build` + `forge test --json` con FFI apagado forzado y topes de tiempo; informe privado e historial | Implementado y verificado en la PC (26-oct) | Línea base de MetaMorpho `ded84e5`: compila en 350,7 s; 148 pasan · 0 fallan · 0 omitidos (354,2 s) |
 | D'. Propiedades del vault en Foundry | `harness/morpho-org__metamorpho/`: la suite ERC-4626 de a16z y un test de invariantes con handler, en 3 variantes; `validate --harness` los copia al clon y los corre con una semilla nueva. Desde el 27-oct, con el cazador (`NexusVulnerabilityHunter.sol`) y una suite multi-mercado con gobierno | Implementado. Verificado en la nube **sin forge** (solc-js + EDR, el motor de tests de Hardhat 3). **Falta la primera corrida con forge en la PC** | 81/81 pasan en `ded84e5` con 4 semillas; detecta 7 de 7 mutaciones de referencia (abajo). Con el cazador: sin falsos positivos en 1,5 M de llamadas; detecta 21 de 21 mutaciones, también en Morpho Blue, contra 11 de 21 del harness original ([detalle](CAZADOR_METAMORPHO.md#verificación)) |
-| Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md`. Este último trae las fallas y, desde el 27-oct, la cobertura de la última corrida: llamadas y reversiones por acción del handler, que forge reporta, y las métricas del cazador si forge incluye el log de `afterInvariant` | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
+| Ciclo desatendido | `cycle.py`: una vez por disparo del Programador de tareas, con candado y tope de tiempo. Hace A–C, los harness con semilla nueva y hasta 2 líneas base vencidas, y escribe `ciclo.md` y `para_claude.md`. Este último trae las fallas y, desde el 27-oct, la cobertura de la última corrida: llamadas y reversiones por acción del handler, que forge reporta, y el log de `afterInvariant` (verificaciones y métricas del cazador; por eso `validate` corre forge con `-vv`) | Implementado; lo registra el dueño con `tools/windows/registrar_ciclo.ps1` | Tests con reloj y validador simulados |
 | E. Duplicados y alcance | Auditorías previas, problemas conocidos, exclusiones | Parcial: el catálogo guarda exclusiones; la búsqueda de auditorías está pendiente | — |
 | F. Expediente | Informe por candidato confirmado | Pendiente: plantilla abajo | — |
 
@@ -233,7 +233,8 @@ de mejora es:
    puede reproducir con forge. Trae:
    - las fallas distintas, con su ley (`H-...`), el contraejemplo y la semilla;
    - la cobertura de la última corrida: llamadas y reversiones por cada acción y macro del handler (métricas de
-     forge) y, si la versión de forge incluye el log de `afterInvariant`, las métricas del cazador.
+     forge) y el log de `afterInvariant`: el contador de verificaciones (que la corrida no pasó en vacío) y las
+     métricas del cazador. `validate` corre forge con `-vv` porque, sin eso, forge borra los logs del JSON.
 4. **Qué hace Claude con eso.**
    - Una falla con código `H-...` se reproduce con la misma semilla y se clasifica: error del harness (se corrige) o
      candidato (se aísla en un test mínimo y se revisa contra auditorías previas, etapas E y F).

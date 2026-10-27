@@ -7,7 +7,7 @@
 1. El repo tiene que pertenecer a un programa que el dueño verificó (limits.repo_in_scope): compilar y
    testear es ejecutar código ajeno en la PC, así que nunca se hace sobre algo fuera del catálogo.
 2. Clona el repo en NEXUS_HOME/work, fijado a un commit (por defecto el último), con sus submódulos.
-3. forge build y forge test --json, con FOUNDRY_FFI=false forzado y topes de tiempo.
+3. forge build y forge test --json -vv, con FOUNDRY_FFI=false forzado y topes de tiempo.
 4. Informe privado en NEXUS_HOME/secresearch/validate: tests pasados, fallados y contraejemplos, más
    una línea por corrida en history.jsonl para medir.
 Todo es local: sin RPC ni forks, sin desplegar ni transmitir nada. La primera corrida de un repo es su
@@ -37,7 +37,8 @@ MAX_LOGS = 20
 HARNESS_DIR = Path(__file__).resolve().parent / "harness"
 HARNESS_DEST = Path("test") / "nexus"
 FUZZ_ENV = ("FOUNDRY_FUZZ_RUNS", "FOUNDRY_FUZZ_SEED", "FOUNDRY_FUZZ_MAX_TEST_REJECTS", "FOUNDRY_INVARIANT_RUNS",
-            "FOUNDRY_INVARIANT_DEPTH")
+            "FOUNDRY_INVARIANT_DEPTH",
+            "FOUNDRY_INVARIANT_SHOW_METRICS")   # solo salida: llamadas y reversiones por acción del handler
 
 
 def say(msg):
@@ -225,7 +226,9 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     if code:
         rec.update(ok=False, tail=(so + se).strip().splitlines()[-TAIL:])
         return _save(out, rec)
-    args = ["test", "--json"] + (["--match-path", match] if match else []) + (
+    # -vv: sin eso, forge vacía los logs del JSON y el informe pierde el log de afterInvariant (verificaciones,
+    # métricas del cazador). Solo cambia la salida; las trazas siguen apagadas (empiezan en -vvv).
+    args = ["test", "--json", "-vv"] + (["--match-path", match] if match else []) + (
         ["--match-contract", contract] if contract else [])
     say(f"compiló en {secs} s · corriendo tests (puede tardar varios minutos)…")
     code, so, se, secs = forge_run(forge, args, d, MAX_TEST_SECONDS, env)
