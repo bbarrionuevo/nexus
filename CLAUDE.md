@@ -11,6 +11,8 @@ Leer, en este orden:
 2. [docs/TRASPASO.md](docs/TRASPASO.md): estado actual, cómo se trabaja, pendientes y próximos pasos.
 3. [docs/INVESTIGACION_SEGURIDAD.md](docs/INVESTIGACION_SEGURIDAD.md) y
    [docs/CAZADOR_METAMORPHO.md](docs/CAZADOR_METAMORPHO.md) según la tarea.
+4. Si la sesión trabaja directo en la PC del dueño: [docs/PROMPT_SESION_PC.md](docs/PROMPT_SESION_PC.md), con la
+   autonomía y los límites de esa sesión.
 
 ## Lo que no se negocia (resumen; el texto vigente está en REGLAS.md)
 

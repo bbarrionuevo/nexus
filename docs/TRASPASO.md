@@ -4,6 +4,9 @@ Documento de entrega para retomar el proyecto desde cualquier conversación nuev
 27-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
 las reglas.
 
+Para arrancar una sesión que trabaje directo en la PC del dueño, con acceso a GitHub, el prompt de arranque está en
+[PROMPT_SESION_PC.md](PROMPT_SESION_PC.md).
+
 ## 1. Qué es nexus
 
 Un motor de **investigación de seguridad DeFi** para programas de bug bounty **autorizados**. Corre en la PC del
