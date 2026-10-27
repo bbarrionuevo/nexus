@@ -1,10 +1,11 @@
 {
   "private": true,
-  "description": "Verificación de harness de nexus sin forge: solc-js + EDR (motor de tests Solidity de Hardhat 3)",
+  "description": "Verificaci\u00f3n de harness de nexus sin forge: solc-js + EDR (motor de tests Solidity de Hardhat 3)",
   "dependencies": {
     "@nomicfoundation/edr": "0.25.0",
     "solc8_19": "npm:solc@0.8.19",
     "solc8_21": "npm:solc@0.8.21",
-    "solc8_26": "npm:solc@0.8.26"
+    "solc8_26": "npm:solc@0.8.26",
+    "solc8_28": "npm:solc@0.8.28"
   }
 }

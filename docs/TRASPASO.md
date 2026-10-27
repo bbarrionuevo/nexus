@@ -138,6 +138,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #75 | Con la primera corrida de la PC: `reallocate` respeta topes, `gobierno con efecto` y la guía para leer el informe |
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
+| #80 | Harness de Vault V2, variante A (cazador con las leyes V-..., 3 variantes, verificado en la nube) |
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`): el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, y el alcance de Vault V2 y de MetaMorpho quedó contrastado con la página de direcciones de Morpho |
 
 ## 5. Próximos pasos
@@ -172,12 +173,15 @@ En orden de prioridad:
      las auditorías tempranas son de una versión vieja con VIC y `realizeLoss()` que **ya no existe**; no perseguir
      esos hallazgos.
    - **Modelo derivado** en [CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md): contabilidad por adapters, tope de tasa
-     (`maxRate`), dos comisiones, `forceDeallocate`, realización de pérdida, y las leyes `V-...`. **Falta escribir el
-     harness** (`.sol`), compilarlo con forge y correr la campaña. El `AdapterMock` del repo (`realAssets = deposit +
-     interes − perdida`) es la base de la variante controlable.
-   - **Ojo con el ciclo:** no dar de alta `harness/morpho-org__vault-v2/harness.json` hasta que el `.sol` compile, o
-     el ciclo de las 03:17 intentará correr un harness roto. La línea base de V2 es cara: compila en ~16 min y los
-     tests tardan ~35.
+     (`maxRate`), dos comisiones, `forceDeallocate`, realización de pérdida, y las leyes `V-...`.
+   - **Variante A escrita y verificada en la nube** (27-oct, PR del harness): `harness/morpho-org__vault-v2/`
+     (`NexusVaultV2Hunter.sol` + `NexusVaultV2Invariant.t.sol`), VaultV2 + `AdapterMock`, 3 variantes. Pasan 256×500
+     sin falsos positivos con `0x2a` y `0x3`, y el cazador atrapa 5 mutaciones de referencia. El `harness.json` ya
+     está dado de alta: el harness compila (solc 0.8.28, 62 s en la nube), así que el ciclo lo correrá con forge.
+   - **Falta:** la variante B (adapter real sobre Morpho Blue), `forceDeallocate`, los topes relativos y el gobierno
+     con timelock; y bajar las reversiones (~16 %, sobre todo depósitos que topan el `uint128` de `_totalAssets`).
+   - **Primera corrida con forge en la PC, pendiente.** La línea base de V2 es cara: compila en ~16 min y los tests
+     tardan ~35.
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
    Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
    2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.

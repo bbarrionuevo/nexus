@@ -1,8 +1,24 @@
 # Cazador de vulnerabilidades para Morpho Vault V2
 
 Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (commit de la línea base `04e5f4a9`), al
-estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)). Estado: **modelo derivado, harness por
-escribir**. La etapa E (duplicados) está hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)). Estado: **variante A escrita y verificada en
+la nube** (27-oct); faltan la variante B (adapter real), `forceDeallocate`, los topes relativos y el gobierno con
+timelock. La etapa E (duplicados) está hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+
+**Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma y leyes
+V-...) y `NexusVaultV2Invariant.t.sol` (el handler y tres variantes: sin comisión, con comisión de performance y de
+gestión, y activo de 6 decimales). El handler controla rendimiento y pérdidas con `AdapterMock`, así que el fantasma
+conoce los activos reales exacto. Los montos de cada acción los **deriva** el cazador del cambio de estado observado
+(activos: el cambio de lo ocioso; acciones: el cambio de balance), no de los argumentos del handler: así una acción
+acotada a 0 es un no-op consistente. El fantasma no usa las vistas con devengamiento del vault (`totalAssets`,
+`previewX`, `accrueInterestView`); solo estado crudo (`_totalAssets`, `totalSupply`, `lastUpdate`, `maxRate`, las
+comisiones, `balanceOf`) y los activos reales desde el token y el adapter.
+
+**Verificación en la nube (sin forge), commit `04e5f4a9`, solc 0.8.28 + EDR.** Las 3 variantes pasan 256×500 sin
+falsos positivos con las semillas `0x2a` y `0x3`. Mutaciones de referencia probadas: redondeo de `previewDeposit`
+(V-INF-1), de `previewRedeem` (V-INF-1), de `previewWithdraw` (V-INF-1), tope de tasa ignorado (V-TA-1 y V-FEE-1), y
+comisión de performance sobre `newTotalAssets` en vez del interés (V-FEE-1). Las reversiones rondan el 16 %, sobre
+todo depósitos que topan el `uint128` de `_totalAssets`; bajarlas es un próximo paso.
 
 Vault V2 es un ERC-4626 que delega el capital en *adapters*. Cada adapter reporta cuánto valen sus inversiones con
 `realAssets()`; el vault devenga interés y realiza pérdidas a partir de esa suma. Es una contabilidad distinta a la de

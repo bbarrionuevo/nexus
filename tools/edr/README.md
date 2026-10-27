@@ -33,5 +33,16 @@ Si una invariante falla, `run_edr.js` imprime la secuencia reducida y la guarda 
 reproducirla paso a paso. Así se encontró y se corrigió el falso positivo del redondeo de las acciones de
 comisión: ver docs/INVESTIGACION_SEGURIDAD.md, etapa D'.
 
-`build.js` está armado para el layout de MetaMorpho. Para otro repo hay que cambiar las unidades: qué
-archivos compila cada versión de solc, según los pragmas y lo que el test despliega con `deployCode`.
+`build.js` está armado para el layout de MetaMorpho (tres versiones de solc: Morpho Blue 0.8.19, MetaMorpho 0.8.21,
+harness 0.8.26). Para otro repo hay que cambiar las unidades: qué archivos compila cada versión de solc, según los
+pragmas y lo que el test despliega con `deployCode`.
+
+`build_v2.js` es la versión para Morpho Vault V2: una sola unidad con solc 0.8.28, via_ir, optimizer 100000 y evm
+cancun (su `foundry.toml`), sobre VaultV2, los mocks y el harness. `run_edr.js` sirve para los dos: aplana los grupos
+del `.out.json`.
+
+```bash
+node build_v2.js $CLON_V2 v2.out.json                 # ~60 s
+node run_edr.js  $CLON_V2 v2.out.json 64 256 500 invariant 0x2a
+MUTATION='{"file":"src/VaultV2.sol","old":"...","new":"..."}' node build_v2.js $CLON_V2 v2mut.out.json  # inyecta un defecto
+```
