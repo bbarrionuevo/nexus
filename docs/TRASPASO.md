@@ -133,13 +133,13 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #72 | Etapa D': suite a16z, invariantes con handler y ciclo desatendido |
 | #74 | `NexusVulnerabilityHunter`, la suite multi-mercado, métricas por acción y `-vv` para que el informe muestre el log de `afterInvariant` |
 | #75 | Con la primera corrida de la PC: `reallocate` respeta topes, `gobierno con efecto` y la guía para leer el informe |
-| siguiente | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
+| #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el PR pendiente, `git pull` en `main` y correr
+1. **Dueño:** fusionar el PR #76, `git pull` en `main` y correr
    `..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho`.
    En el informe, `colaSuministro` dentro de `gobierno con efecto` tendría que subir. Después abrir el dashboard.
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que falla cada 5 minutos porque apunta a un script del
