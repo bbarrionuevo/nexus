@@ -213,8 +213,9 @@ de una acción a valores enormes. Desde ese estado:
 
 Es un comportamiento conocido y documentado, no un hallazgo. Lo que se investiga es una ley `H-...` que falle: por
 ejemplo, un atacante que gana con la inflación (H-INF-5) o una víctima que pierde más de una acción (H-INF-3). Con
-6 decimales, `DECIMALS_OFFSET` es 12: inflar el precio cuesta 10^12 veces más, y en la primera corrida con forge la
-ventana quedó en 1 wei.
+6 decimales, `DECIMALS_OFFSET` es 12 e inflar el precio cuesta 10^12 veces más. Aun así puede pasar en las suites,
+porque el fuzzer dona hasta 1e28 unidades sin escalar por decimales: con 6 decimales son 10^22 tokens, más de los que
+existen.
 
 ## Verificación
 
@@ -286,6 +287,12 @@ handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el mod
 - Llamar a una acción de gobierno no alcanza: un `acceptCap` sin tope pendiente vencido no explora nada. El informe
   agrega `gobierno con efecto`, por tipo de acción.
 - La guía para leer el informe (sección 6), porque algunas métricas parecen alarmantes y no lo son.
+
+**Segunda corrida con forge (27-oct, semilla nueva).** Pasan los 84 tests. El `reallocate` heredado bajó del 78 % de
+reversiones a 0,1–0,3 %, y las suites multi-mercado, de 3,2–3,8 % a 0,8–0,9 %. La línea `gobierno con efecto` mostró
+que `setSupplyQueue` cambiaba la cola en solo 2 a 5 de unas 14 llamadas por corrida, porque armaba colas al azar con
+los cuatro mercados y MetaMorpho revierte si alguno tiene tope 0. Ahora siete de cada ocho llamadas usan solo mercados
+con tope, y la octava prueba la reversión.
 
 ## Límites y próximos pasos
 
