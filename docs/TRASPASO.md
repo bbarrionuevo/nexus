@@ -156,13 +156,13 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
-| rama `claude/vault-v2-perdidas-precio` | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
+| #80 | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el PR de esta iteración y hacer `git pull` en `main`. Lo que pedía el #76 ya está probado: la
+1. **Dueño:** fusionar el #80 y hacer `git pull` en `main`. Lo que pedía el #76 ya está probado: la
    corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por corrida. El
    ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del 27-oct se
    corrigió en el #79).
@@ -196,7 +196,7 @@ En orden de prioridad:
      revertía el 98 % (el tope relativo nunca se subía y vale 0) y `transfer` el 94 % (el `prank` lo consumía el
      `balanceOf` del argumento). Eran el ~16 % de reversiones, no depósitos que topaban el `uint128`. El adapter nunca
      tenía capital y las pérdidas solo se comían rendimiento.
-   - **Corregido y ampliado en el PR de esta iteración:** adapter propio que cumple la especificación
+   - **Corregido y ampliado en el #80:** adapter propio que cumple la especificación
      (`NexusAdapterMock`), topes relativos, transferencias reales, y las leyes V-INF-2 (precio por acción),
      V-LOSS-1 y V-LOSS-2 (realización de pérdidas), demostradas en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 3 de 3
      a 256×500 sin falsos positivos con `0x2a` y `0x3` en el proyecto reducido y con `0x8e4b379d1936e836` en
