@@ -1,6 +1,6 @@
 # Cazador de vulnerabilidades para Morpho Vault V2
 
-Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (línea base `04e5f4a9`; hasta `091e12d0` solo
+Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (línea base `04e5f4a9`; hasta `6047e158` solo
 cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)).
 Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter y las leyes
 del precio por acción (V-INF-2) y de realización de pérdidas (V-LOSS-1, V-LOSS-2). Faltan la variante B (adapter real),
@@ -47,7 +47,8 @@ revertían nunca: no había un tope de `uint128` en `_totalAssets`, como se supo
 `0x2a` y `0x3`, con **0 reversiones** en 384.000 llamadas por semilla. Por corrida de 500 llamadas hubo 11 a 25
 pérdidas realizadas sobre capital asignado, 20 a 30 asignaciones, 30 a 34 desasignaciones y 28 a 34 transferencias con
 efecto. En la variante con comisión, el precio bajó sin pérdida 14 y 27 veces (solo puede ser por la comisión de
-gestión); en las otras dos, ninguna, como predice V-INF-2 (c).
+gestión); en las otras dos, ninguna, como predice V-INF-2 (c). La referencia, con `validate` sobre el repo entero
+(`6047e158`, semilla `0x8e4b379d1936e836`), también da 3 de 3 con 0 reversiones: 599 s de compilación y 677 s de tests.
 
 **Mutaciones de referencia** ([tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json); 64×200, semilla
 `0x2a`, con forge sobre el proyecto reducido): las 13 se detectan, y cada ley nueva tiene al menos una que la dispara.

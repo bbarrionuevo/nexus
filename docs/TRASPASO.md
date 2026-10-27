@@ -156,6 +156,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
+| rama `claude/vault-v2-perdidas-precio` | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
 
 ## 5. Próximos pasos
 
@@ -198,12 +199,13 @@ En orden de prioridad:
    - **Corregido y ampliado en el PR de esta iteración:** adapter propio que cumple la especificación
      (`NexusAdapterMock`), topes relativos, transferencias reales, y las leyes V-INF-2 (precio por acción),
      V-LOSS-1 y V-LOSS-2 (realización de pérdidas), demostradas en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 3 de 3
-     a 256×500 sin falsos positivos con `0x2a` y `0x3`, 0 reversiones, y las 13 mutaciones de referencia detectadas,
-     cada ley nueva por al menos una.
+     a 256×500 sin falsos positivos con `0x2a` y `0x3` en el proyecto reducido y con `0x8e4b379d1936e836` en
+     `validate` sobre el repo entero (`6047e158`, que solo cambia comentarios de `MidnightAdapter`), siempre con 0
+     reversiones. Las 13 mutaciones de referencia se detectan, cada ley nueva por al menos una.
    - **Falta:** `forceDeallocate` (V-FD-1) y los topes como ley (V-CAP-1), que ya tienen capital asignado sobre el que
      correr; el gobierno con timelock; la variante B (adapter real sobre Morpho Blue); y la cota V-BOUND como ley.
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
-     `validate`, tarda ~11 min de compilación y ~8 de tests; para iterar, `tools/forge_v2` (~30 s).
+     `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
    Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
    2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.
