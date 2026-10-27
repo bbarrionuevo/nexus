@@ -227,7 +227,7 @@ MetaMorpho `ded84e5`. Ver `tools/edr/README.md`.
 sin las macros de frontera, la identidad de valor ni `claimFees`, con `0x2a` y `0x1` (otros 1,5 M). La suite ERC-4626
 de a16z pasa 78 de 78 con 2.000 corridas.
 
-Durante el desarrollo aparecieron siete falsos positivos y se corrigieron en el cazador o en el entorno, nunca
+Durante el desarrollo aparecieron ocho falsos positivos y se corrigieron en el cazador o en el entorno, nunca
 agregando tolerancia:
 
 - comisión pendiente calculada con el L anterior;
@@ -236,7 +236,9 @@ agregando tolerancia:
 - `block.timestamp` cacheado por via_ir después de `vm.warp`;
 - colas de suministro con repetidos, donde MetaMorpho documenta que `maxDeposit` promete de más;
 - retiros de las macros sin acotar a la liquidez;
-- aserciones de ganancia del atacante que no valían con comisión de desempeño.
+- aserciones de ganancia del atacante que no valían con comisión de desempeño;
+- depósitos cuyas acciones no entran en `uint256`: revierten con `Panic(0x11)` en cualquier ERC-4626 (detalle abajo,
+  en la segunda corrida).
 
 **Reversiones.** Están entre 0,3 y 0,4 % en los invariantes del handler original y entre 2 y 4 % en los
 multi-mercado. Con `failOnRevert` en 8 semillas × 3 variantes, todas son `SupplyCapExceeded` o `UnauthorizedMarket`:
@@ -293,6 +295,18 @@ reversiones a 0,1–0,3 %, y las suites multi-mercado, de 3,2–3,8 % a 0,8–0,
 que `setSupplyQueue` cambiaba la cola en solo 2 a 5 de unas 14 llamadas por corrida, porque armaba colas al azar con
 los cuatro mercados y MetaMorpho revierte si alguno tiene tope 0. Ahora siete de cada ocho llamadas usan solo mercados
 con tope, y la octava prueba la reversión.
+
+Al verificar ese cambio en la nube, la semilla `0x2a` hizo fallar dos suites multi-mercado: un depósito menor o igual
+a `maxDeposit` revertía. Con las colas cambiando de verdad aparece un estado nuevo:
+
+1. Remociones forzadas de mercados con supply dejan `totalAssets` cerca de 0 con acciones en circulación.
+2. El depósito siguiente acuña cantidades astronómicas de acciones, porque el precio de una acción es casi 0.
+3. Otra remoción y otro depósito, y las acciones ya no entran en `uint256`.
+
+Para clasificarlo, las fallas de vivacidad ahora dicen con qué error revirtió la llamada. Fue `Panic(0x11)`, un
+desborde aritmético. Cualquier ERC-4626 revierte en ese caso, así que no es un error de MetaMorpho: hace falta que el
+curador realice pérdidas totales dos veces. Las macros ahora exigen el depósito solo si sus acciones entran en
+`uint256` (`_mintFits`), una condición exacta de 512 bits que no puede esconder otro error.
 
 ## Límites y próximos pasos
 
