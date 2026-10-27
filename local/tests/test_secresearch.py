@@ -332,7 +332,7 @@ def test_harness_de_vault_v2_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__vault-v2")
     assert man["repo"] == "morpho-org/vault-v2" and man["match_contract"] == "^NexusVaultV2"
-    assert {f.name for f in files} == {"NexusVaultV2Hunter.sol", "NexusVaultV2Invariant.t.sol"}
+    assert {f.name for f in files} == {"NexusVaultV2Hunter.sol", "NexusVaultV2Invariant.t.sol", "NexusVaultV2Blue.t.sol"}
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

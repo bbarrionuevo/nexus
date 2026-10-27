@@ -19,5 +19,10 @@
   ["V18 tope absoluto ignorado", "require(_caps.allocation <= _caps.absoluteCap, ErrorsLib.AbsoluteCapExceeded());", "require(_caps.allocation <= type(uint256).max, ErrorsLib.AbsoluteCapExceeded());"],
   ["V19 tope relativo estricto", "_caps.allocation <= firstTotalAssets.mulDivDown(_caps.relativeCap, WAD)", "_caps.allocation < firstTotalAssets.mulDivDown(_caps.relativeCap, WAD)"],
   ["V20 allocation con los activos en vez del change", "_caps.allocation = (int256(_caps.allocation) + change).toUint256();\n\n            require(_caps.absoluteCap > 0", "_caps.allocation = (int256(_caps.allocation) + int256(assets)).toUint256();\n\n            require(_caps.absoluteCap > 0"],
-  ["V21 firstTotalAssets se pisa en cada devengamiento", "if (firstTotalAssets == 0) firstTotalAssets = newTotalAssets;", "firstTotalAssets = newTotalAssets;"]
+  ["V21 firstTotalAssets se pisa en cada devengamiento", "if (firstTotalAssets == 0) firstTotalAssets = newTotalAssets;", "firstTotalAssets = newTotalAssets;"],
+  ["V22 realAssets del adapter al techo", "return _supplyShares.toAssetsDown(totalSupplyAssets, totalSupplyShares);", "return _supplyShares.toAssetsUp(totalSupplyAssets, totalSupplyShares);", "src/adapters/MorphoMarketV1AdapterV2.sol"],
+  ["V23 el adapter cuenta una accion de mas al asignar", "supplyShares[marketId] += mintedShares;", "supplyShares[marketId] += mintedShares + 1;", "src/adapters/MorphoMarketV1AdapterV2.sol"],
+  ["V24 el adapter cuenta una accion de menos al desasignar", "supplyShares[marketId] -= burnedShares;", "supplyShares[marketId] -= burnedShares > 0 ? burnedShares - 1 : 0;", "src/adapters/MorphoMarketV1AdapterV2.sol"],
+  ["V25 un mercado en 0 no sale de marketIds", "if (oldAllocation > 0 && newAllocation == 0) {", "if (oldAllocation > 0 && newAllocation == 0 && false) {", "src/adapters/MorphoMarketV1AdapterV2.sol"],
+  ["V26 realAssets cuenta solo el primer mercado", "_realAssets += expectedSupplyAssets(marketIds[i]);", "_realAssets += expectedSupplyAssets(marketIds[0]);", "src/adapters/MorphoMarketV1AdapterV2.sol"]
 ]

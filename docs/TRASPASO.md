@@ -212,8 +212,17 @@ En orden de prioridad:
      topes con su borde exacto (si y solo si), cambios de topes y depósito y allocate en una misma transacción contra
      `firstTotalAssets`. Demostraciones en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 3 de 3 a 256×500 sin falsos
      positivos con `0x2a` y `0x3` (proyecto reducido) y con `0x2fef01ee4e27ce41` (`validate`, repo entero), y las 21
-     mutaciones de referencia detectadas (las 8 nuevas por V-FD-1 y V-CAP-1). En el camino apareció que forge 1.8.6 corre con `isolate = true` (§2): por eso `NexusV2Macro`.
-   - **Falta:** la variante B (`MorphoMarketV1AdapterV2` real sobre Morpho Blue: el siguiente objetivo), el gobierno con
+     mutaciones de referencia detectadas (las 8 nuevas por V-FD-1 y V-CAP-1). En el camino apareció que forge 1.8.6
+     corre con `isolate = true` (§2): por eso `NexusV2Macro`.
+   - **Variante B, en el PR de esta iteración** (rama `claude/vault-v2-variante-b`, sobre la del #81):
+     `NexusVaultV2Blue.t.sol`, el `MorphoMarketV1AdapterV2` real sobre Morpho Blue con la IRM adaptativa, dos mercados,
+     prestatarios, cambios de precio y liquidaciones con deuda incobrable. Leyes V-ADP-1 a 5 contra el estado crudo de
+     Blue (`realAssets` exacto, allocations, acciones internas, `marketIds`, movimiento exacto con redondeo demostrado
+     en `[−⌈p⌉, +1]`), más V-TA-1, V-LOSS-1 y V-SOLV-1. Con forge en la PC: 256×500 sin falsos positivos ni reversiones
+     con `0x2a` y `0x3`, y las 5 mutaciones del adapter (V22–V26) detectadas, una por ley. `tools/forge_v2` ya arma el
+     proyecto reducido con Blue y la IRM y muta cualquier archivo.
+   - **Falta:** en la variante B, el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator (en
+     alcance, el código más nuevo; se monta sobre la misma infraestructura: es el siguiente objetivo); el gobierno con
      timelock y la cota V-BOUND como ley.
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).

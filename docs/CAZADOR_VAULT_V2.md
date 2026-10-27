@@ -4,8 +4,10 @@ Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (línea b
 cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)).
 Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter, las leyes
 del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
-los topes (V-CAP-1). Faltan la variante B (adapter real), el gobierno con timelock y la cota V-BOUND como ley. La etapa E
-(duplicados) está hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP) escrita y verificada el mismo
+día. Faltan, en la variante B, el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator; el
+gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
+`NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
 y `NexusAdapterMock`) y `NexusVaultV2Invariant.t.sol` (el handler y tres variantes: sin comisión, con comisión de
@@ -171,6 +173,7 @@ V-SOLV-1. Las demás son el plan.
 | V-LEDGER | `T = Σ saldos` (incluidas las shares de fee); `T` = el esperado tras cada acción; sin pérdida, fuera de quien opera ningún saldo cambia y los de comisión solo suben | Shares creadas o destruidas por fuera |
 | V-SOLV-1 | `⌊T⁺(TA+1)/(T⁺+v)⌋ ≤ R`: lo reclamable está respaldado por los activos reales | Insolvencia |
 | V-BOUND | Las macros exigen `TA, T < ~10³⁵` antes de operar (el `mulDiv` de una palabra puede desbordar) | Falsos positivos por `Panic(0x11)` |
+| V-ADP-1..5 | Variante B (adapter real sobre Blue): `realAssets` exacto contra Blue; allocations por mercado, adapter y colateral; acciones internas = posición en Blue; `marketIds` ⟺ allocation > 0; movimiento exacto en Blue con redondeo en `[−⌈p⌉, +1]`. Ver §4 | Adapter que informa de más o de menos, contabilidad de acciones o de allocations desviada, mercados olvidados |
 
 ## 4. Demostraciones: precio por acción (V-INF-2) y pérdidas (V-LOSS)
 
@@ -275,6 +278,38 @@ handler. Las secuencias de una transacción (depositar y asignar, forzar y salir
 hace `NexusV2Macro`, allocator del vault con allowance de los actores, dentro de su propia llamada, y devuelve lo que lee
 ahí. ∎
 
+### Variante B: el adapter real sobre Morpho Blue (V-ADP)
+
+`NexusVaultV2Blue.t.sol`: VaultV2 + `MorphoMarketV1AdapterV2` (creado por su factory) sobre Morpho Blue con la IRM
+adaptativa, dos mercados del mismo token con colaterales distintos (LLTV 80 % y 90 %), sembrados con un suministro
+inicial (el adapter lo exige), prestatarios, cambios de precio del oráculo y liquidaciones que dejan deuda incobrable. Sin
+adapter de liquidez: depositar y retirar no tocan Blue. Antes de cada foto el cazador llama a `morpho.accrueInterest`
+en los dos mercados, así el estado crudo de Blue es el que el adapter calcula con `expectedMarketBalances`, y todo se
+verifica contra ese estado crudo con la aritmética de Blue: `toAssetsDown(s) = ⌊s·(tsa+1)/(tss+10⁶)⌋`.
+
+- **V-ADP-1:** `realAssets = Σ` sobre los mercados de `marketIds` de `toAssetsDown(supplyShares)` (las acciones
+  internas del adapter).
+- **V-ADP-2:** la allocation del id de cada mercado queda, tras cada allocate o deallocate en él, en el valor de sus
+  acciones internas; la del id del adapter es la suma de los mercados y la de cada colateral, la de su mercado (el
+  adapter devuelve los tres ids en cada llamada y el vault les suma el mismo `change` = nueva − anterior).
+- **V-ADP-3:** las acciones internas del adapter son su posición en Blue (sin donaciones de acciones ni `burnShares`).
+- **V-ADP-4:** un mercado está en `marketIds` (una sola vez) si y solo si su allocation es > 0: `updateList` lo agrega
+  al pasar de 0 a > 0 y lo saca al volver a 0.
+- **V-ADP-5:** un allocate de `a` suministra exactamente `a` en Blue y suma `⌊a·(tss+10⁶)/(tsa+1)⌋` acciones; un
+  deallocate de `a` devuelve exactamente `a` y quema `⌈a·(tss+10⁶)/(tsa+1)⌉`; y `R = ocioso + realAssets` cambia solo
+  por el redondeo, dentro de `[−⌈p⌉, +1]`, con `p = (tsa+1)/(tss+10⁶)` el precio de una acción de suministro.
+
+Demostración de la cota de V-ADP-5 (suministro; el retiro es igual con `g = ⌈a/p⌉ − a/p`): con `x` acciones del
+adapter, `sₐ = ⌊a/p⌋ = a/p − f` (`0 ≤ f < 1`) y `p' = (tsa+a+1)/(tss+sₐ+10⁶)`, resulta `p' − p = p·f/(tss+sₐ+10⁶)`, y el
+cambio exacto del valor de la posición menos `a` es `(x+sₐ)p' − xp − a = −f·p·[1 − (x+sₐ)/(tss+sₐ+10⁶)] ∈ (−p, 0]`
+(porque `x ≤ tss`). Los dos pisos de `toAssetsDown` mueven el resultado a lo sumo 1 hacia cada lado, así que el cambio
+de `R` está en `[−⌈p⌉, +1]`: el vault puede ganar 1 wei (recupera la fracción que el piso descartaba en el valor
+anterior). Con las 10⁶ acciones virtuales de Blue, `p ≪ 1` y el rango es `[−1, +1]`. ∎
+
+Las leyes del vault que no dependen del adapter (V-TA-1 y V-LOSS-1 con `R = ocioso + realAssets`, V-SOLV-1 tras un
+devengamiento) también se evalúan; una liquidación con deuda incobrable baja `realAssets` y el vault realiza la pérdida
+entera en su próximo devengamiento.
+
 ## 5. Harness previsto
 
 1. **Variante A — adapter controlable.** VaultV2 + `NexusAdapterMock`, un adapter de nexus que cumple la
@@ -284,9 +319,9 @@ ahí. ∎
    tasa, dos comisiones, forceDeallocate, caps, realización de pérdida) de forma exacta y barata. Es la que más señal
    da por llamada. El `AdapterMock` del repo no sirve con capital asignado: suma `interest − loss` en cada llamada, la
    allocation se desvía y, tras una pérdida, una desasignación puede dejar `realAssets()` en underflow.
-2. **Variante B — adapter real.** VaultV2 + `MorphoMarketV1AdapterV2` sobre Morpho Blue, reutilizando el fantasma de
-   Morpho del cazador de MetaMorpho (`expectedMarketBalances`/`toAssetsDown`). Más cara, valida que el adapter real
-   respeta el modelo.
+2. **Variante B — adapter real.** VaultV2 + `MorphoMarketV1AdapterV2` sobre Morpho Blue (§4, "Variante B"): valida que
+   el adapter real respeta el modelo, contra el estado crudo de Blue. Escrita el 27-oct (`NexusVaultV2Blue.t.sol`); falta
+   sumarle el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator, que se monta sobre lo mismo.
 3. **Tres sub-variantes** cada una, como en MetaMorpho: sin comisión, con comisión, y activo de 6 decimales.
 4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de
    cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida
