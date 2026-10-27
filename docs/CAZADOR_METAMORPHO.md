@@ -208,26 +208,37 @@ Ninguna sale del cazador.
 **Costo.** Con 4 núcleos compartidos entre 6 suites, el handler original con el cazador corre a ~735 llamadas/s por
 suite (antes ~1.000) y el multi-mercado a ~560.
 
-**Mutaciones.** Corridas con `python3 tools/edr/mutate.py` (64 × 100 por invariante y 256 corridas de fuzz). El harness
-original sin el cazador no detecta 10 de las 14 mutaciones nuevas:
+**Mutaciones.** Corridas con `python3 tools/edr/mutate.py`: 64 × 100 por invariante y 256 corridas de fuzz. Con el
+cazador se detectan **21 de 21**, y en todas dispara una ley `H-...`. El harness original, sin el cazador, no detecta
+10 de las 14 nuevas. La columna del cazador dice qué ley dispara y en cuántas de las 6 suites de invariantes (3 del
+handler original y 3 multi-mercado):
 
 | Mutación | Harness original | Con el cazador |
 |---|---|---|
-| M1–M7 (las de la etapa D') | 7 de 7 | PENDIENTE |
-| M8 habilitar un mercado con supply no suma su reclamo a L | no | PENDIENTE |
-| M9 remover un mercado con supply sin esperar el timelock | no | PENDIENTE |
-| M10 los timelocks vencen un segundo antes | no | PENDIENTE |
-| M11 `_supplyMorpho` redondea el supply hacia abajo (pasa el tope por 1 wei) | no | PENDIENTE |
-| M12 `withdraw` no descuenta lo retirado de L | no | PENDIENTE |
-| M13 `reallocate` no controla el tope | no | PENDIENTE |
-| M14 `totalAssets` suma la cola de suministro | no | PENDIENTE |
-| M15 acciones de comisión redondeadas hacia arriba | sí (`convertToAssets` < precio exacto) | PENDIENTE |
-| M16 `deposit` no acumula la comisión pendiente | sí (`previewDeposit`) | PENDIENTE |
-| M17 `deposit` deja L 1 wei arriba | no | PENDIENTE |
-| B1 Morpho devenga un segundo de más | sí (a16z `RT_deposit_redeem`) | PENDIENTE |
-| B2 Morpho `supply` redondea las shares hacia arriba | no | PENDIENTE |
-| B3 Morpho no descuenta la deuda incobrable del suministro | sí (`redeem` ≤ `maxRedeem` revierte) | PENDIENTE |
-| B4 Morpho `withdraw` redondea las shares quemadas hacia abajo | no | PENDIENTE |
+| M1 `deposit` redondea acciones hacia arriba | sí | H-INF-1 (6) |
+| M2 `maxWithdraw` ignora la liquidez | sí | H-INF-5 en la macro de inflación, más `max*` (6) |
+| M3 `deposit` no actualiza L (comisión sobre depósitos) | solo con comisión | H-FEE-2 (6, también sin comisión) |
+| M4 `mint` redondea el costo hacia abajo | sí | H-INF-1 (6) |
+| M5 `totalAssets` ignora el mercado idle | sí | H-SOLV-2 (3), más el precio original (3) |
+| M6 `redeem` redondea activos hacia arriba | sí | H-INF-1 (6) |
+| M7 comisión calculada de más | sí | H-FEE-1, más `convertToAssets` (4) |
+| M8 habilitar un mercado con supply no suma su reclamo a L | no | H-FEE-2 (3) |
+| M9 remover un mercado con supply sin esperar el timelock | no | H-GOV-3 (3) |
+| M10 los timelocks vencen un segundo antes | no | H-GOV-1 (3) |
+| M11 `_supplyMorpho` redondea el supply hacia abajo (pasa el tope por 1 wei) | no | H-SOLV-8 (3) |
+| M12 `withdraw` no descuenta lo retirado de L | no | H-FEE-2 (6) |
+| M13 `reallocate` no controla el tope | no | H-SOLV-7 (3) |
+| M14 `totalAssets` suma la cola de suministro | no | H-SOLV-2 (3) |
+| M15 acciones de comisión redondeadas hacia arriba (1 acción de más) | sí | H-FEE-1 y otras (4) |
+| M16 `deposit` no acumula la comisión pendiente | sí | H-FEE-1 (3), más `previewDeposit` |
+| M17 `deposit` deja L 1 wei arriba | no | H-FEE-2 (6): `18224` contra `18225` |
+| B1 Morpho devenga un segundo de más | sí (a16z) | H-DEBT-1, H-SOLV-5, H-SOLV-6, H-SOLV-8 (6) |
+| B2 Morpho `supply` redondea las shares hacia arriba | no | H-SOLV-6, H-SOLV-8 (6) |
+| B3 Morpho no descuenta la deuda incobrable del suministro | sí (`max*`) | H-SOLV-5 (6) |
+| B4 Morpho `withdraw` redondea las shares quemadas hacia abajo | no | H-SOLV-8, H-SOLV-4 (6) |
+
+Las que solo detectan las suites multi-mercado (M8–M11, M13, M14) necesitan topes que se alcancen o gobierno, que el
+handler original no tiene. M12 y M17 son errores de 1 wei en adelante que el modelo autorreferente no puede ver.
 
 **Falta:** la primera corrida con forge en la PC (`validate --harness morpho-org__metamorpho`).
 
