@@ -129,27 +129,46 @@ contract NexusMetaMorphoHunterHandler is NexusMetaMorphoHandler {
         morpho.accrueInterest(hm[_m(mSeed)]);
     }
 
-    /// @dev El allocator mueve `assets` de un mercado a otro (retirar todo = retiro por shares).
+    /// @dev El allocator mueve `assets` de un mercado a otro (retirar todo = retiro por shares). Una de cada ocho
+    /// llamadas pide más que el tope de destino: tiene que revertir.
     function reallocateTo(uint256 fromSeed, uint256 toSeed, uint256 assets)
         external
         hunted(OP_REALLOCATE, address(0), address(0), 0)
     {
-        uint256 i = _m(fromSeed);
-        uint256 j = _m(toSeed ^ 0x5a5a);
-        if (i == j || !hCfg[i].inW || hCfg[j].cap == 0) return;
+        _move(_m(fromSeed), _m(toSeed ^ 0x5a5a), assets, _h(assets, 7) % 8 == 0);
+    }
+
+    /// @dev El reallocate heredado (mercado <-> idle) no conoce los topes: con el gobierno de esta suite los topes bajan
+    /// seguido, y en la primera corrida con forge revirtió en el 78 % de sus llamadas (SupplyCapExceeded o
+    /// UnauthorizedMarket), sin explorar nada. Acá respeta topes y habilitación y, si esa dirección no admite
+    /// movimiento, prueba la inversa. Misma firma: la API del handler no cambia.
+    function reallocate(bool toIdle, uint256 assets)
+        external
+        override
+        hunted(OP_REALLOCATE, address(0), address(0), 0)
+    {
+        Snap memory s0 = _snap();
+        (uint256 i, uint256 j) = toIdle ? (0, 1) : (1, 0); // hm = [market, idle, ...]
+        if (_move(i, j, assets, false) || _move(j, i, assets, false)) _checkPrice(s0, "reallocate");
+    }
+
+    /// @dev Mueve hasta `assets` de hm[i] a hm[j]. Sin `overCap` respeta el tope de destino. Devuelve si reasignó.
+    function _move(uint256 i, uint256 j, uint256 assets, bool overCap) internal returns (bool) {
+        if (i == j || !hCfg[i].inW || hCfg[j].cap == 0) return false;
         MarketParams memory from = hm[i];
         uint256 supplied = morpho.expectedSupplyAssets(from, address(vault));
         uint256 toSupplied = morpho.expectedSupplyAssets(hm[j], address(vault));
         uint256 room = hCfg[j].cap > toSupplied ? hCfg[j].cap - toSupplied : 0;
         uint256 top = _min(supplied, _liq(from));
-        if (_h(assets, 7) % 8 != 0) top = _min(top, room); // 1 de cada 8 pide más que el tope: tiene que revertir
+        if (!overCap) top = _min(top, room);
         assets = _clamp(assets, 0, top);
-        if (assets == 0) return;
+        if (assets == 0) return false;
         MarketAllocation[] memory al = new MarketAllocation[](2);
         al[0] = MarketAllocation({marketParams: from, assets: supplied - assets});
         al[1] = MarketAllocation({marketParams: hm[j], assets: type(uint256).max});
         CHEATS.prank(ALLOCATOR);
         vault.reallocate(al);
+        return true;
     }
 
     /// @dev El receptor cobra comisiones: canjea parte de sus acciones (libro "acuñadas − canjeadas" y H-INF-1).
@@ -413,6 +432,16 @@ contract NexusMetaMorphoHunterTest is Test {
         emit log_named_uint("cazador: rendimiento contable", yield_);
         emit log_named_uint("cazador: perdida por deuda incobrable", badDebt);
         emit log_named_uint("cazador: perdida por remocion forzada", forced);
+        uint256[8] memory g = handler.hunterGov();
+        emit log_named_string(
+            "cazador: gobierno con efecto",
+            string.concat(
+                string.concat("submitCap ", vm.toString(g[0]), ", acceptCap ", vm.toString(g[1])),
+                string.concat(", revocar ", vm.toString(g[2]), ", submitRemoval ", vm.toString(g[3])),
+                string.concat(", colaRetiro ", vm.toString(g[4]), ", colaSuministro ", vm.toString(g[5])),
+                string.concat(", setFee ", vm.toString(g[6]), ", timelock ", vm.toString(g[7]))
+            )
+        );
     }
 }
 

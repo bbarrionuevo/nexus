@@ -191,7 +191,7 @@ contract NexusMetaMorphoHandler is NexusVulnerabilityHunter {
     }
 
     /// @dev El allocator mueve `assets` entre el mercado con préstamos y el idle (reallocate con el resto en max).
-    function reallocate(bool toIdle, uint256 assets) external hunted(OP_REALLOCATE, address(0), address(0), 0) {
+    function reallocate(bool toIdle, uint256 assets) external virtual hunted(OP_REALLOCATE, address(0), address(0), 0) {
         (MarketParams memory from, MarketParams memory to) = toIdle ? (market, idle) : (idle, market);
         uint256 supplied = morpho.expectedSupplyAssets(from, address(vault));
         assets = _clamp(assets, 0, toIdle ? _min(supplied, _liquidity()) : supplied);
