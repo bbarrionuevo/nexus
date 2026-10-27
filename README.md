@@ -7,6 +7,7 @@ el 26-oct-2026 este repo era un bot de trading, que el dueño suspendió; ese c�
 de git.
 
 Reglas: [docs/REGLAS.md](docs/REGLAS.md). Plan, estado y métricas: [docs/INVESTIGACION_SEGURIDAD.md](docs/INVESTIGACION_SEGURIDAD.md).
+Para retomar el trabajo desde una conversación nueva: [docs/TRASPASO.md](docs/TRASPASO.md).
 
 ## Estado
 
