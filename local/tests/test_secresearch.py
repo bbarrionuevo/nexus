@@ -155,6 +155,16 @@ def test_circuito_local_reintenta_una_sola_vez_y_marca_intermitentes():
     assert "-p" not in plan["tests"][0]                                                # --lf necesita el caché
 
 
+def test_circuito_local_usa_el_ruff_del_venv_sin_activarlo(tmp_path, monkeypatch):
+    from nexus import devcheck
+    exe = tmp_path / ("ruff.exe" if os.name == "nt" else "ruff")                      # junto al python del venv
+    exe.write_text("")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", "")
+    lint = {name: cmd for name, cmd, _ in devcheck.steps(str(tmp_path / "python"))}["lint"]
+    assert lint and Path(lint[0]).parent == tmp_path and lint[1:] == ["check", "--line-length", "120", "nexus", "tests"]
+
+
 FAKE_FORGE = r'''
 import json, os, sys
 log = os.environ["FAKE_LOG"]
@@ -279,6 +289,15 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     assert log.read_text() == ""                                             # ninguno llegó a forge
 
 
+def test_metricas_por_accion_con_la_misma_funcion_en_dos_contratos():
+    from nexus.secresearch import validate
+    # La suite ESR de euler-vault-kit llama `transfer` del token y del vault: ordenar comparaba los diccionarios.
+    metrics = {"src/ESR.sol:EulerSavingsRate.transfer": {"calls": 9, "reverts": 1},
+               "test/lib/MockToken.sol:MockToken.transfer": {"calls": 7, "reverts": 0},
+               "src/ESR.sol:EulerSavingsRate.gulp": {"calls": 3, "reverts": 0}}
+    assert validate.per_action(metrics) == "EulerSavingsRate.transfer 9/1 · MockToken.transfer 7/0 · gulp 3/0"
+
+
 def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__metamorpho")
@@ -287,6 +306,18 @@ def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
                                        "NexusMetaMorphoInvariant.t.sol", "NexusVulnerabilityHunter.sol",
                                        "NexusMetaMorphoHunter.t.sol"}
     # Ni FFI, ni forks/RPC, ni archivos, ni transacciones: solo cheatcodes de la EVM local.
+    banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
+              "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert not [b for b in banned if b in text], f.name
+
+
+def test_harness_de_vault_v2_es_coherente_y_no_sale_de_la_evm_local():
+    from nexus.secresearch import limits, validate
+    man, files = validate.load_harness("morpho-org__vault-v2")
+    assert man["repo"] == "morpho-org/vault-v2" and man["match_contract"] == "^NexusVaultV2"
+    assert {f.name for f in files} == {"NexusVaultV2Hunter.sol", "NexusVaultV2Invariant.t.sol"}
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

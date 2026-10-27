@@ -38,7 +38,7 @@ def _run(cmd, cwd=LOCAL, timeout=TIMEOUT_S):
 
 def steps(py=sys.executable):
     """(nombre, comando o None si falta la herramienta, carpeta). pytest guarda su caché: `--lf` lo necesita."""
-    ruff = shutil.which("ruff")
+    ruff = shutil.which("ruff") or shutil.which("ruff", path=str(Path(py).parent))    # el del venv, sin activarlo
     return [
         ("sintaxis", [py, "-m", "compileall", "-q", "nexus", "tests"], LOCAL),
         ("lint", [ruff, "check", "--line-length", "120", "nexus", "tests"] if ruff else None, LOCAL),

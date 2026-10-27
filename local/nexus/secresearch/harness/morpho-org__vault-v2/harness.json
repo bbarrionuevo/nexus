@@ -1,0 +1,12 @@
+{
+  "repo": "morpho-org/vault-v2",
+  "match_contract": "^NexusVaultV2",
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "256",
+    "FOUNDRY_INVARIANT_DEPTH": "500",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "27-oct-2026 en la nube con solc-js (0.8.28) + EDR (sin forge), Vault V2 04e5f4a9: las 3 variantes (sin comision, con comision de performance y gestion, y 6 decimales) pasan 256x500 sin falsos positivos con las semillas 0x2a y 0x3 (1,5 M de llamadas); el cazador atrapa 5 mutaciones de referencia (redondeo de deposit/mint/redeem/withdraw, tope de tasa y base de la comision). Variante A (AdapterMock); faltan variante B, forceDeallocate, topes relativos y gobierno. FALTA la primera corrida con forge en la PC"
+}

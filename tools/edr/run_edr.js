@@ -6,8 +6,8 @@ const edr = require(require('path').join(__dirname, 'node_modules', '@nomicfound
 const fs = require('fs');
 const [root, artFile, fuzzRuns, invRuns, invDepth, pattern, seed] = process.argv.slice(2);
 const A = JSON.parse(fs.readFileSync(artFile, 'utf8'));
-const all = [...A.morpho, ...A.metamorpho, ...A.harness];
-const suites = A.harness.filter(a => a.id.source.startsWith('test/nexus/') && /Test$/.test(a.id.name) && a.contract.bytecode).map(a => a.id);
+const all = Object.values(A).flat(); // aplana los grupos del .out.json (morpho/metamorpho/harness, o v2, etc.)
+const suites = all.filter(a => a.id.source.startsWith('test/nexus/') && /Test$/.test(a.id.name) && a.contract.bytecode).map(a => a.id);
 const big = (k, v) => typeof v === 'bigint' ? v.toString() : (v instanceof Uint8Array ? '0x' + Buffer.from(v).toString('hex') : v);
 (async () => {
   const ctx = new edr.EdrContext();
