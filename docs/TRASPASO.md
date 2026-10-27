@@ -161,15 +161,16 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
 | #80 | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
+| #81 | Vault V2: `forceDeallocate` (V-FD-1) y los topes con su borde exacto (V-CAP-1), con `NexusV2Macro` para las secuencias de una transacción (forge corre con `isolate = true`); 21 mutaciones de referencia |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #80 y hacer `git pull` en `main`. Lo que pedía el #76 ya está probado: la
-   corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por corrida. El
-   ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del 27-oct se
-   corrigió en el #79).
+1. **Dueño:** fusionar el #81 y hacer `git pull` en `main` (el #80 ya está fusionado). Lo que pedía el #76 ya está
+   probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por
+   corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del
+   27-oct se corrigió en el #79).
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
    deshabilitada y no falla más, pero sigue registrada. La sesión de la PC no la pudo borrar porque el control de
    permisos de Claude Code bloquea las bajas: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
@@ -206,7 +207,7 @@ En orden de prioridad:
      a 256×500 sin falsos positivos con `0x2a` y `0x3` en el proyecto reducido y con `0x8e4b379d1936e836` en
      `validate` sobre el repo entero (`6047e158`, que solo cambia comentarios de `MidnightAdapter`), siempre con 0
      reversiones. Las 13 mutaciones de referencia se detectan, cada ley nueva por al menos una.
-   - **V-FD-1 y V-CAP-1, en el PR de esta iteración** (rama `claude/vault-v2-fd-topes`, sobre el #80):
+   - **V-FD-1 y V-CAP-1, en el #81** (rama `claude/vault-v2-fd-topes`, sobre el #80):
      `forceDeallocate` con su penalidad exacta (propio, por allowance y forzando y saliendo en una transacción) y los
      topes con su borde exacto (si y solo si), cambios de topes y depósito y allocate en una misma transacción contra
      `firstTotalAssets`. Demostraciones en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 3 de 3 a 256×500 sin falsos
