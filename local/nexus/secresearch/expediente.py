@@ -22,7 +22,7 @@ from . import catalog
 from .dashboard import failure_key
 from .limits import results_dir
 
-LAW = re.compile(r"H-[A-Z]+-\d+")
+LAW = re.compile(r"\b[HV]-[A-Z]+(?:-\d+)?")  # H-... (MetaMorpho) y V-... (Vault V2, incluida V-LEDGER, sin número)
 STATES = "borrador → confirmado → enviado → aceptado → cobrado (o descartado / rechazado)"
 
 
@@ -83,7 +83,7 @@ def render(rec, fail, prog, report_name, today):
         "## 3. Cómo lo detectó el motor",
         "",
         f"- Harness `{rec.get('harness') or 'línea base'}`, suite `{suite}`, test `{fail.get('test')}`",
-        f"- Ley que falló: `{law or 'sin código H-'}`",
+        f"- Ley que falló: `{law or 'sin código H- ni V-'}`",
         f"- Motivo exacto: `{reason}`",
         f"- Semilla `{seed}` · informe `{report_name}` · {rec.get('when', '')}",
         "",

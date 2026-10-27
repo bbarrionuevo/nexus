@@ -96,6 +96,13 @@ def test_expediente_completo_y_el_dashboard_lo_reconoce(tmp_path):
         expediente.create("r1", home=tmp_path)
 
 
+def test_el_expediente_reconoce_las_leyes_de_metamorpho_y_de_vault_v2():
+    for reason, law in (("H-FEE-5: revirtio", "H-FEE-5"),
+                        ("V-LOSS-1: la perdida no se realizo entera [leyes: V-TA-1 V-LOSS-1]: 1 != 0", "V-LOSS-1"),
+                        ("V-LEDGER: la suma de los saldos no es totalSupply: 3, 4", "V-LEDGER")):   # sin número
+        assert expediente.LAW.search(reason).group(0) == law
+
+
 def test_ni_el_dashboard_ni_los_expedientes_escriben_en_el_repo():
     with pytest.raises(SystemExit, match="repo público"):
         dashboard.write(home=REPO)

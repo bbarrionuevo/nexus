@@ -80,6 +80,22 @@ Lo que conviene saber:
 - Antes de cada PR, lo mismo que CI: `ruff check --line-length 120 nexus tests`, `python -m pytest -q`,
   `python -m nexus.secresearch.run --selfcheck` (desde `local`) y `python tools/protected_paths.py --self-test`.
 
+### Iterar con forge en la PC
+
+En la PC no hay Node (no corre `tools/edr`), pero hay forge 1.8.6. El repo entero de Vault V2 tarda ~11 min en compilar;
+[tools/forge_v2](../tools/forge_v2/README.md) arma un proyecto reducido con los mismos ajustes de compilación (solo
+VaultV2, la factory, el `ERC20Mock`, forge-std y el harness), que compila en ~30 s, y corre ahí el harness y la batería
+de mutación (`armar`, `correr`, `mutar`). La referencia sigue siendo `validate`.
+
+Lo que conviene saber de forge en un handler:
+
+- Una llamada externa en los argumentos después de `vm.prank` consume el prank: `vm.prank(a); v.transfer(b,
+  v.balanceOf(a))` transfiere desde el handler. Calcular los argumentos antes del prank.
+- forge 1.8.6 puede dejar `reason` en `null` en la falla de un invariante y poner el motivo en `invariant_failures`.
+  `validate.summarize` ya lo lee de ahí (antes el informe decía "Motivo: None").
+- forge guarda cada falla de invariante en `cache/invariant` y la reproduce primero en la corrida siguiente.
+  `forge_v2 mutar` la borra entre mutaciones.
+
 ## 3. Estado por etapa (27-oct-2026)
 
 | Etapa | Estado |
@@ -89,6 +105,7 @@ Lo que conviene saber:
 | C. Método de invariantes | Funciona: P0–P6 en Python, con autoverificación |
 | D. Validación con Foundry | Funciona en la PC: `validate` clona fijado a un commit, FFI apagado, informe privado |
 | D'. Harness de MetaMorpho | Funciona: suite a16z, handler original y `NexusVulnerabilityHunter` con una suite multi-mercado con gobierno |
+| D''. Harness de Vault V2 | Funciona (27-oct): variante A con capital asignado de verdad, 8 leyes `V-...` verificadas con forge en la PC, 13 mutaciones de referencia detectadas ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
 | E. Duplicados | Parcial: falta revisar las auditorías previas de MetaMorpho |
@@ -139,22 +156,23 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #76 | Con la segunda corrida: `setSupplyQueue` con efecto, el selector del error en las fallas de vivacidad, `_mintFits`, el dashboard, el expediente y este documento |
 | #77 | El prompt de arranque de la sesión en la PC ([PROMPT_SESION_PC.md](PROMPT_SESION_PC.md)) |
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
+| #80 | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar este PR, `git pull` en `main` y correr
-   `..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho`.
-   El #76 se fusionó después del ciclo de las 03:17 del 27-oct, así que ninguna corrida de la PC lo probó todavía. En
-   el informe, `colaSuministro` dentro de `gobierno con efecto` tendría que subir. El ciclo siguiente tendría que
-   terminar en verde también con la línea base de Euler, que el 27-oct se cayó por un error de nexus (abajo).
+1. **Dueño:** fusionar el #80 y hacer `git pull` en `main`. Lo que pedía el #76 ya está probado: la
+   corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por corrida. El
+   ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del 27-oct se
+   corrigió en el #79).
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
    deshabilitada y no falla más, pero sigue registrada. La sesión de la PC no la pudo borrar porque el control de
    permisos de Claude Code bloquea las bajas: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
 3. **Dueño, alcance (R-1, R-9):** el reglamento de Morpho en Cantina remite a la
    [página de direcciones](https://docs.morpho.org/developers/contracts/addresses/) como fuente de verdad del alcance.
-   Ahí figuran dos cosas que no están en el catálogo. Agregarlas es decisión del dueño, después de leer el reglamento:
+   Ahí figuran dos cosas que no estaban en el catálogo; el 27-oct ya aparecen en el catálogo de la PC, bajo el
+   programa Morpho. Que estén en alcance es decisión del dueño, después de leer el reglamento:
    - **Morpho Midnight** (`morpho-org/midnight`): préstamos a tasa fija, desplegado y en el alcance del programa.
    - **MetaMorpho V1.1** (`morpho-org/metamorpho-v1.1`, commit `5a0717b`): es la fábrica actual. nexus prueba
      `morpho-org/metamorpho`, que corresponde a la fábrica vieja (commit `c5e758d`, que también figura): su
@@ -173,14 +191,21 @@ En orden de prioridad:
      esos hallazgos.
    - **Modelo derivado** en [CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md): contabilidad por adapters, tope de tasa
      (`maxRate`), dos comisiones, `forceDeallocate`, realización de pérdida, y las leyes `V-...`.
-   - **Variante A escrita y verificada en la nube** (27-oct, PR #79): `harness/morpho-org__vault-v2/`
-     (`NexusVaultV2Hunter.sol` + `NexusVaultV2Invariant.t.sol`), VaultV2 + `AdapterMock`, 3 variantes. Pasan 256×500
-     sin falsos positivos con `0x2a` y `0x3`, y el cazador atrapa 5 mutaciones de referencia. El `harness.json` ya
-     está dado de alta: el harness compila (solc 0.8.28, 62 s en la nube), así que el ciclo lo correrá con forge.
-   - **Falta:** la variante B (adapter real sobre Morpho Blue), `forceDeallocate`, los topes relativos y el gobierno
-     con timelock; y bajar las reversiones (~16 %, sobre todo depósitos que topan el `uint128` de `_totalAssets`).
-   - **Primera corrida con forge en la PC, pendiente.** La línea base de V2 es cara: compila en ~16 min y los tests
-     tardan ~35.
+   - **Variante A** (`harness/morpho-org__vault-v2/`, 3 variantes; escrita en la nube en el PR #79). La primera corrida
+     con forge en la PC (27-oct) pasó 3 de 3, pero las métricas por acción mostraron dos acciones muertas: `allocate`
+     revertía el 98 % (el tope relativo nunca se subía y vale 0) y `transfer` el 94 % (el `prank` lo consumía el
+     `balanceOf` del argumento). Eran el ~16 % de reversiones, no depósitos que topaban el `uint128`. El adapter nunca
+     tenía capital y las pérdidas solo se comían rendimiento.
+   - **Corregido y ampliado en el #80:** adapter propio que cumple la especificación
+     (`NexusAdapterMock`), topes relativos, transferencias reales, y las leyes V-INF-2 (precio por acción),
+     V-LOSS-1 y V-LOSS-2 (realización de pérdidas), demostradas en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 3 de 3
+     a 256×500 sin falsos positivos con `0x2a` y `0x3` en el proyecto reducido y con `0x8e4b379d1936e836` en
+     `validate` sobre el repo entero (`6047e158`, que solo cambia comentarios de `MidnightAdapter`), siempre con 0
+     reversiones. Las 13 mutaciones de referencia se detectan, cada ley nueva por al menos una.
+   - **Falta:** `forceDeallocate` (V-FD-1) y los topes como ley (V-CAP-1), que ya tienen capital asignado sobre el que
+     correr; el gobierno con timelock; la variante B (adapter real sobre Morpho Blue); y la cota V-BOUND como ley.
+   - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
+     `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
    Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
    2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity 0.8.28;
 
-// Handler e invariantes del cazador de Vault V2 (variante A: VaultV2 + AdapterMock), en tres variantes: sin comisión,
-// con comisión de performance y de gestión, y activo de 6 decimales. Cada acción del handler pasa por sus leyes V-...
-// (NexusVaultV2Hunter.sol). El rendimiento y las pérdidas se controlan con el AdapterMock, así que el fantasma conoce
-// los activos reales de forma exacta. Los montos los deriva el cazador del cambio de estado, no de los argumentos.
+// Handler e invariantes del cazador de Vault V2 (variante A: VaultV2 + NexusAdapterMock), en tres variantes: sin
+// comisión, con comisión de performance y de gestión, y activo de 6 decimales. Cada acción del handler pasa por sus
+// leyes V-... (NexusVaultV2Hunter.sol). El rendimiento y las pérdidas se controlan con el saldo del adapter, así que el
+// fantasma conoce los activos reales de forma exacta. Los montos los deriva el cazador del cambio de estado, no de los
+// argumentos.
 
 import {Test} from "../../lib/forge-std/src/Test.sol";
-import {IVaultV2} from "../../src/interfaces/IVaultV2.sol";
-import {NexusVaultV2Hunter, NexusVaultV2Base} from "./NexusVaultV2Hunter.sol";
+import {NexusVaultV2Hunter, NexusVaultV2Base, NexusV2Math} from "./NexusVaultV2Hunter.sol";
 
 contract NexusVaultV2Handler is NexusVaultV2Hunter {
     constructor(uint256 fee, uint256 mgmtFee, uint8 assetDecimals) NexusVaultV2Base(fee, mgmtFee, assetDecimals) {
@@ -53,25 +53,32 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         hunted(OP_TRANSFER, _actor(fromSeed), _actor(toSeed))
     {
         address from = _actor(fromSeed);
+        address to = _actor(toSeed);
+        // El monto se calcula antes del prank: una llamada externa en los argumentos (balanceOf) consumiría el prank y
+        // la transferencia saldría del handler, que no tiene acciones (así revertía el 94 % de las llamadas hasta el
+        // 27-oct).
+        uint256 s = _clamp(shares, 0, _bal(from));
         vm.prank(from);
-        vault.transfer(_actor(toSeed), _clamp(shares, 0, _bal(from)));
+        vault.transfer(to, s);
+        if (s != 0 && from != to) ++hTransfers;
     }
 
-    /* DEVENGAMIENTO, RENDIMIENTO Y PÉRDIDA (el AdapterMock los hace exactos) */
+    /* DEVENGAMIENTO, RENDIMIENTO Y PÉRDIDA (el saldo del adapter los hace exactos) */
 
     function accrue() external {
         _huntedAccrue();
     }
 
     function earn(uint256 gain) external {
-        adapter.setInterest(adapter.interest() + _clamp(gain, 0, MAX_ASSETS));
+        _setHeld(adapter.realAssets() + _clamp(gain, 0, MAX_ASSETS));
         _huntedAccrue();
     }
 
+    /// @dev La pérdida sale del saldo del adapter: con capital asignado alcanza a lo depositado, no solo al rendimiento.
     function lose(uint256 amount) external {
-        uint256 real = adapter.realAssets();
-        uint256 x = _clamp(amount, 0, real);
-        adapter.setLoss(adapter.loss() + x);
+        uint256 held = adapter.realAssets();
+        uint256 x = _clamp(amount, 0, held);
+        _setHeld(held - x);
         hLoss += x;
         _huntedAccrue();
     }
@@ -87,38 +94,54 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
 
     /* ALLOCATOR: mover capital al adapter y de vuelta */
 
+    /// @dev Acotado a lo ocioso y al tope efectivo de id-0: el absoluto y el relativo contra firstTotalAssets, que en
+    /// esta transacción es el _totalAssets tras el primer devengamiento (el del modelo). La allocation de los dos ids es
+    /// la posición del adapter, que tras asignar `a` queda en su saldo + `a`.
     function allocate(uint256 assets) external hunted(OP_ACCRUE, address(0), address(0)) {
-        uint256 alloc = vault.allocation(keccak256(idData0));
-        uint256 room = ABS_CAP > alloc ? ABS_CAP - alloc : 0;
-        uint256 a = _clamp(assets, 0, _min(token.balanceOf(address(vault)), room));
+        (uint256 firstTA,,) = _expectAccrual(_snap());
+        uint256 cap = _min(ABS_CAP, firstTA * REL_CAP_0 / WAD);
+        uint256 held = adapter.realAssets();
+        uint256 a = _clamp(assets, 0, _min(token.balanceOf(address(vault)), cap > held ? cap - held : 0));
         if (a == 0) return _touch();
         vm.prank(ALLOCATOR);
         vault.allocate(address(adapter), idData0, a);
+        ++hAllocs;
     }
 
+    /// @dev El vault exige allocation > 0; el adapter devuelve a lo sumo su saldo.
     function deallocate(uint256 assets) external hunted(OP_DEALLOC, address(0), address(0)) {
-        uint256 a = _clamp(assets, 0, _min(adapter.deposit(), vault.allocation(keccak256(idData0))));
+        if (vault.allocation(keccak256(idData0)) == 0) return;
+        uint256 a = _clamp(assets, 0, adapter.realAssets());
         if (a == 0) return;
         vm.prank(ALLOCATOR);
         vault.deallocate(address(adapter), idData0, a);
+        ++hDeallocs;
     }
 
     /* AYUDAS */
 
-    /// @dev Retirable sin adapter de liquidez: lo ocioso y, a lo sumo, el valor de las acciones del actor (sin devengar).
-    function _withdrawable(address who) internal view returns (uint256) {
-        uint256 idle = token.balanceOf(address(vault));
-        uint256 claim = _bal(who) * (vault._totalAssets() + 1) / (vault.totalSupply() + vShares);
-        return _min(idle, claim);
+    /// @dev Estado justo después del devengamiento según el modelo: (_totalAssets, totalSupply con las comisiones).
+    function _accrued() internal view returns (uint256 A, uint256 S) {
+        Snap memory s = _snap();
+        (uint256 newTA, uint256 sp, uint256 sg) = _expectAccrual(s);
+        return (newTA, s.T + sp + sg);
     }
 
+    /// @dev Retirable sin adapter de liquidez: lo ocioso y, a lo sumo, el valor de las acciones del actor al precio ya
+    /// devengado (con el precio sin devengar, un withdraw tras una pérdida pedía más de lo que valía el saldo).
+    function _withdrawable(address who) internal view returns (uint256) {
+        (uint256 A, uint256 S) = _accrued();
+        return _min(token.balanceOf(address(vault)), NexusV2Math.mulDivDown(_bal(who), A + 1, S + vShares));
+    }
+
+    /// @dev Acciones cuyo valor (al precio ya devengado) cabe en lo ocioso: así el redeem no revierte por iliquidez.
     function _redeemable(address who) internal view returns (uint256) {
-        // acciones cuyo valor cabe en lo ocioso (sin devengar): acota el redeem para que no revierta por iliquidez
-        uint256 idle = token.balanceOf(address(vault));
-        uint256 ta = vault._totalAssets();
-        uint256 t = vault.totalSupply();
-        uint256 maxByIdle = ta == 0 ? _bal(who) : idle * (t + vShares) / (ta + 1);
-        return _min(_bal(who), maxByIdle);
+        (uint256 A, uint256 S) = _accrued();
+        return _min(_bal(who), NexusV2Math.mulDivDown(token.balanceOf(address(vault)), S + vShares, A + 1));
+    }
+
+    function _setHeld(uint256 amount) internal {
+        deal(address(token), address(adapter), amount, true);
     }
 
     /// @dev Un no-op que igual devenga, para que la ley de devengamiento se evalúe aunque el monto quede en 0.
@@ -130,29 +153,6 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         Snap memory pre = _snap();
         vault.accrueInterest();
         _hEnd(OP_ACCRUE, address(0), address(0), pre);
-    }
-
-    /* REGISTRO DE VIOLACIONES */
-
-    function _hunterFlag(string memory what, uint256 x, uint256 y) internal override {
-        if (violations++ == 0) {
-            firstViolation = string(abi.encodePacked(what, ": ", _str(x), ", ", _str(y)));
-        }
-    }
-
-    function _str(uint256 v) internal pure returns (string memory) {
-        if (v == 0) return "0";
-        bytes memory b = new bytes(78);
-        uint256 i = 78;
-        while (v != 0) {
-            b[--i] = bytes1(uint8(48 + v % 10));
-            v /= 10;
-        }
-        bytes memory out = new bytes(78 - i);
-        for (uint256 j; j < out.length; ++j) {
-            out[j] = b[i + j];
-        }
-        return string(out);
     }
 }
 
@@ -183,11 +183,19 @@ contract NexusVaultV2InvariantTest is Test {
 
     function afterInvariant() public {
         (uint256 laws, uint256 checks_, uint256 zeroMints, uint256 maxPrice, uint256 feeShares) = handler.hunterStats();
+        (uint256 losses, uint256 lossAssets, uint256 feeDrops, uint256 allocs, uint256 deallocs, uint256 transfers) =
+            handler.coverage();
         emit log_named_uint("verificaciones", checks_);
         emit log_named_uint("cazador: leyes evaluadas", laws);
         emit log_named_uint("cazador: depositos con 0 acciones", zeroMints);
         emit log_named_uint("cazador: precio maximo de una accion", maxPrice);
         emit log_named_uint("cazador: acciones de comision acunadas", feeShares);
+        emit log_named_uint("cazador: perdidas realizadas (V-LOSS)", losses);
+        emit log_named_uint("cazador: activos de perdida realizados", lossAssets);
+        emit log_named_uint("cazador: bajas de precio sin perdida (comision de gestion)", feeDrops);
+        emit log_named_uint("cobertura: asignaciones con efecto", allocs);
+        emit log_named_uint("cobertura: desasignaciones con efecto", deallocs);
+        emit log_named_uint("cobertura: transferencias con efecto", transfers);
     }
 }
 
