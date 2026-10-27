@@ -106,13 +106,23 @@ def parse(stdout):
 
 
 def _kind(t):
-    """{"type": "Invariant", "runs", "calls", "reverts"} desde el `kind` de forge ({"Invariant": {...}})."""
+    """{"type": "Invariant", "runs", "calls", "reverts", "metrics"} desde el `kind` de forge ({"Invariant": {...}}).
+    `metrics` son las métricas por acción del handler ({"Handler.deposit": {"calls", "reverts", "discards"}}); forge las
+    incluye por defecto (invariant.show_metrics) y dicen qué acciones y macros corrió de verdad la campaña."""
     k = t.get("kind")
     if not isinstance(k, dict) or len(k) != 1:
         return None
     (name, v), = k.items()
     v = v if isinstance(v, dict) else {}
-    return {"type": name, **{x: v[x] for x in ("runs", "calls", "reverts") if x in v}}
+    metrics = v.get("metrics") if isinstance(v.get("metrics"), dict) else {}
+    return {"type": name, **{x: v[x] for x in ("runs", "calls", "reverts") if x in v},
+            **({"metrics": metrics} if metrics else {})}
+
+
+def per_action(metrics, limit=40):
+    """'deposit 120/2 · mint 98/0 · …' (llamadas/reversiones por acción, sin el nombre del contrato)."""
+    rows = sorted((str(k).rsplit(".", 1)[-1], m) for k, m in (metrics or {}).items() if isinstance(m, dict))
+    return " · ".join(f"{name} {m.get('calls', 0)}/{m.get('reverts', 0)}" for name, m in rows[:limit])
 
 
 def summarize(results):
@@ -157,6 +167,8 @@ def report(rec):
                          f"{a.get('calls')} llamadas · {a.get('reverts')} reversiones")
             if a.get("calls") and (a.get("reverts") or 0) * 2 > a["calls"]:
                 lines.append("  - **Más de la mitad de las llamadas revirtieron: puede estar pasando en vacío.**")
+            if a.get("metrics"):
+                lines.append("  - llamadas/reversiones por acción: " + per_action(a["metrics"]))
             if a.get("logs"):
                 lines.append("  - " + " · ".join(a["logs"]))
         for f in t["failures"][:30]:

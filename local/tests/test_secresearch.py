@@ -176,7 +176,9 @@ print(json.dumps({"test/V.t.sol:VaultTest": {"test_results": {
     "testNoDilution(uint256)": {"status": "Failure", "reason": "assertion failed: 7 < 8",
                                 "counterexample": {"calldata": "0xabc", "args": "2"}},
     "testSkip()": {"status": "Skipped", "reason": None, "counterexample": None},
-    "invariant_x()": {"status": "Success", "kind": {"Invariant": {"runs": 4, "calls": 40, "reverts": 30}},
+    "invariant_x()": {"status": "Success", "kind": {"Invariant": {"runs": 4, "calls": 40, "reverts": 30, "metrics": {
+                          "H.deposit": {"calls": 25, "reverts": 1, "discards": 0},
+                          "H.huntInflation": {"calls": 15, "reverts": 29, "discards": 0}}}},
                       "decoded_logs": ["cazador: leyes evaluadas: 99", "cazador: depositos con 0 acciones: 3"]}}}}))
 sys.exit(1)
 '''
@@ -260,6 +262,7 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}+h@0x2a.md").read_text()
     assert "--harness h --seed 0x2a" in md and "en vacío" in md                # 30 de 40 llamadas revirtieron
     assert "cazador: leyes evaluadas: 99 · cazador: depositos con 0 acciones: 3" in md
+    assert "por acción: deposit 25/1 · huntInflation 15/29" in md            # métricas por acción de forge
 
     log.write_text("")                                                       # línea base: sin código de nexus
     validate.validate("o/v", **kw)
@@ -315,7 +318,8 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
                         "failures": [{"suite": "t.sol:T", "test": "invariant_x()", "reason": "precio bajo",
                                       "counterexample": {"args": "7"}, "logs": ["log 1"]}] if harness else [],
                         "activity": [{"suite": "t.sol:T", "test": "invariant_x()", "type": "Invariant", "runs": 4,
-                                      "calls": 40, "reverts": 1, "logs": ["cazador: leyes evaluadas: 99"]}]}}
+                                      "calls": 40, "reverts": 1, "logs": ["cazador: leyes evaluadas: 99"],
+                                      "metrics": {"H.donate": {"calls": 40, "reverts": 1}}}]}}
         if harness:
             rec["fuzz"] = {"FOUNDRY_FUZZ_SEED": "0x2a"}
         name = f"{repo.replace('/', '__')}@aaaaaaaaaa" + (f"+{harness}@0x2a" if harness else "")
@@ -339,6 +343,7 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     assert "Fallas distintas: 1" in digest and "semilla 0x2a" in digest and '"args": "7"' in digest
     assert "Cobertura de la última corrida" in digest and "40 llamadas · 1 reversiones" in digest
     assert "cazador: leyes evaluadas: 99" in digest                          # métricas del cazador para Claude
+    assert "por acción: donate 40/1" in digest
     assert "| o/v | aaaaaaaaaa | 3 pasan · 0 fallan" in digest
 
     calls.clear()                                                            # al otro día: falta solo o/z

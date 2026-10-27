@@ -180,6 +180,8 @@ def coverage(out, runs):
         for a in acts:
             lines.append(f"- `{a['suite'].split(':')[-1]}::{a['test']}`: {a.get('runs')} corridas · {a.get('calls')} "
                          f"llamadas · {a.get('reverts')} reversiones")
+            if a.get("metrics"):
+                lines.append("  - llamadas/reversiones por acción: " + validate.per_action(a["metrics"]))
             if a.get("logs"):
                 lines.append("  - " + " · ".join(a["logs"][:20]))
     return lines
