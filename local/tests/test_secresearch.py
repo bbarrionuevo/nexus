@@ -279,6 +279,15 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     assert log.read_text() == ""                                             # ninguno llegó a forge
 
 
+def test_metricas_por_accion_con_la_misma_funcion_en_dos_contratos():
+    from nexus.secresearch import validate
+    # La suite ESR de euler-vault-kit llama `transfer` del token y del vault: ordenar comparaba los diccionarios.
+    metrics = {"src/ESR.sol:EulerSavingsRate.transfer": {"calls": 9, "reverts": 1},
+               "test/lib/MockToken.sol:MockToken.transfer": {"calls": 7, "reverts": 0},
+               "src/ESR.sol:EulerSavingsRate.gulp": {"calls": 3, "reverts": 0}}
+    assert validate.per_action(metrics) == "EulerSavingsRate.transfer 9/1 · MockToken.transfer 7/0 · gulp 3/0"
+
+
 def test_harness_de_metamorpho_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__metamorpho")

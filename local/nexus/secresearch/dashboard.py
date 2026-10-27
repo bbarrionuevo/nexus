@@ -26,6 +26,16 @@ MAX_RUNS = 20               # corridas en la tabla de historial
 MAX_PENDING = 15            # cambios pendientes que se listan
 
 
+def action_rows(metrics):
+    """[(acción, métricas)] de forge, ordenadas por acción y sin el nombre del contrato. Si dos contratos comparten
+    la función (la suite de Euler llama `transfer` del token y del vault), queda `Contrato.función`: ordenar los pares
+    repetidos comparaba los diccionarios y tumbaba el informe."""
+    rows = [(str(k), m) for k, m in (metrics or {}).items() if isinstance(m, dict)]
+    short = [k.rsplit(".", 1)[-1] for k, _ in rows]
+    return sorted(((s if short.count(s) == 1 else k.rsplit(":", 1)[-1], m) for s, (k, m) in zip(short, rows)),
+                  key=lambda r: r[0])
+
+
 def _jsonl(path):
     p = Path(path)
     if not p.exists():
@@ -285,8 +295,8 @@ def _coverage(d):
             suite = str(a.get("suite", "")).split(":")[-1]
             calls, reverts = a.get("calls") or 0, a.get("reverts") or 0
             metrics = a.get("metrics") or {}
-            rows = [(str(k).rsplit(".", 1)[-1], pct(m.get("reverts", 0), m.get("calls", 0)), m.get("calls", 0),
-                     m.get("reverts", 0)) for k, m in metrics.items() if isinstance(m, dict)]
+            rows = [(n, pct(m.get("reverts", 0), m.get("calls", 0)), m.get("calls", 0), m.get("reverts", 0))
+                    for n, m in action_rows(metrics)]
             kv = parse_logs(a.get("logs"))
             alerts = [r for r in rows if r[1] >= REVERT_ALERT]
             many = "acción" if len(alerts) == 1 else "acciones"

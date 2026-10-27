@@ -122,8 +122,8 @@ def _kind(t):
 
 def per_action(metrics, limit=40):
     """'deposit 120/2 · mint 98/0 · …' (llamadas/reversiones por acción, sin el nombre del contrato)."""
-    rows = sorted((str(k).rsplit(".", 1)[-1], m) for k, m in (metrics or {}).items() if isinstance(m, dict))
-    return " · ".join(f"{name} {m.get('calls', 0)}/{m.get('reverts', 0)}" for name, m in rows[:limit])
+    return " · ".join(f"{name} {m.get('calls', 0)}/{m.get('reverts', 0)}"
+                      for name, m in dashboard.action_rows(metrics)[:limit])
 
 
 def summarize(results):
