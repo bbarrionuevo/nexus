@@ -159,7 +159,7 @@ En orden de prioridad:
    - **MetaMorpho V1.1** (`morpho-org/metamorpho-v1.1`, commit `5a0717b`): es la fábrica actual. nexus prueba
      `morpho-org/metamorpho`, que corresponde a la fábrica vieja (commit `c5e758d`, que también figura): su
      `MetaMorpho.sol` difiere de `ded84e5` solo en formato y comentarios, así que lo probado vale para esos vaults.
-4. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Alcance contrastado el 27-oct:
+4. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Es el objetivo en curso. Alcance contrastado el 27-oct:
    - En Ethereum están desplegados `VaultV2Factory`, `MorphoVaultV1AdapterFactory`, `MorphoMarketV1AdapterV2Factory`,
      `MorphoRegistry` y el Blue Public Allocator.
    - Su código no cambió desde las auditorías: `VaultV2.sol` desde el tag `2025-09-15`, los adapters desde
@@ -167,8 +167,17 @@ En orden de prioridad:
      para lo desplegado.
    - El `MidnightAdapter` del repo y sus ratifiers no figuran desplegados en ninguna red: **fuera de alcance** hasta
      que aparezcan en la página.
-   - Sigue la etapa E (las 15 auditorías de `audits/`) y después el harness, con el modelo de CAZADOR_METAMORPHO.md
-     ("Límites y próximos pasos"). La línea base es cara en la PC: compila en ~16 min y los tests tardan ~35.
+   - **Etapa E hecha** (27-oct): las 15 auditorías extraídas a texto y resumidas en
+     `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/` (`indice.md` y `duplicados.md`, privados). Aviso clave:
+     las auditorías tempranas son de una versión vieja con VIC y `realizeLoss()` que **ya no existe**; no perseguir
+     esos hallazgos.
+   - **Modelo derivado** en [CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md): contabilidad por adapters, tope de tasa
+     (`maxRate`), dos comisiones, `forceDeallocate`, realización de pérdida, y las leyes `V-...`. **Falta escribir el
+     harness** (`.sol`), compilarlo con forge y correr la campaña. El `AdapterMock` del repo (`realAssets = deposit +
+     interes − perdida`) es la base de la variante controlable.
+   - **Ojo con el ciclo:** no dar de alta `harness/morpho-org__vault-v2/harness.json` hasta que el `.sol` compile, o
+     el ciclo de las 03:17 intentará correr un harness roto. La línea base de V2 es cara: compila en ~16 min y los
+     tests tardan ~35.
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
    Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
    2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.
