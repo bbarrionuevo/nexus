@@ -1,7 +1,7 @@
 # Traspaso: estado de nexus y cómo continuar
 
 Documento de entrega para retomar el proyecto desde cualquier conversación nueva con Claude. Actualizado el
-27-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
+28-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
 las reglas.
 
 Para arrancar una sesión que trabaje directo en la PC del dueño, con acceso a GitHub, el prompt de arranque está en
@@ -55,6 +55,7 @@ Las reglas que más pesan al trabajar:
 | Dashboard | `%LOCALAPPDATA%\nexus\secresearch\dashboard.html` (`python -m nexus.secresearch.dashboard` lo abre) |
 | Expedientes | `%LOCALAPPDATA%\nexus\secresearch\expedientes\` |
 | Ciclo programado | tarea `nexus-ciclo`, registrada con `tools/windows/registrar_ciclo.ps1` |
+| GitHub CLI | `C:\Program Files\GitHub CLI\gh.exe`, autenticada como `bbarrionuevo` (28-oct): la sesión abre los PR y lee el CI con `gh`; si la shell no la ve en el PATH, con la ruta completa. Fusionar sigue siendo del dueño |
 
 El Explorador oculta `AppData`: `explorer $env:LOCALAPPDATA\nexus\secresearch`.
 
@@ -100,10 +101,11 @@ Lo que conviene saber de forge en un handler:
   una misma transacción (en V2, `firstTotalAssets`), las llamadas las tiene que hacer un contrato intermedio dentro de
   su propia llamada (`NexusV2Macro`).
 - `tools/forge_v2` tiene perfiles: sin nada, Vault V2; con `NEXUS_PERFIL=euler-earn`, EulerEarn (su proyecto reducido,
-  su harness y `mutaciones_euler_earn.json`). Los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de
-  Windows: nexus clona con `-c core.longpaths=true`.
+  su harness y `mutaciones_euler_earn.json`); con `NEXUS_PERFIL=tokenized-strategy`, TokenizedStrategy de Yearn V3
+  (el clon en el tag `v3.1.0`). Los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de Windows:
+  nexus clona con `-c core.longpaths=true`.
 
-## 3. Estado por etapa (27-oct-2026)
+## 3. Estado por etapa (28-oct-2026)
 
 | Etapa | Estado |
 |---|---|
@@ -116,7 +118,8 @@ Lo que conviene saber de forge en un handler:
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
 | D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
-| E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3) y EulerEarn (3) resumidas en `NEXUS_HOME`, privadas |
+| D''''. Harness de TokenizedStrategy | Nuevo (28-oct): Yearn V3, `v3.1.0` (lo desplegado en `0x310f…1e76` y en alcance), la contabilidad nueva ("constant accrual", pestillo por bloque, piso de 1e3 acciones, quema de bloqueadas por pérdida en vivo) y la de reporte, 11 leyes `Y-...` exactas contra el almacenamiento crudo ([CAZADOR_TOKENIZED_STRATEGY.md](CAZADOR_TOKENIZED_STRATEGY.md)). Verificado con forge en la PC: 4 de 4 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada, 8 de 8 con los escenarios) y las 39 mutaciones de referencia detectadas. Sin hallazgos |
+| E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
 **Hallazgos:** ninguno. No hay candidatos ni expedientes abiertos.
@@ -170,13 +173,14 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #83 | Vault V2: el gobierno con timelock (V-GOV-1: comisiones y receptores, penalidad, timelocks, abdicaciones, topes, adapters y registro, con el borde exacto de la fecha); 19 mutaciones nuevas (V36–V54); y la etapa E de MetaMorpho (privada) |
 | #84 | Vault V2: la cota de dominio V-BOUND como ley (el estado no sale del dominio de la aritmética de una palabra del vault; el handler no hace el depósito que lo sacaría) y sondas deterministas del registro y de los adapters para V-GOV-1; mutación V55. Va sobre el #83 |
 | #85 | EulerEarn: el cazador de la variante A (leyes E-...) sobre la versión desplegada, el perfil `euler-earn` de `tools/forge_v2` con 22 mutaciones, y en nexus `core.longpaths` para clonar, la compilación aislada (`"aislado": true` en el manifiesto) y leyes `E-` en el expediente. Va sobre el #84 |
+| #86 | Yearn V3: el cazador de TokenizedStrategy `v3.1.0` (leyes Y-...) en los dos modos de contabilidad, el perfil `tokenized-strategy` de `tools/forge_v2` con 39 mutaciones, leyes `Y-` en el expediente y `gh` en la PC |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #85 (el #83 y el #84 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76
-   ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
+1. **Dueño:** fusionar el #86 (el #85 ya está en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
+   probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
@@ -287,11 +291,23 @@ En orden de prioridad:
      desplegados.
    - **Falta en EulerEarn:** la variante B con estrategias reales del EVK (crédito, IRM, deuda incobrable), el Public
      Allocator, el guardian y los timelocks distintos de 0.
-7. **Próximo objetivo después de EulerEarn:**
-   - **TokenizedStrategy de Yearn V3** (`yearn/tokenized-strategy`, Solidity): el desbloqueo de ganancias en el
-     tiempo (`profitUnlockingRate` en punto fijo de 10^12, acciones bloqueadas que se queman al desbloquear) es
-     contabilidad sutil con redondeos propios. `yearn-vaults-v3` (Vyper) no compiló dentro del tope de 2400 s del
-     26-oct; hay que ver si falta `vyper` 0.3.10 en el venv.
+7. **TokenizedStrategy de Yearn V3, en el #86** (rama `claude/yearn-tokenized-strategy`). Verificado con forge en la PC:
+   las 4 variantes a 256×500 sin falsos positivos ni reversiones con `0x2a`, `0x3` y `validate` sobre el repo entero
+   (`0xdf5a04a2c65ea82a`, compilación aislada, 8 de 8 con los escenarios), y las 39 mutaciones de referencia
+   detectadas. **Sin hallazgos.** Lo que mostró la campaña y su evaluación (R-7) están en
+   `NEXUS_HOME/secresearch/etapa_e/yearn__tokenized-strategy/analisis_reporte_y_piso.md` (privado).
+   - Contexto: el alcance de Immunefi (página actualizada el 25-jul-2026) tiene **Tokenized Strategy V3.1.0**
+     (`0x310f…1e76`, desde el 23-jun-2026) y la 3.0.4 (`0xD377…139c`); la 3.1.1 no figura. El código verificado de
+     `0x310f…1e76` es byte a byte el del tag `v3.1.0`. La 3.1.0 reescribió la contabilidad ("constant accrual":
+     devengamiento en vivo una vez por bloque, piso de 1e3 acciones contra la inflación, quema de acciones bloqueadas
+     ante una pérdida en vivo, pausa) y las tres auditorías del repo son de la v3.0.x: lo nuevo no tiene auditoría
+     pública. La etapa E está en `NEXUS_HOME/secresearch/etapa_e/yearn__tokenized-strategy/` (privado).
+   - Por qué antes que lo que falta de EulerEarn: el núcleo de EulerEarn es un fork de MetaMorpho ya verificado
+     formalmente (Certora), y su Public Allocator es casi literal el de Morpho; la contabilidad de la 3.1.0 es nueva.
+   - **Falta en Yearn:** el Vault V3 3.1.0 (Vyper, también en alcance) con estrategias en vivo: su `process_report`
+     lee `convertToAssets` de la estrategia, que ahora incluye lo simulado. `yearn-vaults-v3` no compiló dentro del
+     tope de 2400 s del 26-oct, y `vyper` 0.3.10 no está en el venv (28-oct). Y la 3.0.4 (su contabilidad es la del
+     modo por reporte, sin pestillo ni piso).
 8. **Mejoras del cazador:**
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;

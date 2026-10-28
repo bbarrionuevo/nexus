@@ -9,5 +9,5 @@
     "FOUNDRY_INVARIANT_DEPTH": "500",
     "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
   },
-  "verified": "pendiente"
+  "verified": "28-oct-2026 con forge 1.8.6 en la PC, yearn/tokenized-strategy v3.1.0 (8c8929f, lo desplegado en 0x310f...1e76, comparado por SHA-256 contra el codigo verificado): en el proyecto reducido de tools/forge_v2 (NEXUS_PERFIL=tokenized-strategy), las 4 variantes (en vivo, con protocolo, por reporte y 6 decimales) pasan 256x500 sin falsos positivos ni reversiones con 0x2a y 0x3, y los 4 escenarios; con validate sobre el repo entero (compilacion aislada, semilla 0xdf5a04a2c65ea82a), 8 de 8 con 0 reversiones; las 39 mutaciones de mutaciones_tokenized_strategy.json detectadas"
 }
