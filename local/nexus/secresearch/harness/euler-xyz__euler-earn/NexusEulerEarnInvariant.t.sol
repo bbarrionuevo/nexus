@@ -32,9 +32,25 @@ contract NexusEulerEarnHandler is NexusEEHunter {
 
     /// @dev Depósito: pasa si y solo si el modelo lo coloca entero por la supplyQueue y acuña al menos una acción.
     function deposit(uint256 actorSeed, uint256 assets) external {
-        address who = _actor(actorSeed);
-        uint256 a = 1 + assets % MAX_ASSETS;
+        _deposit(_actor(actorSeed), 1 + assets % MAX_ASSETS, _snap());
+    }
+
+    /// @dev Depósito que tiene que repartirse: llena justo lo que le queda a la primera estrategia de la supplyQueue
+    /// con lugar (y sin pausa) y pone `extra` en las siguientes. Sin esto, la primera se llena una vez y queda llena
+    /// (los retiros salen de otra), y el reparto entre estrategias casi no se recorre.
+    function depositSpill(uint256 actorSeed, uint256 extra) external {
         Snap memory pre = _snap();
+        for (uint256 k; k < pre.sq.length; ++k) {
+            uint256 i = pre.sq[k];
+            if (pre.cap[i] == 0 || pre.paused[i]) continue;
+            uint256 room = NexusEEMath.zeroFloorSub(pre.cap[i], _redeem(i, pre.b[i], pre.tA[i], pre.tS[i]));
+            if (room == 0) continue;
+            if (room > 4 * MAX_ASSETS) return; // la primera con lugar es una de tope grande: no hay borde cerca
+            return _deposit(_actor(actorSeed), room + 1 + extra % MAX_ASSETS, pre);
+        }
+    }
+
+    function _deposit(address who, uint256 a, Snap memory pre) internal {
         (uint256 A,, uint256 sigma) = _expectAccrual(pre);
         uint256 s = NexusEEMath.mulDivDown(a, pre.T + sigma + V, A + V);
         (uint256[3] memory tA, uint256[3] memory tS, uint256[3] memory b, uint256 rem, uint256 used) = _simSupply(pre, a);
@@ -264,23 +280,45 @@ contract NexusEulerEarnHandler is NexusEEHunter {
 
     /// @dev Nueva supplyQueue de 1 a 4 entradas (puede repetir): pasa si y solo si todas tienen tope.
     function setSupplyQueue(uint256 seed, uint256 len) external {
-        Snap memory pre = _snap();
         uint256 n = 1 + len % 4;
         IERC4626[] memory q = new IERC4626[](n);
-        bool expect = true;
         for (uint256 k; k < n; ++k) {
-            uint256 i = (seed >> (8 * k)) % NS;
-            q[k] = IERC4626(address(strat[i]));
-            if (pre.cap[i] == 0) expect = false;
+            q[k] = IERC4626(address(strat[(seed >> (8 * k)) % NS]));
+        }
+        _setSupplyQueue(q);
+    }
+
+    function _setSupplyQueue(IERC4626[] memory q) internal {
+        Snap memory pre = _snap();
+        bool expect = true;
+        for (uint256 k; k < q.length; ++k) {
+            if (pre.cap[_sIdx(address(q[k]))] == 0) expect = false;
         }
         vm.prank(ALLOCATOR);
         (bool ok,) = address(vault).call(abi.encodeCall(IEulerEarnBase.setSupplyQueue, (q)));
-        _afterQueue(ok, expect, pre, n);
+        _afterQueue(ok, expect, pre, q.length);
         if (ok) {
-            for (uint256 k; k < n; ++k) {
+            for (uint256 k; k < q.length; ++k) {
                 _ok(address(vault.supplyQueue(k)) == address(q[k]), L_LIVE, "la supplyQueue no quedo como se pidio (posicion, 0)", k, 0);
             }
         }
+    }
+
+    /// @dev Vuelta a una configuración sana, cada paso contra el modelo: sin pausas, los topes iniciales (vuelve a dar de
+    /// alta a las removidas) y la supplyQueue [tope chico, mediano, grande]. Sin esto, los topes en 0, las remociones y
+    /// las colas al azar degradan el estado y casi todos los depósitos se rechazan (sin reparto ni interés que medir).
+    function restore() external {
+        for (uint256 i; i < NS; ++i) {
+            if (strat[i].paused()) this.pause(i, false);
+            uint256 cap = i == 2 ? CAP_SMALL : (i == 0 ? CAP_MID : CAP_BIG);
+            (, uint136 cur,, uint64 rmAt) = IEEStaticH(address(vault)).config(IERC4626(address(strat[i])));
+            if (cur != cap && rmAt == 0) this.setCap(i, cap - 1); // setCap lleva value - 1 + 1 al tope pedido
+        }
+        IERC4626[] memory q = new IERC4626[](3);
+        q[0] = IERC4626(address(strat[2]));
+        q[1] = IERC4626(address(strat[0]));
+        q[2] = IERC4626(address(strat[1]));
+        _setSupplyQueue(q);
     }
 
     /// @dev Rota la withdrawQueue y, con `drop`, deja afuera una estrategia: pasa si y solo si la que sale tiene tope 0,

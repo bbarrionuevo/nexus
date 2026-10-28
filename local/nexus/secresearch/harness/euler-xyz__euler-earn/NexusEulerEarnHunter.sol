@@ -156,7 +156,8 @@ contract NexusPerspective is IPerspective {
 }
 
 /// @notice Base del harness: EVC real, perspectiva y fábrica de EulerEarn, el vault, tres estrategias con offsets 0, 3 y
-/// 6 (la de offset 6, primera en la supplyQueue y con tope chico, para que los depósitos se repartan), roles y comisión.
+/// 6, roles y comisión. supplyQueue: la de offset 6 con tope chico, la de offset 0 con tope mediano (es la primera de la
+/// withdrawQueue: los retiros le liberan lugar) y la de offset 3 con tope grande; así los depósitos se reparten.
 abstract contract NexusEEBase is Test {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant V = 1e6; // ConstantsLib.VIRTUAL_AMOUNT
@@ -166,7 +167,8 @@ abstract contract NexusEEBase is Test {
     /// las suyas en uint112 (≈ 5,2·10^33): 1e24 por acción deja margen para miles de depósitos (la cota E-BOUND).
     uint256 internal constant MAX_ASSETS = 1e24;
     uint256 internal constant CAP_BIG = 1e30;
-    uint256 internal constant CAP_SMALL = 2e24;
+    uint256 internal constant CAP_SMALL = 1e24;
+    uint256 internal constant CAP_MID = 3e24;
 
     address internal constant OWNER = address(uint160(uint256(keccak256("nexus.ee.owner"))));
     address internal constant CURATOR = address(uint160(uint256(keccak256("nexus.ee.curator"))));
@@ -202,7 +204,7 @@ abstract contract NexusEEBase is Test {
         for (uint256 i; i < NS; ++i) {
             strat[i] = new NexusStrategy(IERC20(address(token)), OFF[i]);
             perspective.perspectiveVerify(address(strat[i]));
-            _raiseCap(i, i == 2 ? CAP_SMALL : CAP_BIG);
+            _raiseCap(i, i == 2 ? CAP_SMALL : (i == 0 ? CAP_MID : CAP_BIG));
         }
         // supplyQueue: la de tope chico primero; el resto se derrama a las otras
         IERC4626[] memory sq = new IERC4626[](3);
