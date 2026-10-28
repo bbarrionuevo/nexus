@@ -23,14 +23,23 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 HARNESS = HERE.parents[1] / "local" / "nexus" / "secresearch" / "harness" / "morpho-org__vault-v2"
-SOURCES = ("src/VaultV2.sol", "src/VaultV2Factory.sol", "test/mocks/ERC20Mock.sol")
-TREES = ("src/interfaces", "src/libraries", "lib/forge-std", "lib/openzeppelin-contracts/contracts")
+SOURCES = ("src/VaultV2.sol", "src/VaultV2Factory.sol", "test/mocks/ERC20Mock.sol",
+           # variante B: el adapter real y los imports que hacen compilar Morpho Blue y la IRM (solc 0.8.19)
+           "src/adapters/MorphoMarketV1AdapterV2.sol", "src/adapters/MorphoMarketV1AdapterV2Factory.sol",
+           "src/adapters/interfaces/IMorphoMarketV1AdapterV2.sol",
+           "src/adapters/interfaces/IMorphoMarketV1AdapterV2Factory.sol",
+           "src/imports/MorphoImport.sol", "src/imports/AdaptiveCurveIrmImport.sol",
+           # el Blue Public Allocator (periferia en alcance), sobre la misma infraestructura de la variante B
+           "src/periphery/blue-public-allocator/BluePublicAllocator.sol",
+           "src/periphery/blue-public-allocator/interfaces/IBluePublicAllocator.sol")
+TREES = ("src/interfaces", "src/libraries", "lib/forge-std", "lib/openzeppelin-contracts/contracts",
+         "lib/morpho-blue/src", "lib/morpho-blue-irm/src", "lib/morpho-blue-irm/lib/morpho-blue/src")
+# Sin solc_version: como en el repo, cada archivo usa el solc de su pragma (VaultV2 0.8.28, Morpho Blue 0.8.19).
 FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness de Vault V2: mismos ajustes que el foundry.toml del repo.
 [profile.default]
 src = "src"
 test = "test"
 libs = ["lib"]
-solc_version = "0.8.28"
 via_ir = true
 optimizer = true
 optimizer_runs = 100000
@@ -39,6 +48,16 @@ evm_version = "cancun"
 ffi = false
 ignored_error_codes = ["transient-storage"]
 ignored_warnings_from = ["lib"]
+
+[[profile.default.compilation_restrictions]]
+paths = "src/imports/MorphoImport.sol"
+optimizer_runs = 999999
+evm_version = "paris"
+
+[[profile.default.additional_compiler_profiles]]
+name = "999999-paris"
+optimizer_runs = 999999
+evm_version = "paris"
 
 [lint]
 lint_on_build = false
@@ -72,6 +91,10 @@ def _harness(dest):
 def correr(dest, runs, depth, seed):
     _harness(dest)
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHOW_METRICS="true")
+    b = _build(dest, env)
+    if b.returncode:
+        print((b.stdout + b.stderr)[-2000:])
+        return b.returncode
     return subprocess.run([shutil.which("forge"), "test", "--match-contract", "^NexusVaultV2", "-vv"], cwd=dest,
                           env=env, check=False).returncode
 
@@ -91,28 +114,45 @@ def _laws(res):
     return hits
 
 
+def _build(dest, env):
+    """forge build del proyecto entero: con un filtro de tests, forge test solo compila lo que esos tests importan, y
+    Morpho Blue y la IRM (que se despliegan con deployCode) quedarían sin compilar."""
+    return subprocess.run([shutil.which("forge"), "build"], cwd=dest, env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=3600, check=False)
+
+
 def mutar(dest, clone, only=()):
-    """Cada mutación de mutaciones.json ([nombre, original, mutado], sobre src/VaultV2.sol) se aplica a una copia
-    limpia del VaultV2.sol de CLON. NEXUS_MUT_RUNS="corridas profundidad semilla" (por defecto "64 200 0x2a")."""
+    """Cada mutación de mutaciones.json ([nombre, original, mutado] sobre src/VaultV2.sol, o [nombre, original, mutado,
+    archivo]) se aplica a una copia limpia de ese archivo tomada de CLON. NEXUS_MUT_RUNS="corridas profundidad
+    semilla" (por defecto "64 200 0x2a")."""
     dest = Path(dest)
     runs, depth, seed = os.environ.get("NEXUS_MUT_RUNS", "64 200 0x2a").split()
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)
-    target = dest / "src" / "VaultV2.sol"
-    pristine = (Path(clone) / "src" / "VaultV2.sol").read_text(encoding="utf-8")
+    touched = {}
     missed = []
     try:
-        for name, old, new in json.loads((HERE / "mutaciones.json").read_text(encoding="utf-8")):
+        for entry in json.loads((HERE / "mutaciones.json").read_text(encoding="utf-8")):
+            name, old, new = entry[:3]
+            rel = entry[3] if len(entry) > 3 else "src/VaultV2.sol"
             if only and name.split()[0] not in only:
                 continue
+            pristine = touched.setdefault(rel, (Path(clone) / rel).read_text(encoding="utf-8"))
+            for other, text in touched.items():
+                (dest / other).write_text(text, encoding="utf-8")
             if pristine.count(old) != 1:
                 print(f"{name}: NO APLICA", flush=True)
                 missed.append(name)
                 continue
-            target.write_text(pristine.replace(old, new), encoding="utf-8")
+            (dest / rel).write_text(pristine.replace(old, new), encoding="utf-8")
             # forge guarda cada falla en cache/invariant y la reproduce primero en la corrida siguiente: sin borrarla,
             # una mutación heredaría el contraejemplo de la anterior.
             shutil.rmtree(dest / "cache" / "invariant", ignore_errors=True)
+            b = _build(dest, env)
+            if b.returncode:
+                print(f"{name}: NO COMPILA {(b.stdout + b.stderr)[-600:]}", flush=True)
+                missed.append(name)
+                continue
             r = subprocess.run([shutil.which("forge"), "test", "--match-contract", "^NexusVaultV2", "--json"], cwd=dest,
                                env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=3600, check=False)
@@ -126,7 +166,8 @@ def mutar(dest, clone, only=()):
             if not hits:
                 missed.append(name)
     finally:
-        target.write_text(pristine, encoding="utf-8")
+        for rel, text in touched.items():
+            (dest / rel).write_text(text, encoding="utf-8")
         shutil.rmtree(dest / "cache" / "invariant", ignore_errors=True)
     print("NO DETECTADAS: " + ", ".join(missed) if missed else "Todas las mutaciones detectadas.")
     return 1 if missed else 0
