@@ -2,7 +2,9 @@
 
 Modelo exacto y leyes `E-...` para el harness de `euler-xyz/euler-earn` (programa Euler v2 en Cantina), al estilo de
 los de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)) y Vault V2 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)).
-Estado: **variante A escrita y verificada con forge en la PC** (28-oct). VERIFICACION_RESUMEN
+Estado: **variante A escrita y verificada con forge en la PC** (28-oct): pasa 256×500 sin falsos positivos ni
+reversiones en sus tres variantes (con las semillas `0x2a` y `0x3` y con `validate` sobre el repo entero), y las 22
+mutaciones de referencia se detectan. **No hay hallazgos.**
 
 ## 1. Qué versión y qué alcance
 
@@ -92,10 +94,14 @@ perspectiva, base y leyes) y `NexusEulerEarnInvariant.t.sol` (el handler, tres v
 - **EulerEarn real** desde su fábrica, con el EVC real, una perspectiva de prueba, Permit2 en 0 y timelock 0 (los topes
   se suben con submit y accept en el acto). La de offset 6 va primera en la supplyQueue con tope chico, para que los
   depósitos se repartan.
-- **Acciones:** deposit, mint, withdraw (0 solo devenga), redeem, transfer; rendimiento, pérdida, tercero, donación y
-  pausa de cada estrategia; comisión y receptor (el owner, en el acto); reallocate (retirar una parte o canjear todo y
-  poner en otra); supplyQueue (con duplicados), withdrawQueue (rotar y sacar una), topes (subir, bajar, a 0) y remoción;
-  y un ciclo de vida (tope 0, remoción, salida y vuelta) que recorre el L-09 reconocido de Pashov.
+- **Acciones:** deposit, mint, withdraw (0 solo devenga), redeem, transfer; un depósito que llena justo lo que le
+  queda a la primera estrategia con lugar y sigue en las otras (el reparto entre estrategias); rendimiento, pérdida,
+  tercero, donación y pausa de cada estrategia; comisión y receptor (el owner, en el acto); reallocate (retirar una
+  parte o canjear todo y poner en otra con `type(uint256).max`, o con un destino explícito de lo retirado o uno de más o
+  de menos, para la guarda `InconsistentReallocation`); supplyQueue (con duplicados), withdrawQueue (rotar y sacar
+  una), topes (subir, bajar, a 0) y remoción; un ciclo de vida (tope 0, remoción, salida y vuelta) que recorre el L-09
+  reconocido de Pashov; y una vuelta a la configuración sana (sin pausas, topes y supplyQueue iniciales), porque los
+  topes en 0, las remociones y las colas al azar degradaban el estado hasta que casi todo depósito se rechazaba.
 - **Variantes:** sin comisión, con comisión (20 %) y activo de 6 decimales.
 - `afterInvariant` informa la cobertura: devengamientos con pérdida y con interés, depósitos repartidos, operaciones con
   una estrategia pausada, rechazos predichos, donaciones, reallocate, remociones y altas, y los depósitos que tocarían
@@ -107,7 +113,50 @@ arma un proyecto con `src`, OpenZeppelin, el EVC y forge-std y los mismos ajuste
 runs, cancun). `validate` compila solo `src` y el harness con `"aislado": true` en el manifiesto (forge toma
 `test/nexus/` como sus directorios de tests y de scripts: `forge test` compila el proyecto entero aunque se filtre).
 
-VERIFICACION_DETALLE
+**Verificación (28-oct, forge 1.8.6 en la PC).** En el proyecto reducido, las 3 variantes pasan 256×500 sin falsos
+positivos con las semillas `0x2a` y `0x3`, con 0 reversiones (128.000 llamadas por variante y semilla), y las dos pruebas
+de la cota pasan. En la última corrida de cada variante hubo 25 a 82 devengamientos que subieron `lostAssets`, 4 a 10
+con interés, 7 a 15 depósitos repartidos en más de una estrategia, 12 a 20 operaciones con una estrategia pausada, 89 a
+119 rechazos predichos por el modelo, 10 a 20 donaciones, 6 a 18 reallocate y 19 a 21 remociones y altas. La referencia,
+con `validate` sobre el repo entero (`a8cc099`, compilación aislada, semilla `0x1254469e03f52bcc`), da 5 de 5 con 0
+reversiones (371 s de compilación y 1.305 s de tests).
+
+En el camino, el modelo aprendió tres cosas del código (ninguna es un hallazgo): los dos bordes del `uint112` (§4), y que
+el `reallocate` con `type(uint256).max` nunca recorre la guarda `InconsistentReallocation` (de ahí el reallocate con
+destino explícito). Y el harness cambió dos veces por cobertura: sin el depósito que cruza el tope, el reparto entre
+estrategias no se recorría (0 por corrida); sin la vuelta a la configuración sana, casi todo depósito se rechazaba.
+
+**Mutaciones de referencia** ([tools/forge_v2/mutaciones_euler_earn.json](../tools/forge_v2/mutaciones_euler_earn.json);
+64×200, semilla `0x2a`, con `NEXUS_PERFIL=euler-earn`): las 22 se detectan.
+
+| Mutación | Variantes que la ven | Leyes |
+|---|---|---|
+| E1 `deposit` al techo | las 3 | E-INF-1, E-INF-2, E-LEDGER |
+| E2 `mint` al piso | las 3 | E-TA-1, E-INF-1, E-INF-2, E-ALLOC-1, E-STRAT-1 |
+| E3 `withdraw` al piso | las 3 | E-INF-1, E-INF-2, E-LEDGER |
+| E4 `redeem` al techo | las 3 | E-TA-1, E-INF-1, E-INF-2, E-ALLOC-1, E-STRAT-1 |
+| E5 la pérdida no sube `lostAssets` (se realizaría en el precio) | las 3 | E-LIVE |
+| E6 comisión sobre el total y no sobre el interés | las 3 | E-FEE-1, E-LEDGER |
+| E7 acciones de comisión sobre el total con la comisión | las 3 | E-FEE-1, E-LEDGER, E-INF-1 |
+| E8 el depósito suma un activo de más a `lastTotalAssets` | las 3 y las pruebas de la cota | E-TA-1 |
+| E9 el retiro no baja `lastTotalAssets` | las 3 | E-TA-1 |
+| E10 el seguimiento interno cuenta una acción de más al depositar | las 3 y las pruebas de la cota | E-STRAT-1 |
+| E11 el seguimiento interno cuenta una acción de menos al retirar | las 3 | E-STRAT-1 |
+| E12 el depósito ignora el tope de la estrategia | las 3 | E-ALLOC-1, E-STRAT-1, E-LIVE |
+| E13 `reallocate` ignora el tope | las 3 | E-ALLOC-1, E-STRAT-1, E-LIVE |
+| E14 `reallocate` acepta retirar y poner distinto | las 3 | E-ALLOC-1, E-LIVE |
+| E15 el alta no adopta las acciones reales | las 3 y las pruebas de la cota | E-TA-1, E-STRAT-1 y la prueba del alta (su aserción) |
+| E16 el alta no suma el valor de la estrategia | las 3 | E-TA-1 |
+| E17 se remueve una estrategia con tope | las 3 | E-LIVE |
+| E18 `maxWithdrawFromStrategy` usa las acciones reales | las 3 | E-LIVE |
+| E19 las acciones de comisión no se acuñan | las 3 | E-FEE-1, E-LEDGER |
+| E20 depósito sin acciones | las 3 | E-LIVE |
+| E21 la comisión nueva es retroactiva | las 3 | E-TA-1, E-FEE-1, E-LEDGER |
+| E22 `reallocate` no canjea todo al vaciar una estrategia | las 3 | E-ALLOC-1, E-STRAT-1 |
+
+E5 no baja el precio: **traba** el vault, porque `interés = A − L` desborda en el primer devengamiento después de una
+pérdida y toda operación revierte; la ve E-LIVE. Las leyes que aparecen de más en algunas filas son el efecto en cadena
+de la mutación (por ejemplo, un mint al piso cobra un wei de menos, y con eso `L` y el reparto tampoco cuadran).
 
 ## 6. Qué NO cubre
 

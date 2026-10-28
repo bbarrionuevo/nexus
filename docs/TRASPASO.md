@@ -115,7 +115,7 @@ Lo que conviene saber de forge en un handler:
 | D''. Harness de Vault V2 | Funciona (28-oct): variante A con capital asignado de verdad y 12 leyes `V-...` (con `forceDeallocate`, los topes, el gobierno con timelock y la cota de dominio V-BOUND), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 20 del gobierno y de la cota (V36–V55) con el del #84 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
-| D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). VERIF_EE_FILA |
+| D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3) y EulerEarn (3) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
@@ -270,17 +270,22 @@ En orden de prioridad:
    de cada hallazgo contra `ded84e5` y su relación con las leyes H-.... Aviso clave: la competencia publica solo sus 13
    hallazgos medios; los 113 bajos no están en el repo, así que un candidato de severidad baja puede ser duplicado sin
    que se pueda comprobar.
-6. **EulerEarn (programa Euler v2), en el #85.** VERIF_EE_PUNTO
+6. **EulerEarn (programa Euler v2), en el #85.** Cazador de la variante A sobre `a8cc099` (lo desplegado), con
+   tres estrategias ERC-4626 de prueba, ocho leyes `E-...` exactas y el precio que nunca baja (E-INF-2); 3 de 3 a
+   256×500 sin falsos positivos ni reversiones con `0x2a`, `0x3` y `validate` sobre el repo entero (`0x1254469e03f52bcc`,
+   compilación aislada), y las 22 mutaciones detectadas. **Sin hallazgos:** los dos bordes del `uint112` (depositar
+   tras la pérdida casi total de una estrategia que sigue en la supplyQueue; volver a dar de alta una estrategia con
+   más de 2^112 acciones reales) son el dominio, no defectos explotables (ver CAZADOR_EULER_EARN.md §4).
    - Contexto: **EulerEarn** (`euler-xyz/euler-earn`): fork de MetaMorpho V1.1 con estrategias ERC-4626, `lostAssets`,
      `VIRTUAL_AMOUNT` en acciones y activos y seguimiento interno de las acciones de cada estrategia
-     (`config[id].balance`, no el saldo real). Se reutiliza mucho del cazador de MetaMorpho. Ya tiene la suite de
-     invariantes de Enigma Dark y la verificación de Certora, con propiedades aproximadas; lo que agregaría nexus es
-     el modelo exacto de 512 bits (fantasma de `lostAssets`, del seguimiento interno y de las comisiones bit a bit).
-     Las tres auditorías están extraídas y resumidas en `NEXUS_HOME/secresearch/etapa_e/euler-xyz__euler-earn/`
+     (`config[id].balance`, no el saldo real). El cazador sigue el patrón de los de MetaMorpho y Vault V2. Ya tiene la
+     suite de invariantes de Enigma Dark y la verificación de Certora, con propiedades aproximadas; lo que agrega
+     nexus es el modelo exacto de 512 bits (fantasma de `lostAssets`, del seguimiento interno y de las comisiones bit a
+     bit). Las tres auditorías están extraídas y resumidas en `NEXUS_HOME/secresearch/etapa_e/euler-xyz__euler-earn/`
      (privado). El reglamento de Euler en Cantina cubre Euler Earn (hasta USD 500.000 Critical), evalúa contra la
-     implementación **desplegada** y no paga Low ni informativos. Lo desplegado en Ethereum es `a8cc099` (comparado
-     por SHA-256 contra el código verificado de la fábrica); los cambios del 23-oct-2026 en `SafeERC20Permit2Lib`
-     no están desplegados.
+     implementación **desplegada** y no paga Low ni informativos. Lo desplegado en Ethereum es `a8cc099` (comparado por
+     SHA-256 contra el código verificado de la fábrica); los cambios del 23-oct-2026 en `SafeERC20Permit2Lib` no están
+     desplegados.
    - **Falta en EulerEarn:** la variante B con estrategias reales del EVK (crédito, IRM, deuda incobrable), el Public
      Allocator, el guardian y los timelocks distintos de 0.
 7. **Próximo objetivo después de EulerEarn:**

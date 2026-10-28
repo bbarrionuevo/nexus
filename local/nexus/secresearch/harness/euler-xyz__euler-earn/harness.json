@@ -9,5 +9,5 @@
     "FOUNDRY_INVARIANT_DEPTH": "500",
     "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
   },
-  "verified": "pendiente"
+  "verified": "28-oct-2026 con forge 1.8.6 en la PC, euler-xyz/euler-earn a8cc099 (lo desplegado en Ethereum, comparado por SHA-256 contra el codigo verificado de la fabrica): en el proyecto reducido de tools/forge_v2 (NEXUS_PERFIL=euler-earn), las 3 variantes (sin comision, con comision y 6 decimales) pasan 256x500 sin falsos positivos ni reversiones con 0x2a y 0x3, y las 2 pruebas de la cota; con validate sobre el repo entero (compilacion aislada, semilla 0x1254469e03f52bcc), 5 de 5 con 0 reversiones; las 22 mutaciones de mutaciones_euler_earn.json detectadas"
 }
