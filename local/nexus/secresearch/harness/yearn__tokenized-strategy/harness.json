@@ -1,0 +1,13 @@
+{
+  "repo": "yearn/tokenized-strategy",
+  "match_contract": "^NexusTokenizedStrategy",
+  "aislado": true,
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "256",
+    "FOUNDRY_INVARIANT_DEPTH": "500",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "pendiente"
+}
