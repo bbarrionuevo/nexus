@@ -99,10 +99,10 @@ def test_git_admite_rutas_largas_de_submodulos(tmp_path):
     assert out.strip() == "-c core.longpaths=true submodule update"
 
 
-def test_harness_puede_compilar_solo_sus_rutas(tmp_path, monkeypatch):
-    """28-oct: el build entero de euler-earn no compila con forge 1.8.6 (forge-std duplicado en sus tests). El
-    manifiesto puede pedir compilar solo el harness (build_paths), y solo dentro de test/nexus/: ni opciones ni rutas
-    que salgan."""
+def test_harness_aislado_compila_solo_src_y_el_harness(tmp_path, monkeypatch):
+    """28-oct: los tests de euler-earn no compilan con forge 1.8.6 (forge-std duplicado entre el EVK y Permit2) y
+    `forge test` compila todo el proyecto aunque se filtre. Con "aislado": true, forge toma test/nexus/ como sus
+    directorios de tests y de scripts, en el build y en los tests; el manifiesto no elige rutas."""
     import sys
 
     import pytest
@@ -114,23 +114,25 @@ def test_harness_puede_compilar_solo_sus_rutas(tmp_path, monkeypatch):
     log = tmp_path / "forge.log"
     monkeypatch.setenv("FAKE_LOG", str(log))
     hb = tmp_path / "harness"
-    for name, man in (("h", {"repo": "o/v", "match_contract": "^Nexus", "build_paths": ["test/nexus"]}),
-                      ("opcion", {"repo": "o/v", "build_paths": ["--ffi"]}),
-                      ("afuera", {"repo": "o/v", "build_paths": ["test/nexus/../../src"]}),
-                      ("src", {"repo": "o/v", "build_paths": ["src"]})):
+    for name, man in (("h", {"repo": "o/v", "match_contract": "^Nexus", "aislado": True}),
+                      ("comun", {"repo": "o/v", "match_contract": "^Nexus"}),
+                      ("raro", {"repo": "o/v", "aislado": "test/nexus"})):
         (hb / name).mkdir(parents=True)
         (hb / name / "harness.json").write_text(json.dumps(man))
-    (hb / "h" / "P.t.sol").write_text("contract P {}\n")
+        (hb / name / "P.t.sol").write_text("contract P {}\n")
     progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
               "repos": [{"repo": "o/v"}]}]
     kw = {"out": tmp_path / "out", "programs": progs, "forge": [sys.executable, str(fake)], "url": f"file://{src}",
           "work": tmp_path / "work", "harness_base": hb}
-    validate.validate("o/v", harness="h", seed="0x2a", **kw)
-    build = json.loads(log.read_text().splitlines()[0])
-    assert build["argv"] == ["build", "test/nexus"]
-    for bad in ("opcion", "afuera", "src"):
-        with pytest.raises(ValueError, match="ruta no permitida"):
-            validate.validate("o/v", harness=bad, **kw)
+    rec = validate.validate("o/v", harness="h", seed="0x2a", **kw)
+    build, test = (json.loads(x) for x in log.read_text().splitlines())
+    assert build["argv"] == ["build"] and build["dirs"] == ["test/nexus", "test/nexus"]
+    assert test["dirs"] == ["test/nexus", "test/nexus"] and test["ffi"] == "false" and rec["aislado"] is True
+    log.write_text("")
+    validate.validate("o/v", harness="comun", seed="0x2a", **kw)
+    assert all(json.loads(x)["dirs"] == [None, None] for x in log.read_text().splitlines())
+    with pytest.raises(ValueError, match="aislado"):
+        validate.validate("o/v", harness="raro", **kw)
 
 
 def test_tests_mocks_y_scripts_no_estan_en_alcance():
@@ -218,7 +220,8 @@ nexus = os.path.join(os.getcwd(), "test", "nexus")
 with open(log, "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "ffi": os.environ.get("FOUNDRY_FFI"), "cwd": os.getcwd(),
                         "fuzz": {k: v for k, v in os.environ.items() if k.startswith(("FOUNDRY_FUZZ", "FOUNDRY_INV"))},
-                        "harness": sorted(os.listdir(nexus)) if os.path.isdir(nexus) else None}) + "\n")
+                        "harness": sorted(os.listdir(nexus)) if os.path.isdir(nexus) else None,
+                        "dirs": [os.environ.get("FOUNDRY_TEST"), os.environ.get("FOUNDRY_SCRIPT")]}) + "\n")
 if sys.argv[1] == "build":
     print("Compiling 42 files")
     sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))

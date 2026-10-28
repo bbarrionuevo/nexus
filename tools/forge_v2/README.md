@@ -43,7 +43,7 @@ harness de `harness/euler-xyz__euler-earn/` y el filtro `^NexusEulerEarn`, y `mu
 (por defecto sobre `src/EulerEarn.sol`). El clon tiene que estar en `a8cc099`, la versión desplegada (ver
 [CAZADOR_EULER_EARN.md](../../docs/CAZADOR_EULER_EARN.md)). El build entero del repo no compila con forge 1.8.6
 (forge-std duplicado entre el EVK y Permit2 en sus tests), así que este proyecto reducido es también la única forma de
-iterar el harness; `validate` compila solo el harness con `build_paths`.
+iterar el harness; `validate` compila solo `src` y el harness con `"aislado": true` en el manifiesto.
 
 ```powershell
 $CLON = "$env:LOCALAPPDATA\nexus\work\euler-xyz__euler-earn"   # en a8cc099, con submódulos (core.longpaths)

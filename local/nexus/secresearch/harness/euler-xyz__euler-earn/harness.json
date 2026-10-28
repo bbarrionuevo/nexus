@@ -1,7 +1,7 @@
 {
   "repo": "euler-xyz/euler-earn",
   "match_contract": "^NexusEulerEarn",
-  "build_paths": ["test/nexus"],
+  "aislado": true,
   "env": {
     "FOUNDRY_FUZZ_RUNS": "1000",
     "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
