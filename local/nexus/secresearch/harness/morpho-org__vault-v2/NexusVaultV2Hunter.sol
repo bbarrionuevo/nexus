@@ -324,7 +324,13 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint8 internal constant L_FD = 8; // V-FD-1
     uint8 internal constant L_CAP = 9; // V-CAP-1
     uint8 internal constant L_GOV = 10; // V-GOV-1: gobierno con timelock (fecha, ejecutabilidad, efecto, roles)
-    uint8 internal constant N_LAWS = 11;
+    uint8 internal constant L_BOUND = 11; // V-BOUND: el estado queda en el dominio de la aritmética de una palabra
+    uint8 internal constant N_LAWS = 12;
+
+    /// @dev V-BOUND. Lo más que una acción del handler mueve (mint le da 4·MAX_ASSETS al actor) y lo más que adelanta
+    /// el reloj (un warp de 120 días y el gobierno, hasta 60 días más).
+    uint256 internal constant BOUND_M = 4 * MAX_ASSETS;
+    uint256 internal constant BOUND_DT = 180 days;
 
     uint256 internal constant NONE = 6; // _idx de una cuenta que no se sigue
 
@@ -370,7 +376,10 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint256 internal hGovExecs; // ejecuciones que pasaron
     uint256 internal hGovEarly; // intentos un segundo antes de la fecha (tienen que fallar)
     uint256 internal hGovRejected; // intentos rechazados como predijo el modelo (propuestas, ejecuciones y revocaciones)
+    uint256 internal hBoundBits = 256; // bits de margen mínimos del dominio de V-BOUND en la corrida
+    uint256 internal hBoundCuts; // depósitos y mints que el handler no hizo porque sacaban al estado del dominio
     uint256 internal hGovRevokes; // revocaciones
+    uint256 internal hGovProbes; // sondas del gobierno: abdicación, registro, baja y alta de adapter2
 
     function _hunterInit() internal {
         hClock = new NexusV2Clock();
@@ -717,6 +726,38 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         _ok(claim <= post.R, L_SOLV, "lo reclamable supera los activos reales (reclamable, reales)", claim, post.R);
         uint256 price = NexusV2Math.mulDivUp(1, post.TA + 1, post.T + vShares);
         if (price > hMaxPrice) hMaxPrice = price;
+        _lawBound(post);
+    }
+
+    /// @dev V-BOUND: el estado queda en el dominio D donde la acción siguiente no desborda la aritmética de una palabra
+    /// del vault (MathLib.mulDivDown es x*y/d con chequeo de 0.8). Demostración en docs/CAZADOR_VAULT_V2.md, §4.
+    function _lawBound(Snap memory s) internal {
+        (bool ok, uint256 bits) = inBound(s.TA, s.R, s.T, s.ts - s.lu, s.fg);
+        _ok(ok, L_BOUND, "el estado salio del dominio de la aritmetica de una palabra (bits de margen, 0)", bits, 0);
+        if (bits < hBoundBits) hBoundBits = bits;
+    }
+
+    /// @notice Dominio D de V-BOUND, con margen para una acción más: Â = max(_TA, R) + M < 2^128 (el cast a uint128 de
+    /// _totalAssets), Â·Ŝ < 2^256 con Ŝ = 4(T + v) + M (los productos activos·(T+v) y acciones·(TA+1) de las
+    /// conversiones y de las comisiones), y (Δt + 180 días)·fg ≤ W/4 (las comisiones de un devengamiento no pasan de
+    /// 3/4 de los activos, así que acuñan a lo sumo 3(T + v) acciones). `bits` = 256 − log2(Â·Ŝ), 0 fuera de D.
+    function inBound(uint256 ta, uint256 r, uint256 t, uint256 dt, uint256 fg)
+        public
+        view
+        returns (bool ok, uint256 bits)
+    {
+        if (t > type(uint256).max / 8 || ta > type(uint128).max || r > type(uint128).max) return (false, 0);
+        uint256 a = (ta > r ? ta : r) + BOUND_M;
+        if (a > type(uint128).max) return (false, 0);
+        (uint256 hi, uint256 lo) = NexusV2Math.mul512(a, 4 * (t + vShares) + BOUND_M);
+        if (hi != 0) return (false, 0);
+        if (dt > 1e12 || (dt + BOUND_DT) * fg > WAD / 4) return (false, 0);
+        bits = 256;
+        while (lo != 0) {
+            lo >>= 1;
+            --bits;
+        }
+        return (true, bits);
     }
 
     function _userDelta(address who, Snap memory pre, Snap memory post) internal view returns (uint256) {
@@ -766,6 +807,7 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         if (law == L_FD) return "V-FD-1";
         if (law == L_CAP) return "V-CAP-1";
         if (law == L_GOV) return "V-GOV-1";
+        if (law == L_BOUND) return "V-BOUND";
         return "V-SOLV-1";
     }
 
@@ -838,12 +880,19 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         return (hForces, hForceExits, hCapRejects, hCapEdges, hCapChanges, hSameTx);
     }
 
-    /// @notice Cobertura del gobierno con timelock: propuestas, ejecuciones, intentos tempranos, rechazos y revocaciones.
+    /// @notice Cobertura del gobierno con timelock: propuestas, ejecuciones, intentos tempranos, rechazos, revocaciones y
+    /// sondas.
     function coverageGov()
         external
         view
-        returns (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes)
+        returns (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes, uint256 probes)
     {
-        return (hGovSubmits, hGovExecs, hGovEarly, hGovRejected, hGovRevokes);
+        return (hGovSubmits, hGovExecs, hGovEarly, hGovRejected, hGovRevokes, hGovProbes);
+    }
+
+    /// @notice Cobertura de V-BOUND: bits de margen mínimos del dominio y depósitos o mints que el handler no hizo
+    /// porque sacaban al estado de él.
+    function coverageBound() external view returns (uint256 minBits, uint256 cuts) {
+        return (hBoundBits, hBoundCuts);
     }
 }

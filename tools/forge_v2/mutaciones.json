@@ -52,5 +52,6 @@
   ["V51 setAdapterRegistry no revisa los adapters vigentes", "IAdapterRegistry(newAdapterRegistry).isInRegistry(adapters[i]), ErrorsLib.NotInAdapterRegistry()", "true, ErrorsLib.NotInAdapterRegistry()"],
   ["V52 removeAdapter deja isAdapter en true", "            isAdapter[account] = false;\n", ""],
   ["V53 increaseAbsoluteCap acepta bajas", "require(newAbsoluteCap >= caps[id].absoluteCap, ErrorsLib.AbsoluteCapNotIncreasing());", "require(true, ErrorsLib.AbsoluteCapNotIncreasing());"],
-  ["V54 tope relativo por encima de WAD", "require(newRelativeCap <= WAD, ErrorsLib.RelativeCapAboveOne());", "require(true, ErrorsLib.RelativeCapAboveOne());"]
+  ["V54 tope relativo por encima de WAD", "require(newRelativeCap <= WAD, ErrorsLib.RelativeCapAboveOne());", "require(true, ErrorsLib.RelativeCapAboveOne());"],
+  ["V55 acciones virtuales fuera de escala (las conversiones desbordan)", "virtualShares = 10 ** decimalOffset;", "virtualShares = 10 ** (decimalOffset + 50);"]
 ]
