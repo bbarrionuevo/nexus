@@ -34,3 +34,22 @@ ninguna variante detecta es un punto ciego del harness.
 
 El mismo `mutaciones.json` sirve en la nube con `MUTATION='{"file":"src/VaultV2.sol","old":...,"new":...}' node
 tools/edr/build_v2.js ...` (ver `tools/edr/README.md`).
+
+## Perfil de EulerEarn
+
+`NEXUS_PERFIL=euler-earn` hace lo mismo con `euler-xyz/euler-earn` (programa Euler v2): `armar` copia solo `src`,
+OpenZeppelin, el EVC y forge-std con los ajustes del repo (solc 0.8.26, via_ir, 200 runs, cancun), `correr` usa el
+harness de `harness/euler-xyz__euler-earn/` y el filtro `^NexusEulerEarn`, y `mutar` toma `mutaciones_euler_earn.json`
+(por defecto sobre `src/EulerEarn.sol`). El clon tiene que estar en `a8cc099`, la versión desplegada (ver
+[CAZADOR_EULER_EARN.md](../../docs/CAZADOR_EULER_EARN.md)). El build entero del repo no compila con forge 1.8.6
+(forge-std duplicado entre el EVK y Permit2 en sus tests), así que este proyecto reducido es también la única forma de
+iterar el harness; `validate` compila solo el harness con `build_paths`.
+
+```powershell
+$CLON = "$env:LOCALAPPDATA\nexus\work\euler-xyz__euler-earn"   # en a8cc099, con submódulos (core.longpaths)
+$RED  = "$env:LOCALAPPDATA\nexus\work\euler-earn-reducido"
+$env:NEXUS_PERFIL = "euler-earn"
+.venv\Scripts\python tools\forge_v2\forge_v2.py armar  $CLON $RED
+.venv\Scripts\python tools\forge_v2\forge_v2.py correr $RED 256 500 0x2a
+.venv\Scripts\python tools\forge_v2\forge_v2.py mutar  $RED $CLON
+```

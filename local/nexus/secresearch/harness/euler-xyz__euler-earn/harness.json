@@ -1,0 +1,13 @@
+{
+  "repo": "euler-xyz/euler-earn",
+  "match_contract": "^NexusEulerEarn",
+  "build_paths": ["test/nexus"],
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "256",
+    "FOUNDRY_INVARIANT_DEPTH": "500",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "pendiente"
+}
