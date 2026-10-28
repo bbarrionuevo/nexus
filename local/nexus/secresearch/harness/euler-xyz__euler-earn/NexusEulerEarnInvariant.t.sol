@@ -239,6 +239,37 @@ contract NexusEulerEarnHandler is NexusEEHunter {
         ++hReallocs;
     }
 
+    /// @dev reallocate con el destino explícito: retira `amount` de `from` y pone en `to` lo retirado y uno de más o de
+    /// menos (`delta` % 3 = 0, 1, 2 → −1, 0, +1). Solo pasa si lo puesto es igual a lo retirado: la guarda
+    /// InconsistentReallocation, que el reallocate con type(uint256).max nunca recorre.
+    function reallocateExact(uint256 fromSeed, uint256 toSeed, uint256 amount, uint256 delta) external {
+        uint256 f = fromSeed % NS;
+        uint256 t2 = toSeed % NS;
+        if (f == t2) return;
+        Snap memory pre = _snap();
+        uint256 supplyF = _redeem(f, pre.b[f], pre.tA[f], pre.tS[f]);
+        uint256 x = _clamp(amount, 0, supplyF);
+        uint256 supplyT = _redeem(t2, pre.b[t2], pre.tA[t2], pre.tS[t2]);
+        uint256 d = delta % 3;
+        if (supplyT + x + d == 0) return; // el destino no puede bajar de 0
+        MarketAllocation[] memory al = new MarketAllocation[](2);
+        al[0] = MarketAllocation(IERC4626(address(strat[f])), supplyF - x);
+        al[1] = MarketAllocation(IERC4626(address(strat[t2])), supplyT + x + d - 1);
+        (bool expect, uint256[3] memory tA, uint256[3] memory tS, uint256[3] memory b) = _simReallocate(pre, al);
+        vm.prank(ALLOCATOR);
+        (bool ok,) = address(vault).call(abi.encodeCall(IEulerEarnBase.reallocate, (al)));
+        Snap memory post = _snap();
+        _ok(ok == expect, L_LIVE, ok ? "reallocate exacto paso y el modelo decia que revertia (retirado, diferencia)" : "reallocate exacto revirtio y el modelo decia que pasaba (retirado, diferencia)", x, d);
+        _lawsStill(pre, post);
+        _lawPrice(pre, post);
+        if (!ok) {
+            ++hRejected;
+            return;
+        }
+        _lawStrategies(post, tA, tS, b);
+        ++hReallocs;
+    }
+
     /// @dev Replica reallocate sobre la foto `s`.
     function _simReallocate(Snap memory s, MarketAllocation[] memory al)
         internal
