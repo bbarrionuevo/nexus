@@ -5,9 +5,9 @@ cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZA
 Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter, las leyes
 del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
 los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP, y el Blue Public Allocator,
-leyes V-PA, con el adapter de liquidez y forceDeallocate sobre Blue) escrita y verificada el mismo día. Faltan el
-gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
-`NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+leyes V-PA, con el adapter de liquidez y forceDeallocate sobre Blue) escrita y verificada el mismo día, igual que el
+**gobierno con timelock** (V-GOV-1, en la variante A). Falta la cota V-BOUND como ley. La etapa E (duplicados) está
+hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
 y `NexusAdapterMock`) y `NexusVaultV2Invariant.t.sol` (el handler y tres variantes: sin comisión, con comisión de
@@ -22,6 +22,10 @@ performance y de gestión, y activo de 6 decimales).
   depositando y asignando en una misma transacción; V-CAP-1 compara cada intento con la predicción.
 - `forceDeallocate`: penalidad de 1 % sin comisión, 2 % (el máximo) con comisión y 0,37 % con 6 decimales. El handler
   fuerza a nombre propio y de otro actor con allowance finita, y fuerza y sale en una misma transacción.
+- Gobierno (V-GOV-1): el handler propone, ejecuta y revoca cambios con demora (comisiones y sus receptores, la
+  penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de un segundo adapter vacío y el registro de
+  adapters), con timelocks iniciales distintos de 0, y una copia fantasma predice cada resultado. Ejecuta un segundo
+  antes de la fecha y justo en ella, intenta lo revocado y, tras una abdicación, vuelve a proponer la función abdicada.
 - Las secuencias de una sola transacción las hace `NexusV2Macro` (§4): forge 1.8.6 corre con `isolate = true` y cada
   llamada del handler al vault es una transacción aparte.
 - Los montos de cada acción los **deriva** el cazador del cambio de estado observado (activos: el cambio de lo ocioso;
@@ -33,8 +37,9 @@ performance y de gestión, y activo de 6 decimales).
   más. El motivo de una falla termina con todas las leyes que fallaron, por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
 - `afterInvariant` informa la cobertura de la corrida: pérdidas realizadas, bajas de precio sin pérdida (solo puede
   haberlas por la comisión de gestión), asignaciones, desasignaciones y transferencias con efecto, forceDeallocate con
-  monto, salidas tras forzar, allocate rechazados por los topes y aceptados justo en el tope, cambios de topes, y
-  depósitos con allocate en la misma transacción.
+  monto, salidas tras forzar, allocate rechazados por los topes y aceptados justo en el tope, cambios de topes,
+  depósitos con allocate en la misma transacción, y del gobierno: propuestas, ejecuciones que pasaron, intentos un
+  segundo antes de la fecha, intentos rechazados como predijo el modelo y revocaciones.
 
 **Verificación en la nube (sin forge), commit `04e5f4a9`, solc 0.8.28 + EDR (27-oct, versión anterior del harness).**
 Las 3 variantes pasaban 256×500 sin falsos positivos con las semillas `0x2a` y `0x3` y detectaban 5 mutaciones de
@@ -107,6 +112,42 @@ handler le da al actor). Las 8 mutaciones nuevas se detectan, y la batería comp
 V14 es el hallazgo Medium ya corregido de Spearbit 2025-05-19 (5.2.1, "rounding down in forceDeallocate"): V-FD-1 lo
 vería si volviera.
 
+**V-GOV-1 (27 y 28-oct, con forge en el proyecto reducido).** Con el gobierno con timelock, las 4 variantes (las 3 de
+la A y la B) pasan 256×500 sin falsos positivos con las semillas `0x2a` y `0x3`, con 0 reversiones: `govSubmit`,
+`govExecute` y `govRevoke` corren unas 6.300 a 6.500 veces cada una por variante y semilla. En la última corrida de cada
+variante de la A hubo 22 a 27 propuestas aceptadas, 4 a 14 ejecuciones que pasaron, 2 a 5 intentos un segundo antes de
+la fecha, 16 a 37 intentos rechazados como predijo el modelo y 8 a 17 revocaciones. La referencia, con `validate` sobre
+el repo entero (`6047e158`, semilla `0x8f3701367e64ccea`), da 4 de 4 con 0 reversiones (812 s de compilación y 973 s de
+tests). Las 19 mutaciones nuevas (64×200, semilla `0x2a`, solo la variante A con `NEXUS_MUT_MATCH`) se detectan:
+
+| Mutación | Variantes que la ven | Leyes |
+|---|---|---|
+| V36 una función con demora se ejecuta un segundo antes | las 3 | **V-GOV-1** |
+| V37 `decreaseTimelock` usa su propio timelock y no el de la función objetivo | las 3 | **V-GOV-1** |
+| V38 lo abdicado se sigue ejecutando | las 3 | **V-GOV-1** |
+| V39 `revoke` sin rol | las 3 | **V-GOV-1** |
+| V40 ejecutar no borra el pendiente | las 3 | **V-GOV-1** |
+| V41 `increaseTimelock` acepta bajas | las 3 | **V-GOV-1** |
+| V42 `submit` sin rol | las 3 | **V-GOV-1** |
+| V43 `submit` pisa un pendiente | las 3 | **V-GOV-1** |
+| V44 se ejecuta sin propuesta | las 3 | **V-GOV-1** |
+| V45 la comisión de performance nueva es retroactiva | con comisión | V-FEE-1, V-INF-2, V-LEDGER |
+| V46 la comisión de gestión nueva es retroactiva | con comisión, 6 decimales | V-FEE-1, V-INF-2, V-LEDGER |
+| V47 penalidad sin tope | las 3 | **V-GOV-1** |
+| V48 comisión de performance sin receptor | sin comisión, 6 decimales | **V-GOV-1** |
+| V49 `increaseTimelock` sobre `decreaseTimelock` | las 3 | **V-GOV-1** |
+| V50 `addAdapter` ignora el registro | 6 decimales | **V-GOV-1** |
+| V51 `setAdapterRegistry` no revisa los adapters vigentes | con comisión, 6 decimales | **V-GOV-1** |
+| V52 `removeAdapter` deja `isAdapter` en true | con comisión, 6 decimales | **V-GOV-1** |
+| V53 `increaseAbsoluteCap` acepta bajas | las 3 | **V-GOV-1** |
+| V54 tope relativo por encima de `WAD` | las 3 | **V-GOV-1** |
+
+V45 y V46 son el M-01 de OpenZeppelin en MetaMorpho (comisión retroactiva al cambiarla), corregido allá y ausente en
+V2: las ve V-FEE-1, que aplica el devengamiento con la comisión vieja. V45 solo aparece con comisión de performance;
+V46 también con 6 decimales, donde el gobierno pone primero el receptor y después la comisión. V50 a V52 necesitan dos
+ejecuciones del gobierno en orden (registro y alta, o alta y baja del segundo adapter), por eso las ven menos
+variantes a 64×200.
+
 Vault V2 es un ERC-4626 que delega el capital en *adapters*. Cada adapter reporta cuánto valen sus inversiones con
 `realAssets()`; el vault devenga interés y realiza pérdidas a partir de esa suma. Es una contabilidad distinta a la de
 MetaMorpho, así que el cazador necesita leyes nuevas.
@@ -153,8 +194,8 @@ Baja `TA` y `T`, pero los activos quedan en el vault: el precio sube para el res
 
 ## 3. Leyes (exactas y de 512 bits salvo donde el código no lo es)
 
-Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-FD-1, V-CAP-1, V-LEDGER y
-V-SOLV-1. Las demás son el plan.
+Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-FD-1, V-CAP-1, V-GOV-1,
+V-LEDGER y V-SOLV-1; en la variante B, además, V-ADP-1..5 y V-PA-1..4. Las demás son el plan.
 
 | Código | Ley | Caza |
 |---|---|---|
@@ -169,7 +210,7 @@ V-SOLV-1. Las demás son el plan.
 | V-LOSS-2 | Con pérdida: fuera de quien opera ningún saldo cambia, los de comisión solo suben y `Σ saldos = T`; el precio baja según V-INF-2 (c) | Pérdida repartida en saldos (acciones quemadas o trasladadas) |
 | V-FD-1 | forceDeallocate de `a` a nombre de `o`: `R' = R`, `TA' = A − pA` con `pA = ⌈a·p/W⌉`, a `o` se le queman `⌈pA(S+v)/(A+1)⌉` acciones (y la allowance baja eso), ningún tercero cambia; forzando y saliendo en la misma transacción, el retiro se paga al precio que dejó forceDeallocate. Ver §4 | Penalidad evadida, perdonada o cobrada a otro; pérdida evitada o trasladada |
 | V-CAP-1 | `allocation = posición del adapter` en cada id; allocate pasa **si y solo si** `0 < absoluteCap`, `pos' ≤ absoluteCap` y, si `relativeCap ≠ WAD`, `pos' ≤ ⌊firstTotalAssets·relativeCap/W⌋`; `firstTotalAssets` es el primer total devengado no nulo de la transacción (un depósito de la misma transacción no lo agranda). Ver §4 | Topes ignorados o demasiado estrictos; tope relativo eludido en una transacción |
-| V-GOV-1..n | Cada acción con timelock (addAdapter, caps, fees, registry, penalty) se compara con la predicción: éxito/reversión, efecto y `executableAt` | Timelocks que vencen antes, cambios sin esperar |
+| V-GOV-1 | Gobierno con timelock (comisiones y receptores, penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de adapters, registro de adapters), contra una copia fantasma: `submit` pasa **si y solo si** lo llama el curador y el dato no está pendiente, y fija `executableAt = t + timelock` (el de la función objetivo para `decreaseTimelock`); ejecutar pasa **si y solo si** está pendiente, llegó la fecha, la función no fue abdicada y se cumplen sus condiciones, y entonces el efecto es el valor propuesto y el pendiente se borra; `revoke` pasa si y solo si lo llama el curador o un centinela, y lo revocado no se ejecuta. Las comisiones y sus receptores devengan antes de cambiar (V-FEE-1 sobre la foto previa). Ver §4 | Timelocks que vencen antes o que miden la función equivocada, abdicaciones que no bloquean, propuestas o revocaciones sin rol, pendientes que se pisan o no se borran, comisiones retroactivas, topes de comisión, penalidad y topes ignorados, adapters fuera del registro |
 | V-LEDGER | `T = Σ saldos` (incluidas las shares de fee); `T` = el esperado tras cada acción; sin pérdida, fuera de quien opera ningún saldo cambia y los de comisión solo suben | Shares creadas o destruidas por fuera |
 | V-SOLV-1 | `⌊T⁺(TA+1)/(T⁺+v)⌋ ≤ R`: lo reclamable está respaldado por los activos reales | Insolvencia |
 | V-BOUND | Las macros exigen `TA, T < ~10³⁵` antes de operar (el `mulDiv` de una palabra puede desbordar) | Falsos positivos por `Panic(0x11)` |
@@ -279,6 +320,39 @@ handler. Las secuencias de una transacción (depositar y asignar, forzar y salir
 hace `NexusV2Macro`, allocator del vault con allowance de los actores, dentro de su propia llamada, y devuelve lo que lee
 ahí. ∎
 
+**V-GOV-1: el gobierno con timelock hace lo que promete, ni antes ni sin permiso.** Es una especificación, no una
+cota: el handler lleva una copia fantasma (timelock por selector, abdicaciones y, por cada dato pendiente, su
+`executableAt`) y compara cada intento con ella. Con `sel(d)` los primeros 4 bytes de `d` y `t` la hora:
+
+- `submit(d)` pasa si y solo si lo llama el curador y `executableAt[d] = 0`; entonces `executableAt[d] = t +
+  timelock[sel(d)]`, salvo para `decreaseTimelock(s, ·)`, que usa `timelock[s]` (bajar un timelock tarda lo que el
+  timelock que baja). Un pendiente conserva su fecha aunque después cambie el timelock.
+- Ejecutar `d` (cualquiera puede) pasa si y solo si `executableAt[d] ≠ 0`, `t ≥ executableAt[d]`, `sel(d)` no fue
+  abdicado y se cumplen las condiciones de la función con el estado de ese momento: comisión de performance `≤ 0,5`,
+  de gestión `≤ 0,05/año`, con receptor no nulo salvo que sea 0; receptor no nulo salvo con comisión 0; penalidad
+  `≤ 2 %`; `increaseTimelock` sube y `decreaseTimelock` baja, y ninguno sobre `decreaseTimelock`; un tope absoluto
+  sube y cabe en 128 bits, uno relativo sube sin pasar de `WAD`; `addAdapter` solo si no hay registro o el adapter
+  está en él; un registro no nulo tiene que contener a todos los adapters vigentes; `removeAdapter` siempre. Si pasa,
+  el efecto es el valor propuesto (para los adapters, `isAdapter` y el largo de la lista) y `executableAt[d] = 0`. El
+  handler lo intenta un segundo antes de la fecha (tiene que fallar) y justo en la fecha.
+- `revoke(d)` pasa si y solo si lo llama el curador o un centinela y `d` está pendiente; deja `executableAt[d] = 0`, y
+  `d` ya no se ejecuta aunque llegue su fecha. Tras una abdicación, una propuesta nueva de esa función se acepta, pero
+  no se ejecuta.
+- Las comisiones y sus receptores llaman a `accrueInterest()` antes de cambiar, así que lo devengado hasta ese momento
+  se cobra con la comisión vieja: el cazador aplica V-TA-1, V-FEE-1 y el resto de las leyes de devengamiento con la
+  foto previa, y una comisión retroactiva rompe V-FEE-1. Lo demás (penalidad, timelocks, abdicaciones, propuestas y
+  revocaciones) no devenga ni mueve `_totalAssets`, `totalSupply` ni los activos reales.
+
+El predicado es exacto porque el harness descarta las demás causas de reversión: los timelocks propuestos son de a lo
+sumo 60 días, así que `t + timelock` no desborda y el reloj nunca llega a los 10 años sin devengar en que las
+comisiones superarían a los activos y el vault revertiría (lo documenta `accrueInterestView`). Timelocks iniciales: 3 días la comisión de performance, 1 día la de gestión, 12 h la
+penalidad, 2 días el receptor de performance, 5 días `abdicate`, 4 días `addAdapter`, 1 día el registro, 1 h
+`increaseTimelock`; el receptor de gestión, `removeAdapter` y `decreaseTimelock` quedan en 0 (el camino sin demora).
+Los topes también: `setCap` los sube con submit y ejecución inmediata, y si el gobierno tiene pendiente el mismo dato,
+lo ejecuta en vez de proponerlo de nuevo. El alta y la baja son de un segundo adapter siempre vacío, y el registro solo
+contiene al principal: así cada caso del predicado (alta con y sin registro, registro con y sin el segundo adapter
+dado de alta) se puede dar, y la contabilidad no cambia. ∎
+
 ### Variante B: el adapter real sobre Morpho Blue (V-ADP)
 
 `NexusVaultV2Blue.t.sol`: VaultV2 + `MorphoMarketV1AdapterV2` (creado por su factory) sobre Morpho Blue con la IRM
@@ -364,7 +438,9 @@ empujada al vault, liquidez retirada) son ataques económicos conocidos; estas l
    cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida
    repartida en saldos, dilución al entrar, la penalidad de forceDeallocate (redondeo, destino y a quién se cobra) y
    los topes (absoluto, relativo contra el total actual, borde estricto, bookkeeping de la allocation y
-   `firstTotalAssets`). Resultados arriba. Cada una tiene que disparar una ley `V-...`.
+   `firstTotalAssets`) y el gobierno con timelock (fecha, timelock de la función objetivo, abdicación, permisos de
+   propuesta y revocación, pendientes que se pisan o no se borran, ejecución sin propuesta, comisiones retroactivas y
+   las condiciones de comisiones, penalidad, timelocks, topes, registro y alta y baja de adapters). Resultados arriba. Cada una tiene que disparar una ley `V-...`.
 
 Build: `src/` de V2 es solc 0.8.28, `via_ir`, `cancun`. forge 1.8.6 compila el repo entero, `MidnightAdapter` (osaka)
 incluido, en ~11 min en la PC. Para iterar alcanza con VaultV2, la factory, el `ERC20Mock`, forge-std y el harness:
@@ -375,3 +451,10 @@ incluido, en ~11 min en la PC. Para iterar alcanza con VaultV2, la factory, el `
 Tokens no estándar (aunque V2 soporta sin-return en transfer), reentrada vía adapter malicioso, `permit`/`multicall`,
 préstamos flash, el Public Allocator (merece su propio modelo; está en alcance como contrato desplegado) y el
 MidnightAdapter (fuera de alcance: no está desplegado).
+
+Del gobierno, V-GOV-1 no prueba los gates, `setIsAllocator` ni las funciones del owner (`setCurator`,
+`setIsSentinel`, `setOwner`); el alta y la baja son de un adapter vacío, así que no prueba sacar un adapter con
+capital (sus activos dejarían de contarse y el vault realizaría una pérdida: es un poder del curador detrás del
+timelock); y los receptores de comisión solo alternan entre el del harness y 0: un cambio de receptor con comisiones
+en tránsito hacia otro receptor no se prueba (si no devengara antes, el receptor nuevo cobraría lo del viejo; no toca a
+los depositantes).

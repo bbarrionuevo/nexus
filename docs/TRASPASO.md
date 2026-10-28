@@ -109,10 +109,10 @@ Lo que conviene saber de forge en un handler:
 | C. Método de invariantes | Funciona: P0–P6 en Python, con autoverificación |
 | D. Validación con Foundry | Funciona en la PC: `validate` clona fijado a un commit, FFI apagado, informe privado |
 | D'. Harness de MetaMorpho | Funciona: suite a16z, handler original y `NexusVulnerabilityHunter` con una suite multi-mercado con gobierno |
-| D''. Harness de Vault V2 | Funciona (27-oct): variante A con capital asignado de verdad, 10 leyes `V-...` (con `forceDeallocate` y los topes) verificadas con forge en la PC, 21 mutaciones de referencia detectadas ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
+| D''. Harness de Vault V2 | Funciona (27-oct): variante A con capital asignado de verdad y 11 leyes `V-...` (con `forceDeallocate`, los topes y el gobierno con timelock), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 19 del gobierno con el del #83 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
-| E. Duplicados | Parcial: falta revisar las auditorías previas de MetaMorpho |
+| E. Duplicados | Funciona: auditorías de Vault V2 (15) y de MetaMorpho (3) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
 **Hallazgos:** ninguno. No hay candidatos ni expedientes abiertos.
@@ -162,15 +162,17 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
 | #80 | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
 | #81 | Vault V2: `forceDeallocate` (V-FD-1) y los topes con su borde exacto (V-CAP-1), con `NexusV2Macro` para las secuencias de una transacción (forge corre con `isolate = true`); 21 mutaciones de referencia |
+| #82 | Vault V2, variante B: el `MorphoMarketV1AdapterV2` real sobre Morpho Blue (V-ADP), el Blue Public Allocator (V-PA), el adapter de liquidez y forceDeallocate sobre Blue; `tools/forge_v2` con Blue y mutaciones sobre cualquier archivo; 35 mutaciones de referencia. Va sobre el #81 |
+| #83 | Vault V2: el gobierno con timelock (V-GOV-1: comisiones y receptores, penalidad, timelocks, abdicaciones, topes, adapters y registro, con el borde exacto de la fecha); 19 mutaciones nuevas (V36–V54); y la etapa E de MetaMorpho (privada) |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #81 y hacer `git pull` en `main` (el #80 ya está fusionado). Lo que pedía el #76 ya está
-   probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por
-   corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del
-   27-oct se corrigió en el #79).
+1. **Dueño:** fusionar el #83 (el #81 y el #82 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76
+   ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
+   18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
+   `TypeError` del 27-oct se corrigió en el #79).
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
    deshabilitada y no falla más, pero sigue registrada. La sesión de la PC no la pudo borrar porque el control de
    permisos de Claude Code bloquea las bajas: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
@@ -214,7 +216,8 @@ En orden de prioridad:
      positivos con `0x2a` y `0x3` (proyecto reducido) y con `0x2fef01ee4e27ce41` (`validate`, repo entero), y las 21
      mutaciones de referencia detectadas (las 8 nuevas por V-FD-1 y V-CAP-1). En el camino apareció que forge 1.8.6
      corre con `isolate = true` (§2): por eso `NexusV2Macro`.
-   - **Variante B, en el PR de esta iteración** (rama `claude/vault-v2-variante-b`, sobre la del #81):
+   - **Variante B, en el #82** (rama `claude/vault-v2-variante-b`, sobre la del #81; referencia con `validate` sobre el
+     repo entero: 4 de 4, las tres variantes A y la B, semilla `0xa03dcb8635632b88`):
      `NexusVaultV2Blue.t.sol`, el `MorphoMarketV1AdapterV2` real sobre Morpho Blue con la IRM adaptativa, dos mercados,
      prestatarios, cambios de precio y liquidaciones con deuda incobrable. Leyes V-ADP-1 a 5 contra el estado crudo de
      Blue (`realAssets` exacto, allocations, acciones internas, `marketIds`, movimiento exacto con redondeo demostrado
@@ -225,12 +228,23 @@ En orden de prioridad:
      positivos ni reversiones con `0x2a` y `0x3`; las 14 mutaciones de la variante B (V22–V35) detectadas, cada ley por al
      menos una, y las de la penalidad (V14–V16) también las ve la variante B. `tools/forge_v2` ya arma el proyecto
      reducido con Blue, la IRM y el allocator y muta cualquier archivo.
-   - **Falta:** el gobierno con timelock (V-GOV); la cota V-BOUND como ley; y la etapa E de MetaMorpho (punto 5).
+   - **Gobierno con timelock (V-GOV-1), en el #83** (rama `claude/vault-v2-gobierno`): el handler de
+     la variante A propone, ejecuta y revoca cambios con demora contra una copia fantasma (comisiones y sus receptores,
+     penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de un segundo adapter y el registro de
+     adapters), con timelocks iniciales distintos de 0, el intento un segundo antes de la fecha y justo en ella, lo
+     revocado y lo abdicado. Especificación en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 4 de 4 a 256×500 sin falsos positivos con
+     `0x2a` y `0x3` (proyecto reducido) y con `0x8f3701367e64ccea` (`validate`, repo entero), siempre con 0
+     reversiones; las 19 mutaciones nuevas (V36–V54) detectadas en la variante A: 17 por V-GOV-1 y las dos de
+     comisión retroactiva por V-FEE-1. Las de registro y adapters (V50–V52) las ven una o dos variantes a 64×200.
+   - **Falta:** la cota V-BOUND como ley.
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
-5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
-   Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
-   2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.
+5. **Etapa E para MetaMorpho: hecha** (27-oct). Las tres auditorías de `audits/` (Cantina 2023-11, OpenZeppelin de la
+   periferia 2023-11 y la competencia de Cantina 2024-01) están extraídas a texto y resumidas en
+   `NEXUS_HOME/secresearch/etapa_e/morpho-org__metamorpho/` (`indice.md` y `duplicados.md`, privados), con el estado
+   de cada hallazgo contra `ded84e5` y su relación con las leyes H-.... Aviso clave: la competencia publica solo sus 13
+   hallazgos medios; los 113 bajos no están en el repo, así que un candidato de severidad baja puede ser duplicado sin
+   que se pueda comprobar.
 6. **Yearn V3 y Euler v2:** `yearn-vaults-v3` no compiló dentro del tope de 2400 s del 26-oct; hay que ver si falta
    `vyper` 0.3.10 en el venv. Después viene Euler v2.
 7. **Mejoras del cazador:**

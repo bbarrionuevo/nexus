@@ -124,9 +124,11 @@ def _build(dest, env):
 def mutar(dest, clone, only=()):
     """Cada mutación de mutaciones.json ([nombre, original, mutado] sobre src/VaultV2.sol, o [nombre, original, mutado,
     archivo]) se aplica a una copia limpia de ese archivo tomada de CLON. NEXUS_MUT_RUNS="corridas profundidad
-    semilla" (por defecto "64 200 0x2a")."""
+    semilla" (por defecto "64 200 0x2a"); NEXUS_MUT_MATCH, el filtro de contratos (por defecto "^NexusVaultV2": todas
+    las variantes; "^NexusVaultV2Invariant" corre solo la variante A, que es la única con gobierno)."""
     dest = Path(dest)
     runs, depth, seed = os.environ.get("NEXUS_MUT_RUNS", "64 200 0x2a").split()
+    match = os.environ.get("NEXUS_MUT_MATCH", "^NexusVaultV2")
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)
     touched = {}
@@ -153,7 +155,7 @@ def mutar(dest, clone, only=()):
                 print(f"{name}: NO COMPILA {(b.stdout + b.stderr)[-600:]}", flush=True)
                 missed.append(name)
                 continue
-            r = subprocess.run([shutil.which("forge"), "test", "--match-contract", "^NexusVaultV2", "--json"], cwd=dest,
+            r = subprocess.run([shutil.which("forge"), "test", "--match-contract", match, "--json"], cwd=dest,
                                env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=3600, check=False)
             start = r.stdout.find("{")
