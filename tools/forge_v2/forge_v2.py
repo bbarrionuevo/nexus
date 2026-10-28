@@ -10,6 +10,8 @@ los mismos ajustes de compilación del foundry.toml del repo (solc 0.8.28, via_i
 bytecode de VaultV2 es el mismo. correr: copia el harness de nexus y corre las tres variantes. mutar: la batería de
 mutaciones.json; cada mutación tiene que hacer fallar al menos una ley V-... (el motivo trae "[leyes: ...]").
 
+NEXUS_PERFIL=euler-earn hace lo mismo con EulerEarn (su harness, sus fuentes y mutaciones_euler_earn.json).
+
 Todo en local con FFI apagado (REGLAS R-2 y R-6): solo forge build y forge test. La referencia sigue siendo
 `python -m nexus.secresearch.validate morpho-org/vault-v2 --harness morpho-org__vault-v2`, sobre el repo entero.
 """
@@ -64,17 +66,55 @@ lint_on_build = false
 """
 
 
+# Perfil de EulerEarn (euler-xyz/euler-earn @ a8cc099, lo desplegado): solo src, OpenZeppelin, el EVC y forge-std. El
+# repo entero no compila con forge 1.8.6 (forge-std duplicado entre EVK y permit2 en sus tests), y el harness no los usa.
+EE_FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness de EulerEarn: mismos ajustes que el foundry.toml del repo.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.26"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+ffi = false
+remappings = ["ethereum-vault-connector/=lib/ethereum-vault-connector/src/"]
+
+[lint]
+lint_on_build = false
+"""
+PERFILES = {
+    "vault-v2": {"harness": HARNESS, "sources": SOURCES, "trees": TREES, "toml": FOUNDRY_TOML,
+                 "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol"},
+    "euler-earn": {"harness": HARNESS.parent / "euler-xyz__euler-earn", "sources": (),
+                   "trees": ("src", "lib/forge-std", "lib/openzeppelin-contracts/contracts",
+                             "lib/ethereum-vault-connector/src"),
+                   "toml": EE_FOUNDRY_TOML, "match": "^NexusEulerEarn",
+                   "mutaciones": HERE / "mutaciones_euler_earn.json", "archivo": "src/EulerEarn.sol"},
+}
+
+
+def _perfil():
+    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto) o euler-earn."""
+    nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
+    if nombre not in PERFILES:
+        raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")
+    return PERFILES[nombre]
+
+
 def armar(clone, dest):
     clone, dest = Path(clone), Path(dest)
     if dest.exists():
         shutil.rmtree(dest)
-    for rel in SOURCES:
+    perfil = _perfil()
+    for rel in perfil["sources"]:
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(clone / rel, dest / rel)
-    for rel in TREES:
+    for rel in perfil["trees"]:
         shutil.copytree(clone / rel, dest / rel)
     (dest / "test" / "nexus").mkdir(parents=True)
-    (dest / "foundry.toml").write_text(FOUNDRY_TOML, encoding="utf-8")
+    (dest / "foundry.toml").write_text(perfil["toml"], encoding="utf-8")
     print(f"proyecto reducido en {dest}")
 
 
@@ -84,7 +124,7 @@ def _env(runs, depth, seed, **extra):
 
 
 def _harness(dest):
-    for f in HARNESS.glob("*.sol"):
+    for f in _perfil()["harness"].glob("*.sol"):
         shutil.copy2(f, Path(dest) / "test" / "nexus" / f.name)
 
 
@@ -95,7 +135,7 @@ def correr(dest, runs, depth, seed):
     if b.returncode:
         print((b.stdout + b.stderr)[-2000:])
         return b.returncode
-    return subprocess.run([shutil.which("forge"), "test", "--match-contract", "^NexusVaultV2", "-vv"], cwd=dest,
+    return subprocess.run([shutil.which("forge"), "test", "--match-contract", _perfil()["match"], "-vv"], cwd=dest,
                           env=env, check=False).returncode
 
 
@@ -128,15 +168,16 @@ def mutar(dest, clone, only=()):
     las variantes; "^NexusVaultV2Invariant" corre solo la variante A, que es la única con gobierno)."""
     dest = Path(dest)
     runs, depth, seed = os.environ.get("NEXUS_MUT_RUNS", "64 200 0x2a").split()
-    match = os.environ.get("NEXUS_MUT_MATCH", "^NexusVaultV2")
+    perfil = _perfil()
+    match = os.environ.get("NEXUS_MUT_MATCH", perfil["match"])
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)
     touched = {}
     missed = []
     try:
-        for entry in json.loads((HERE / "mutaciones.json").read_text(encoding="utf-8")):
+        for entry in json.loads(perfil["mutaciones"].read_text(encoding="utf-8")):
             name, old, new = entry[:3]
-            rel = entry[3] if len(entry) > 3 else "src/VaultV2.sol"
+            rel = entry[3] if len(entry) > 3 else perfil["archivo"]
             if only and name.split()[0] not in only:
                 continue
             pristine = touched.setdefault(rel, (Path(clone) / rel).read_text(encoding="utf-8"))

@@ -99,6 +99,9 @@ Lo que conviene saber de forge en un handler:
   contrato es una transacción aparte y la memoria transitoria se borra entre ellas. Para probar algo que depende de
   una misma transacción (en V2, `firstTotalAssets`), las llamadas las tiene que hacer un contrato intermedio dentro de
   su propia llamada (`NexusV2Macro`).
+- `tools/forge_v2` tiene perfiles: sin nada, Vault V2; con `NEXUS_PERFIL=euler-earn`, EulerEarn (su proyecto reducido,
+  su harness y `mutaciones_euler_earn.json`). Los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de
+  Windows: nexus clona con `-c core.longpaths=true`.
 
 ## 3. Estado por etapa (27-oct-2026)
 
@@ -112,7 +115,8 @@ Lo que conviene saber de forge en un handler:
 | D''. Harness de Vault V2 | Funciona (28-oct): variante A con capital asignado de verdad y 12 leyes `V-...` (con `forceDeallocate`, los topes, el gobierno con timelock y la cota de dominio V-BOUND), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 20 del gobierno y de la cota (V36–V55) con el del #84 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
-| E. Duplicados | Funciona: auditorías de Vault V2 (15) y de MetaMorpho (3) resumidas en `NEXUS_HOME`, privadas |
+| D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
+| E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3) y EulerEarn (3) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
 **Hallazgos:** ninguno. No hay candidatos ni expedientes abiertos.
@@ -165,13 +169,13 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #82 | Vault V2, variante B: el `MorphoMarketV1AdapterV2` real sobre Morpho Blue (V-ADP), el Blue Public Allocator (V-PA), el adapter de liquidez y forceDeallocate sobre Blue; `tools/forge_v2` con Blue y mutaciones sobre cualquier archivo; 35 mutaciones de referencia. Va sobre el #81 |
 | #83 | Vault V2: el gobierno con timelock (V-GOV-1: comisiones y receptores, penalidad, timelocks, abdicaciones, topes, adapters y registro, con el borde exacto de la fecha); 19 mutaciones nuevas (V36–V54); y la etapa E de MetaMorpho (privada) |
 | #84 | Vault V2: la cota de dominio V-BOUND como ley (el estado no sale del dominio de la aritmética de una palabra del vault; el handler no hace el depósito que lo sacaría) y sondas deterministas del registro y de los adapters para V-GOV-1; mutación V55. Va sobre el #83 |
+| #85 | EulerEarn: el cazador de la variante A (leyes E-...) sobre la versión desplegada, el perfil `euler-earn` de `tools/forge_v2` con 22 mutaciones, y en nexus `core.longpaths` para clonar, la compilación aislada (`"aislado": true` en el manifiesto) y leyes `E-` en el expediente. Va sobre el #84 |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #83 y después el #84 (va sobre el #83; el #81 y el #82 ya están en `main`), y hacer
-   `git pull` en `main`. Lo que pedía el #76
+1. **Dueño:** fusionar el #85 (el #83 y el #84 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76
    ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
@@ -186,7 +190,8 @@ En orden de prioridad:
    - **MetaMorpho V1.1** (`morpho-org/metamorpho-v1.1`, commit `5a0717b`): es la fábrica actual. nexus prueba
      `morpho-org/metamorpho`, que corresponde a la fábrica vieja (commit `c5e758d`, que también figura): su
      `MetaMorpho.sol` difiere de `ded84e5` solo en formato y comentarios, así que lo probado vale para esos vaults.
-4. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Es el objetivo en curso. Alcance contrastado el 27-oct:
+4. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Los nueve objetivos del plan quedaron cubiertos con el #84
+   (la campaña profunda del 28-oct, al final de este punto). Alcance contrastado el 27-oct:
    - En Ethereum están desplegados `VaultV2Factory`, `MorphoVaultV1AdapterFactory`, `MorphoMarketV1AdapterV2Factory`,
      `MorphoRegistry` y el Blue Public Allocator.
    - Su código no cambió desde las auditorías: `VaultV2.sol` desde el tag `2025-09-15`, los adapters desde
@@ -250,6 +255,12 @@ En orden de prioridad:
      bits con 18 decimales y de 21 a 23 con 6, sin depósitos recortados; las 20 mutaciones V36–V55 detectadas (V55
      solo por V-BOUND, y V50–V52 ahora en las tres variantes).
    - **Con esto están los nueve objetivos del plan de Vault V2.** Lo que no cubre está en CAZADOR_VAULT_V2.md §6.
+   - **Campaña profunda (28-oct), con el harness del #84:** 512 corridas × 1.500 llamadas (768.000 por variante, ~4 h
+     en la PC), semilla `0xff36d931ca90abfb`: las 4 variantes y las 3 pruebas de la cota en verde, **ninguna ley
+     violada**. Margen mínimo del dominio: 58 a 60 bits con 18 decimales y 16 con 6 (las secuencias largas lo acercan
+     al borde y sigue adentro). Hubo 1 reversión en las 768.000 llamadas de la variante sin comisión: la tabla por
+     acción no se guardó, así que no se sabe cuál fue (la única vista antes, el 27-oct, fue un `mint` que costaba más
+     de lo que el handler le da al actor).
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho: hecha** (27-oct). Las tres auditorías de `audits/` (Cantina 2023-11, OpenZeppelin de la
@@ -258,22 +269,30 @@ En orden de prioridad:
    de cada hallazgo contra `ded84e5` y su relación con las leyes H-.... Aviso clave: la competencia publica solo sus 13
    hallazgos medios; los 113 bajos no están en el repo, así que un candidato de severidad baja puede ser duplicado sin
    que se pueda comprobar.
-6. **Próximo objetivo (Euler v2 o Yearn V3, programas ya verificados por el dueño).** Candidatos, con la etapa E
-   empezada para el primero:
-   - **EulerEarn** (`euler-xyz/euler-earn`): fork de MetaMorpho V1.1 con estrategias ERC-4626, `lostAssets`,
+6. **EulerEarn (programa Euler v2), en el #85.** Cazador de la variante A sobre `a8cc099` (lo desplegado), con
+   tres estrategias ERC-4626 de prueba, ocho leyes `E-...` exactas y el precio que nunca baja (E-INF-2); 3 de 3 a
+   256×500 sin falsos positivos ni reversiones con `0x2a`, `0x3` y `validate` sobre el repo entero (`0x1254469e03f52bcc`,
+   compilación aislada), y las 22 mutaciones detectadas. **Sin hallazgos:** los dos bordes del `uint112` (depositar
+   tras la pérdida casi total de una estrategia que sigue en la supplyQueue; volver a dar de alta una estrategia con
+   más de 2^112 acciones reales) son el dominio, no defectos explotables (ver CAZADOR_EULER_EARN.md §4).
+   - Contexto: **EulerEarn** (`euler-xyz/euler-earn`): fork de MetaMorpho V1.1 con estrategias ERC-4626, `lostAssets`,
      `VIRTUAL_AMOUNT` en acciones y activos y seguimiento interno de las acciones de cada estrategia
-     (`config[id].balance`, no el saldo real). Se reutiliza mucho del cazador de MetaMorpho. Ya tiene la suite de
-     invariantes de Enigma Dark y la verificación de Certora, con propiedades aproximadas; lo que agregaría nexus es
-     el modelo exacto de 512 bits (fantasma de `lostAssets`, del seguimiento interno y de las comisiones bit a bit).
-     Las tres auditorías están extraídas y resumidas en `NEXUS_HOME/secresearch/etapa_e/euler-xyz__euler-earn/`
+     (`config[id].balance`, no el saldo real). El cazador sigue el patrón de los de MetaMorpho y Vault V2. Ya tiene la
+     suite de invariantes de Enigma Dark y la verificación de Certora, con propiedades aproximadas; lo que agrega
+     nexus es el modelo exacto de 512 bits (fantasma de `lostAssets`, del seguimiento interno y de las comisiones bit a
+     bit). Las tres auditorías están extraídas y resumidas en `NEXUS_HOME/secresearch/etapa_e/euler-xyz__euler-earn/`
      (privado). El reglamento de Euler en Cantina cubre Euler Earn (hasta USD 500.000 Critical), evalúa contra la
-     implementación **desplegada** y no paga Low ni informativos: el primer paso es fijar qué commit está desplegado
-     (hay cambios del repo del 23-oct-2026, posteriores a las auditorías, en `SafeERC20Permit2Lib`).
+     implementación **desplegada** y no paga Low ni informativos. Lo desplegado en Ethereum es `a8cc099` (comparado por
+     SHA-256 contra el código verificado de la fábrica); los cambios del 23-oct-2026 en `SafeERC20Permit2Lib` no están
+     desplegados.
+   - **Falta en EulerEarn:** la variante B con estrategias reales del EVK (crédito, IRM, deuda incobrable), el Public
+     Allocator, el guardian y los timelocks distintos de 0.
+7. **Próximo objetivo después de EulerEarn:**
    - **TokenizedStrategy de Yearn V3** (`yearn/tokenized-strategy`, Solidity): el desbloqueo de ganancias en el
      tiempo (`profitUnlockingRate` en punto fijo de 10^12, acciones bloqueadas que se queman al desbloquear) es
      contabilidad sutil con redondeos propios. `yearn-vaults-v3` (Vyper) no compiló dentro del tope de 2400 s del
      26-oct; hay que ver si falta `vyper` 0.3.10 en el venv.
-7. **Mejoras del cazador:**
+8. **Mejoras del cazador:**
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;
    - montos escalados por decimales: hoy el fuzzer usa hasta 1e28 unidades también con 6 decimales;

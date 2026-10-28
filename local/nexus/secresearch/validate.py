@@ -66,6 +66,8 @@ def load_harness(name, base=None):
     bad = sorted(set(man.get("env") or {}) - set(FUZZ_ENV))
     if bad:
         raise ValueError(f"el harness {name} fija variables no permitidas: {', '.join(bad)}")
+    if man.get("aislado", False) not in (True, False):
+        raise ValueError(f"el harness {name}: 'aislado' tiene que ser true o false")
     return man, sorted(d.glob("*.sol"))
 
 
@@ -205,7 +207,7 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     prog = repo_in_scope(repo, progs)
     if not prog:
         return {"repo": repo, "ok": False, "error": f"{repo} no pertenece a ningún programa verificado del catálogo"}
-    files, env, contract = [], {}, None
+    files, env, contract, iso = [], {}, None, {}
     if harness:
         man, files = load_harness(harness, harness_base)
         if man.get("repo") != repo:
@@ -216,6 +218,11 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
         env = {**(man.get("env") or {}), **extra, "FOUNDRY_FUZZ_SEED": seed or "0x" + os.urandom(8).hex()}
         match = match or man.get("match_path")
         contract = man.get("match_contract")       # regex sobre el nombre: no depende de "/" o "\\" en Windows
+        # aislado: forge toma test/nexus/ como sus directorios de tests y de scripts, así compila solo src y el
+        # harness. Para repos cuyos tests no compilan con este forge por algo ajeno al harness (euler-earn: forge-std
+        # duplicado entre el EVK y Permit2, 28-oct). Solo esas dos variables, fijas: el manifiesto no elige rutas.
+        if man.get("aislado"):
+            iso = {"FOUNDRY_TEST": HARNESS_DEST.as_posix(), "FOUNDRY_SCRIPT": HARNESS_DEST.as_posix()}
     if forge is None:
         exe = shutil.which("forge")
         if not exe:
@@ -226,6 +233,8 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     rec = {"repo": repo, "program": prog["name"], "when": time.strftime("%Y-%m-%d %H:%M"), "match": match or contract}
     if harness:
         rec.update(harness=harness, fuzz=env)
+        if iso:
+            rec["aislado"] = True
     say(f"{repo}: clonando con submódulos (programa {prog['name']})…")
     try:
         d, rec["sha"] = checkout(repo, results_dir(work or paths.home() / "work"), ref, url)
@@ -234,7 +243,7 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
         return _save(out, rec)
     rec["harness_files"] = install_harness(d, files)
     say(f"commit {rec['sha'][:10]} · compilando (la primera vez puede tardar varios minutos)…")
-    code, so, se, secs = forge_run(forge, ["build"], d, MAX_BUILD_SECONDS)
+    code, so, se, secs = forge_run(forge, ["build"], d, MAX_BUILD_SECONDS, iso)
     rec["build"] = {"exit": code, "seconds": secs}
     if code:
         rec.update(ok=False, tail=(so + se).strip().splitlines()[-TAIL:])
@@ -244,7 +253,7 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     args = ["test", "--json", "-vv"] + (["--match-path", match] if match else []) + (
         ["--match-contract", contract] if contract else [])
     say(f"compiló en {secs} s · corriendo tests (puede tardar varios minutos)…")
-    code, so, se, secs = forge_run(forge, args, d, MAX_TEST_SECONDS, env)
+    code, so, se, secs = forge_run(forge, args, d, MAX_TEST_SECONDS, {**env, **iso})
     say(f"tests terminados en {secs} s")
     data = parse(so)
     if data is None:

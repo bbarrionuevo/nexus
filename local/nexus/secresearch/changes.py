@@ -91,9 +91,15 @@ def recent(repo, paths, budget, done=(), max_commits=10, get=_http_get):
     return out, None
 
 
-def _git(args, cwd=None, timeout=180, exe=("git",)):
+GIT = ("git", "-c", "core.longpaths=true")
+
+
+def _git(args, cwd=None, timeout=180, exe=GIT):
     # UTF-8 explícito y errors="replace": en Windows el texto por defecto es cp1252, que no decodifica bytes
     # como 0x81 (presentes en salidas UTF-8 válidas); una salida así rompía la lectura (26-oct).
+    # core.longpaths: los submódulos anidados de euler-earn (EVK → EVC → OpenZeppelin) pasan los 260 caracteres
+    # de ruta de Windows y el clon fallaba (28-oct); `-c` vale para esta llamada y sus hijos, sin tocar la
+    # configuración global. Fuera de Windows git lo ignora.
     r = subprocess.run([*exe, *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                        timeout=timeout, check=False, creationflags=NO_WINDOW)
     if r.returncode:

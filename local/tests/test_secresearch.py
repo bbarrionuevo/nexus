@@ -87,6 +87,54 @@ def test_salida_de_git_con_bytes_indecodificables_no_rompe(tmp_path):
     assert out.startswith("progreso") and out.endswith("listo")
 
 
+def test_git_admite_rutas_largas_de_submodulos(tmp_path):
+    """28-oct: los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de Windows. Cada llamada a git
+    lleva -c core.longpaths=true (vale para la llamada y sus hijos, sin tocar la configuración global)."""
+    import sys
+    assert changes.GIT == ("git", "-c", "core.longpaths=true")
+    assert changes._git.__defaults__[-1] == changes.GIT
+    fake = tmp_path / "git.py"
+    fake.write_text("import sys\nprint(' '.join(sys.argv[1:]))\n")
+    out = changes._git(["submodule", "update"], exe=(sys.executable, str(fake), *changes.GIT[1:]))
+    assert out.strip() == "-c core.longpaths=true submodule update"
+
+
+def test_harness_aislado_compila_solo_src_y_el_harness(tmp_path, monkeypatch):
+    """28-oct: los tests de euler-earn no compilan con forge 1.8.6 (forge-std duplicado entre el EVK y Permit2) y
+    `forge test` compila todo el proyecto aunque se filtre. Con "aislado": true, forge toma test/nexus/ como sus
+    directorios de tests y de scripts, en el build y en los tests; el manifiesto no elige rutas."""
+    import sys
+
+    import pytest
+
+    from nexus.secresearch import validate
+    src = _foundry_repo(tmp_path)
+    fake = tmp_path / "forge.py"
+    fake.write_text(FAKE_FORGE, encoding="utf-8")
+    log = tmp_path / "forge.log"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    hb = tmp_path / "harness"
+    for name, man in (("h", {"repo": "o/v", "match_contract": "^Nexus", "aislado": True}),
+                      ("comun", {"repo": "o/v", "match_contract": "^Nexus"}),
+                      ("raro", {"repo": "o/v", "aislado": "test/nexus"})):
+        (hb / name).mkdir(parents=True)
+        (hb / name / "harness.json").write_text(json.dumps(man))
+        (hb / name / "P.t.sol").write_text("contract P {}\n")
+    progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}]}]
+    kw = {"out": tmp_path / "out", "programs": progs, "forge": [sys.executable, str(fake)], "url": f"file://{src}",
+          "work": tmp_path / "work", "harness_base": hb}
+    rec = validate.validate("o/v", harness="h", seed="0x2a", **kw)
+    build, test = (json.loads(x) for x in log.read_text().splitlines())
+    assert build["argv"] == ["build"] and build["dirs"] == ["test/nexus", "test/nexus"]
+    assert test["dirs"] == ["test/nexus", "test/nexus"] and test["ffi"] == "false" and rec["aislado"] is True
+    log.write_text("")
+    validate.validate("o/v", harness="comun", seed="0x2a", **kw)
+    assert all(json.loads(x)["dirs"] == [None, None] for x in log.read_text().splitlines())
+    with pytest.raises(ValueError, match="aislado"):
+        validate.validate("o/v", harness="raro", **kw)
+
+
 def test_tests_mocks_y_scripts_no_estan_en_alcance():
     ok = ["src/TokenizedStrategy.sol", "contracts/VaultV3.vy", "src/EVault/modules/Vault.sol",
           "src/libraries/TokenizedStrategyLib.sol"]
@@ -172,7 +220,8 @@ nexus = os.path.join(os.getcwd(), "test", "nexus")
 with open(log, "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "ffi": os.environ.get("FOUNDRY_FFI"), "cwd": os.getcwd(),
                         "fuzz": {k: v for k, v in os.environ.items() if k.startswith(("FOUNDRY_FUZZ", "FOUNDRY_INV"))},
-                        "harness": sorted(os.listdir(nexus)) if os.path.isdir(nexus) else None}) + "\n")
+                        "harness": sorted(os.listdir(nexus)) if os.path.isdir(nexus) else None,
+                        "dirs": [os.environ.get("FOUNDRY_TEST"), os.environ.get("FOUNDRY_SCRIPT")]}) + "\n")
 if sys.argv[1] == "build":
     print("Compiling 42 files")
     sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))
