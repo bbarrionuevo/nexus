@@ -59,6 +59,12 @@ def checkout(repo, workdir, ref=None, url=None):
     return d, _git(["rev-parse", "HEAD"], cwd=d).strip()
 
 
+def _harness_path(path):
+    """build_paths solo admite rutas dentro de test/nexus/ (donde va el harness): ni opciones ni rutas que salgan."""
+    return (isinstance(path, str) and Path(path).as_posix().startswith(HARNESS_DEST.as_posix())
+            and ".." not in Path(path).parts and not path.startswith("-"))
+
+
 def load_harness(name, base=None):
     """(manifiesto, archivos .sol) del harness NOMBRE. Rechaza variables de Foundry fuera de FUZZ_ENV."""
     d = Path(base or HARNESS_DIR) / name
@@ -66,6 +72,9 @@ def load_harness(name, base=None):
     bad = sorted(set(man.get("env") or {}) - set(FUZZ_ENV))
     if bad:
         raise ValueError(f"el harness {name} fija variables no permitidas: {', '.join(bad)}")
+    for path in man.get("build_paths") or []:
+        if not _harness_path(path):
+            raise ValueError(f"el harness {name} pide compilar una ruta no permitida: {path!r}")
     return man, sorted(d.glob("*.sol"))
 
 
@@ -205,7 +214,7 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     prog = repo_in_scope(repo, progs)
     if not prog:
         return {"repo": repo, "ok": False, "error": f"{repo} no pertenece a ningún programa verificado del catálogo"}
-    files, env, contract = [], {}, None
+    files, env, contract, build = [], {}, None, []
     if harness:
         man, files = load_harness(harness, harness_base)
         if man.get("repo") != repo:
@@ -216,6 +225,9 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
         env = {**(man.get("env") or {}), **extra, "FOUNDRY_FUZZ_SEED": seed or "0x" + os.urandom(8).hex()}
         match = match or man.get("match_path")
         contract = man.get("match_contract")       # regex sobre el nombre: no depende de "/" o "\\" en Windows
+        # build_paths: compilar solo esas rutas (el harness y lo que importa). Para repos cuyo build entero no compila
+        # con este forge por algo ajeno al harness (euler-earn: forge-std duplicado en sus tests, 28-oct).
+        build = list(man.get("build_paths") or [])
     if forge is None:
         exe = shutil.which("forge")
         if not exe:
@@ -234,7 +246,7 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
         return _save(out, rec)
     rec["harness_files"] = install_harness(d, files)
     say(f"commit {rec['sha'][:10]} · compilando (la primera vez puede tardar varios minutos)…")
-    code, so, se, secs = forge_run(forge, ["build"], d, MAX_BUILD_SECONDS)
+    code, so, se, secs = forge_run(forge, ["build", *build], d, MAX_BUILD_SECONDS)
     rec["build"] = {"exit": code, "seconds": secs}
     if code:
         rec.update(ok=False, tail=(so + se).strip().splitlines()[-TAIL:])

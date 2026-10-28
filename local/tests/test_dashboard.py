@@ -99,7 +99,8 @@ def test_expediente_completo_y_el_dashboard_lo_reconoce(tmp_path):
 def test_el_expediente_reconoce_las_leyes_de_metamorpho_y_de_vault_v2():
     for reason, law in (("H-FEE-5: revirtio", "H-FEE-5"),
                         ("V-LOSS-1: la perdida no se realizo entera [leyes: V-TA-1 V-LOSS-1]: 1 != 0", "V-LOSS-1"),
-                        ("V-LEDGER: la suma de los saldos no es totalSupply: 3, 4", "V-LEDGER")):   # sin número
+                        ("V-LEDGER: la suma de los saldos no es totalSupply: 3, 4", "V-LEDGER"),   # sin número
+                        ("E-INF-2: el precio por accion bajo [leyes: E-INF-2]: 1, 2", "E-INF-2")):  # EulerEarn
         assert expediente.LAW.search(reason).group(0) == law
 
 

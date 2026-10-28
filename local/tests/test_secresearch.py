@@ -87,6 +87,52 @@ def test_salida_de_git_con_bytes_indecodificables_no_rompe(tmp_path):
     assert out.startswith("progreso") and out.endswith("listo")
 
 
+def test_git_admite_rutas_largas_de_submodulos(tmp_path):
+    """28-oct: los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de Windows. Cada llamada a git
+    lleva -c core.longpaths=true (vale para la llamada y sus hijos, sin tocar la configuración global)."""
+    import sys
+    assert changes.GIT == ("git", "-c", "core.longpaths=true")
+    assert changes._git.__defaults__[-1] == changes.GIT
+    fake = tmp_path / "git.py"
+    fake.write_text("import sys\nprint(' '.join(sys.argv[1:]))\n")
+    out = changes._git(["submodule", "update"], exe=(sys.executable, str(fake), *changes.GIT[1:]))
+    assert out.strip() == "-c core.longpaths=true submodule update"
+
+
+def test_harness_puede_compilar_solo_sus_rutas(tmp_path, monkeypatch):
+    """28-oct: el build entero de euler-earn no compila con forge 1.8.6 (forge-std duplicado en sus tests). El
+    manifiesto puede pedir compilar solo el harness (build_paths), y solo dentro de test/nexus/: ni opciones ni rutas
+    que salgan."""
+    import sys
+
+    import pytest
+
+    from nexus.secresearch import validate
+    src = _foundry_repo(tmp_path)
+    fake = tmp_path / "forge.py"
+    fake.write_text(FAKE_FORGE, encoding="utf-8")
+    log = tmp_path / "forge.log"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    hb = tmp_path / "harness"
+    for name, man in (("h", {"repo": "o/v", "match_contract": "^Nexus", "build_paths": ["test/nexus"]}),
+                      ("opcion", {"repo": "o/v", "build_paths": ["--ffi"]}),
+                      ("afuera", {"repo": "o/v", "build_paths": ["test/nexus/../../src"]}),
+                      ("src", {"repo": "o/v", "build_paths": ["src"]})):
+        (hb / name).mkdir(parents=True)
+        (hb / name / "harness.json").write_text(json.dumps(man))
+    (hb / "h" / "P.t.sol").write_text("contract P {}\n")
+    progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}]}]
+    kw = {"out": tmp_path / "out", "programs": progs, "forge": [sys.executable, str(fake)], "url": f"file://{src}",
+          "work": tmp_path / "work", "harness_base": hb}
+    validate.validate("o/v", harness="h", seed="0x2a", **kw)
+    build = json.loads(log.read_text().splitlines()[0])
+    assert build["argv"] == ["build", "test/nexus"]
+    for bad in ("opcion", "afuera", "src"):
+        with pytest.raises(ValueError, match="ruta no permitida"):
+            validate.validate("o/v", harness=bad, **kw)
+
+
 def test_tests_mocks_y_scripts_no_estan_en_alcance():
     ok = ["src/TokenizedStrategy.sol", "contracts/VaultV3.vy", "src/EVault/modules/Vault.sol",
           "src/libraries/TokenizedStrategyLib.sol"]
