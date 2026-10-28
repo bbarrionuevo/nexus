@@ -31,6 +31,7 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
     function deposit(uint256 actorSeed, uint256 assets) external hunted(OP_DEPOSIT, _actor(actorSeed), address(0)) {
         address who = _actor(actorSeed);
         uint256 a = 1 + assets % MAX_ASSETS;
+        if (!_entryFits(a, 0)) return _cut();
         _give(who, a);
         vm.prank(who);
         vault.deposit(a, who);
@@ -38,9 +39,11 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
 
     function mint(uint256 actorSeed, uint256 shares) external hunted(OP_MINT, _actor(actorSeed), address(0)) {
         address who = _actor(actorSeed);
+        uint256 s = 1 + shares % MAX_ASSETS;
+        if (!_entryFits(0, s)) return _cut();
         _give(who, MAX_ASSETS * 4);
         vm.prank(who);
-        vault.mint(1 + shares % MAX_ASSETS, who);
+        vault.mint(s, who);
     }
 
     function withdraw(uint256 actorSeed, uint256 assets) external hunted(OP_WITHDRAW, _actor(actorSeed), address(0)) {
@@ -100,7 +103,7 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
     }
 
     function warp(uint256 secs) external {
-        vm.warp(hClock.time() + 1 + secs % (120 days));
+        _warpTo(hClock.time() + 1 + secs % (120 days));
     }
 
     /* ALLOCATOR: mover capital al adapter y de vuelta */
@@ -129,6 +132,10 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
     function depositAndAllocate(uint256 actorSeed, uint256 assets, uint256 mode) external {
         address who = _actor(actorSeed);
         uint256 x = 1 + assets % MAX_ASSETS;
+        if (!_entryFits(x, 0)) {
+            ++hBoundCuts;
+            return;
+        }
         deal(address(token), address(batch), token.balanceOf(address(batch)) + x, true);
         Snap memory pre = _snap();
         (uint256 A,,) = _expectAccrual(pre);
@@ -339,13 +346,13 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         Pend memory p = gPending[i];
         uint256 at = gExec[keccak256(p.data)];
         if (edge % 4 != 3 && at > hClock.time() + 1) {
-            vm.warp(at - 1);
+            _warpTo(at - 1);
             Snap memory pre0 = _snap();
             (bool early,) = address(vault).call(p.data);
             _ok(!early, L_GOV, "una funcion con demora se ejecuto antes de su fecha (fecha, ahora)", at, hClock.time());
             _lawsNoAccrual(OP_STILL, address(0), address(0), pre0, _snap());
             ++hGovEarly;
-            vm.warp(at);
+            _warpTo(at);
         }
         _govExec(i, p, at);
     }
@@ -370,7 +377,7 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         _ok(vault.executableAt(p.data) == 0, L_GOV, "revoke no borro el pendiente (0, executableAt)", 0, vault.executableAt(p.data));
         _govDrop(i, p);
         ++hGovRevokes;
-        if (at > hClock.time()) vm.warp(at);
+        if (at > hClock.time()) _warpTo(at);
         Snap memory pre1 = _snap();
         (bool late,) = address(vault).call(p.data);
         _ok(!late, L_GOV, "se ejecuto un dato revocado (0, ejecuto)", 0, 1);
@@ -470,7 +477,7 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         vm.prank(CURATOR);
         vault.submit(data);
         uint256 at = vault.executableAt(data);
-        if (at > hClock.time()) vm.warp(at);
+        if (at > hClock.time()) _warpTo(at);
         Snap memory pre = _snap();
         (bool ok,) = address(vault).call(data);
         _ok(!ok, L_GOV, "se ejecuto una funcion abdicada (0, ejecuto)", 0, 1);
@@ -566,6 +573,36 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
     }
 
     /* AYUDAS */
+
+    /// @dev V-BOUND: ¿depositar `a` activos (o acuñar `s` acciones, si `s` ≠ 0) deja al estado en el dominio? Predice el
+    /// estado tras el devengamiento y la entrada con la aritmética exacta del fantasma. Fuera del dominio queda, por
+    /// ejemplo, un depósito grande tras una pérdida total: acuñaría a(T+v)/(TA+1) acciones y el próximo desbordaría.
+    function _entryFits(uint256 a, uint256 s) internal view virtual returns (bool ok) {
+        Snap memory p = _snap();
+        (uint256 A, uint256 sp, uint256 sg) = _expectAccrual(p);
+        uint256 S = p.T + sp + sg;
+        if (s == 0) {
+            if (!NexusV2Math.fits(a, S + vShares)) return false;
+            s = NexusV2Math.mulDivDown(a, S + vShares, A + 1);
+        } else {
+            a = NexusV2Math.mulDivUp(s, A + 1, S + vShares);
+        }
+        if (S > type(uint256).max / 16 || s > type(uint256).max / 16) return false;
+        (ok,) = inBound(A + a, p.R + a, S + s, 0, p.fg);
+    }
+
+    /// @dev El depósito o mint que sacaría al estado del dominio no se hace; el vault igual devenga.
+    function _cut() internal {
+        ++hBoundCuts;
+        _touch();
+    }
+
+    /// @dev Avanza el reloj a `t`. Si sin devengar el salto sacaría al estado del dominio de V-BOUND (la comisión de
+    /// gestión acumulada superaría su cota), devenga antes.
+    function _warpTo(uint256 t) internal {
+        if ((t - vault.lastUpdate() + BOUND_DT) * vault.managementFee() > WAD / 4) _huntedAccrue();
+        vm.warp(t);
+    }
 
     /// @dev Elige la posición nueva del adapter según `mode` y la intenta desde el estado `s` de esta transacción.
     function _allocateAround(Snap memory s, uint256 mode, uint256 seed) internal {
@@ -688,6 +725,13 @@ contract NexusVaultV2InvariantTest is Test {
         _logCoverage();
         _logForceAndCaps();
         _logGov();
+        _logBound();
+    }
+
+    function _logBound() internal {
+        (uint256 minBits, uint256 cuts) = handler.coverageBound();
+        emit log_named_uint("cota: bits de margen minimos del dominio (V-BOUND)", minBits);
+        emit log_named_uint("cota: depositos o mints que sacaban al estado del dominio", cuts);
     }
 
     function _logGov() internal {
@@ -758,5 +802,59 @@ contract NexusVaultV2InvariantSixDecimalsTest is NexusVaultV2InvariantTest {
 
     function _penalty() internal pure override returns (uint256) {
         return 0.0037e18;
+    }
+}
+
+/// @notice El handler sin la cota de entrada de V-BOUND: solo para mostrar que la ley marca la salida del dominio.
+contract NexusVaultV2HandlerSinCota is NexusVaultV2Handler {
+    constructor() NexusVaultV2Handler(0, 0, 18, 0.01e18) {}
+
+    function _entryFits(uint256, uint256) internal pure override returns (bool) {
+        return true;
+    }
+}
+
+/// @notice V-BOUND con escenarios deterministas. Tras una pérdida total (todo asignado y perdido, _totalAssets = 0) un
+/// depósito de `a` acuña a(T+v) acciones y el siguiente ya desborda la aritmética de una palabra del vault: es el borde
+/// del dominio, no un hallazgo (la pérdida es total). El handler no hace ese depósito; sin la cota, V-BOUND lo marca.
+contract NexusVaultV2BoundTest is Test {
+    function test_vbound_el_dominio() public {
+        NexusVaultV2Handler h = new NexusVaultV2Handler(0, 0, 18, 0.01e18);
+        (bool ok, uint256 bits) = h.inBound(1e30, 1e30, 1e30, 0, 0);
+        assertTrue(ok, "un estado comun esta en el dominio");
+        assertGt(bits, 40, "con margen");
+        (ok,) = h.inBound(1e28, 1e28, 2 ** 200, 0, 0);
+        assertFalse(ok, "T de 2^200 con 5e28 de activos desborda");
+        (ok,) = h.inBound(type(uint128).max - 1, 0, 1, 0, 0);
+        assertFalse(ok, "_totalAssets al borde de 2^128");
+        (ok,) = h.inBound(1e30, 1e30, 1e30, 5 * 365 days, 0.05e18 / uint256(365 days));
+        assertFalse(ok, "5 anos sin devengar con la comision de gestion maxima");
+    }
+
+    function test_vbound_el_handler_no_sale_del_dominio_tras_una_perdida_total() public {
+        NexusVaultV2Handler h = new NexusVaultV2Handler(0, 0, 18, 0.01e18);
+        _perdidaTotal(h);
+        h.deposit(1, 1e28 - 1); // 1e28: fuera del dominio
+        (, uint256 cuts) = h.coverageBound();
+        assertEq(cuts, 1, "el handler no hizo el deposito");
+        assertEq(bytes(h.check()).length, 0, h.check());
+    }
+
+    function test_vbound_marca_la_salida_del_dominio() public {
+        NexusVaultV2HandlerSinCota h = new NexusVaultV2HandlerSinCota();
+        _perdidaTotal(h);
+        h.deposit(1, 1e28 - 1);
+        string memory err = h.check();
+        assertTrue(vm.contains(err, "V-BOUND"), err);
+    }
+
+    /// @dev Deposita 1e27, sube el tope relativo de id-0 a WAD, asigna todo, lo pierde todo y devenga.
+    function _perdidaTotal(NexusVaultV2Handler h) internal {
+        h.deposit(0, 1e27 - 1);
+        h.setCap(2, 1e18 - 1);
+        h.allocate(1e27);
+        h.lose(1e27);
+        h.accrue();
+        assertEq(bytes(h.check()).length, 0, h.check());
     }
 }

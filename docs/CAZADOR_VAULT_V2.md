@@ -6,8 +6,8 @@ Estado: **variante A verificada con forge en la PC** (27-oct), con capital asign
 del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
 los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP, y el Blue Public Allocator,
 leyes V-PA, con el adapter de liquidez y forceDeallocate sobre Blue) escrita y verificada el mismo día, igual que el
-**gobierno con timelock** (V-GOV-1, en la variante A). Falta la cota V-BOUND como ley. La etapa E (duplicados) está
-hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
+**gobierno con timelock** (V-GOV-1, en la variante A), y la cota de dominio **V-BOUND** como ley. La etapa E
+(duplicados) está hecha y vive, privada, en `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
 y `NexusAdapterMock`) y `NexusVaultV2Invariant.t.sol` (el handler y tres variantes: sin comisión, con comisión de
@@ -34,12 +34,14 @@ performance y de gestión, y activo de 6 decimales).
   estado crudo (`_totalAssets`, `totalSupply`, `lastUpdate`, `maxRate`, las comisiones, `balanceOf`) y los activos
   reales desde el token y el adapter.
 - Ninguna ley revierte: con `fail_on_revert = false`, un cazador que revierte esconde la violación como una reversión
-  más. El motivo de una falla termina con todas las leyes que fallaron, por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
+  más. Y el estado no sale del dominio donde la aritmética de una palabra del vault no desborda (V-BOUND, §4): el
+  handler no hace el depósito o mint que lo sacaría. El motivo de una falla termina con todas las leyes que fallaron, por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
 - `afterInvariant` informa la cobertura de la corrida: pérdidas realizadas, bajas de precio sin pérdida (solo puede
   haberlas por la comisión de gestión), asignaciones, desasignaciones y transferencias con efecto, forceDeallocate con
   monto, salidas tras forzar, allocate rechazados por los topes y aceptados justo en el tope, cambios de topes,
-  depósitos con allocate en la misma transacción, y del gobierno: propuestas, ejecuciones que pasaron, intentos un
-  segundo antes de la fecha, intentos rechazados como predijo el modelo y revocaciones.
+  depósitos con allocate en la misma transacción; del gobierno: propuestas, ejecuciones que pasaron, intentos un
+  segundo antes de la fecha, intentos rechazados como predijo el modelo y revocaciones; y de V-BOUND, los bits de
+  margen mínimos del dominio y los depósitos o mints que el handler no hizo porque lo sacaban de él.
 
 **Verificación en la nube (sin forge), commit `04e5f4a9`, solc 0.8.28 + EDR (27-oct, versión anterior del harness).**
 Las 3 variantes pasaban 256×500 sin falsos positivos con las semillas `0x2a` y `0x3` y detectaban 5 mutaciones de
@@ -194,7 +196,7 @@ Baja `TA` y `T`, pero los activos quedan en el vault: el precio sube para el res
 
 ## 3. Leyes (exactas y de 512 bits salvo donde el código no lo es)
 
-Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-FD-1, V-CAP-1, V-GOV-1,
+Implementadas en la variante A: V-TA-1, V-INF-1, V-INF-2, V-FEE-1, V-LOSS-1, V-LOSS-2, V-FD-1, V-CAP-1, V-GOV-1, V-BOUND,
 V-LEDGER y V-SOLV-1; en la variante B, además, V-ADP-1..5 y V-PA-1..4. Las demás son el plan.
 
 | Código | Ley | Caza |
@@ -213,7 +215,7 @@ V-LEDGER y V-SOLV-1; en la variante B, además, V-ADP-1..5 y V-PA-1..4. Las dem�
 | V-GOV-1 | Gobierno con timelock (comisiones y receptores, penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de adapters, registro de adapters), contra una copia fantasma: `submit` pasa **si y solo si** lo llama el curador y el dato no está pendiente, y fija `executableAt = t + timelock` (el de la función objetivo para `decreaseTimelock`); ejecutar pasa **si y solo si** está pendiente, llegó la fecha, la función no fue abdicada y se cumplen sus condiciones, y entonces el efecto es el valor propuesto y el pendiente se borra; `revoke` pasa si y solo si lo llama el curador o un centinela, y lo revocado no se ejecuta. Las comisiones y sus receptores devengan antes de cambiar (V-FEE-1 sobre la foto previa). Ver §4 | Timelocks que vencen antes o que miden la función equivocada, abdicaciones que no bloquean, propuestas o revocaciones sin rol, pendientes que se pisan o no se borran, comisiones retroactivas, topes de comisión, penalidad y topes ignorados, adapters fuera del registro |
 | V-LEDGER | `T = Σ saldos` (incluidas las shares de fee); `T` = el esperado tras cada acción; sin pérdida, fuera de quien opera ningún saldo cambia y los de comisión solo suben | Shares creadas o destruidas por fuera |
 | V-SOLV-1 | `⌊T⁺(TA+1)/(T⁺+v)⌋ ≤ R`: lo reclamable está respaldado por los activos reales | Insolvencia |
-| V-BOUND | Las macros exigen `TA, T < ~10³⁵` antes de operar (el `mulDiv` de una palabra puede desbordar) | Falsos positivos por `Panic(0x11)` |
+| V-BOUND | Después de cada acción el estado queda en el dominio D donde la acción siguiente no desborda la aritmética de una palabra del vault: `Â = max(_TA, R) + M < 2^128`, `Â·(4(T+v) + M) < 2^256` y `(Δt + 180 días)·fg ≤ W/4`. El handler no hace el depósito o mint que lo sacaría. Ver §4 | Falsos positivos por `Panic(0x11)` o por `CastOverflow`; un harness que sale del dominio sin avisar |
 | V-ADP-1..5 | Variante B (adapter real sobre Blue): `realAssets` exacto contra Blue; allocations por mercado, adapter y colateral; acciones internas = posición en Blue; `marketIds` ⟺ allocation > 0; movimiento exacto en Blue con redondeo en `[−⌈p⌉, +1]`. Ver §4 | Adapter que informa de más o de menos, contabilidad de acciones o de allocations desviada, mercados olvidados |
 | V-PA-1..4 | Blue Public Allocator: penalidad `⌈a·p/W⌉` exacta y al vault; flujo exacto en Blue; permisos y tope propio respetados; penalidad distinta o configuración sin rol revierten. Ver §4 | Penalidad evadida o desviada, reasignaciones sin permiso o por encima del tope |
 
@@ -352,6 +354,39 @@ Los topes también: `setCap` los sube con submit y ejecución inmediata, y si el
 lo ejecuta en vez de proponerlo de nuevo. El alta y la baja son de un segundo adapter siempre vacío, y el registro solo
 contiene al principal: así cada caso del predicado (alta con y sin registro, registro con y sin el segundo adapter
 dado de alta) se puede dar, y la contabilidad no cambia. ∎
+
+**V-BOUND: el dominio de la aritmética de una palabra.** VaultV2 multiplica con `MathLib.mulDivDown(x, y, d) =
+x·y/d` (una palabra, con el chequeo de 0.8) y guarda `_totalAssets` en `uint128`. Recorriendo cada producto del vault:
+
+| Dónde | Producto | Cota |
+|---|---|---|
+| tope relativo | `firstTotalAssets · relativeCap` | `< 2^128 · 2^60`: nunca desborda |
+| tope de tasa | `_TA · Δt · maxRate` | `< 2^128 · 2^64 · 2^36`: nunca |
+| comisiones | `interés · fp`, `newTA · Δt · fg` | nunca, si `newTA < 2^128` |
+| comisiones | `newTA − F^p − F^g` | **B2**: `F^p + F^g ≤ newTA` (la NatSpec pide devengar al menos cada 10 años) |
+| acciones de comisión, deposit, withdraw | `activos · (T + v)` | **B3** |
+| mint, redeem | `acciones · (TA + 1)` | **B3** |
+| `_totalAssets` | `toUint128`, `+= activos` | **B1**: `< 2^128` |
+| forceDeallocate | `activos · penalidad` | nunca |
+
+Con `M = 4·MAX_ASSETS` (lo más que mueve una acción del handler: mint le da eso al actor) y `Â = max(_TA, R) + M`, el
+dominio es `D`: (B1) `Â < 2^128`; (B2) `(Δt + 180 días)·fg ≤ W/4`, con `Δt` desde el último devengamiento y 180 días
+lo más que una acción adelanta el reloj (un warp de 120 días y el gobierno, 60 más); (B3) `Â·Ŝ < 2^256` con
+`Ŝ = 4(T + v) + M`. Si el estado está en `D`, la acción siguiente no desborda: (B2) acota las comisiones a
+`F^p + F^g ≤ newTA·(fp/W + Δt·fg/W) ≤ ¾·newTA` (`fp ≤ W/2`), así que `newTA − F ≥ newTA/4` y las acciones de comisión
+son a lo sumo `F(T+v)/(newTA/4) ≤ 3(T + v)`; todo producto `x·y` de la tabla tiene `x ≤ Â` e `y ≤ Ŝ` (o al revés), y
+`Â·Ŝ < 2^256`. ∎
+
+Cómo sale el estado de `D`: con un depósito a precio casi 0. Tras una pérdida total (todo asignado y perdido,
+`_TA = 0`), depositar `a` acuña `a(T + v)` acciones, y el depósito siguiente ya desborda: el vault queda inutilizable
+para depósitos de tamaño normal. Es el borde del dominio y no un hallazgo (la pérdida es total; con magnitudes reales
+hace falta un precio `10^29` veces menor). El handler predice el estado tras cada depósito o mint con la aritmética
+exacta del fantasma y no lo hace si sale de `D` (lo cuenta); cuando el reloj avanzaría fuera de (B2), devenga antes.
+V-BOUND verifica `D` después de cada acción e informa los bits de margen mínimos. Su no vacuidad la muestra
+`NexusVaultV2BoundTest`: el mismo escenario con un handler sin la cota hace que V-BOUND falle. La "reducción de
+descartes" del plan ya estaba hecha: el 16 % de reversiones eran las dos acciones muertas del handler (ver «Primera
+corrida con forge en la PC», arriba), no depósitos que topaban 128 bits, y desde el #80 las corridas tienen 0
+reversiones.
 
 ### Variante B: el adapter real sobre Morpho Blue (V-ADP)
 
