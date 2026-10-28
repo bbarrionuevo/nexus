@@ -5,8 +5,8 @@ cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZA
 Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter, las leyes
 del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
 los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP, y el Blue Public Allocator,
-leyes V-PA) escrita y verificada el mismo día. Faltan, en la variante B, el adapter de liquidez y forceDeallocate sobre
-Blue; el gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
+leyes V-PA, con el adapter de liquidez y forceDeallocate sobre Blue) escrita y verificada el mismo día. Faltan el
+gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
 `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
@@ -311,6 +311,18 @@ Las leyes del vault que no dependen del adapter (V-TA-1 y V-LOSS-1 con `R = ocio
 devengamiento) también se evalúan; una liquidación con deuda incobrable baja `realAssets` y el vault realiza la pérdida
 entera en su próximo devengamiento.
 
+**Adapter de liquidez.** El handler pone el adapter de liquidez en un mercado o lo saca. Con él, un depósito de `x` va
+entero a Blue en ese mercado (lo ocioso no cambia, Blue suma exactamente `x` y el adapter `⌊x·(tss+10⁶)/(tsa+1)⌋`
+acciones) y un retiro de `w` desasigna lo que falte de lo ocioso (Blue entrega exactamente `w − ocioso` y quema `⌈·⌉`
+acciones); `R` cambia en `±x` más el redondeo de V-ADP-5. Los montos de depósito y retiro se miden en el saldo del
+usuario, no en lo ocioso, para que V-TA-1 siga separando el devengamiento de la operación.
+
+**forceDeallocate sobre Blue (V-FD-1).** Cualquiera saca `a` de un mercado a nombre de otro con allowance: Blue entrega
+exactamente `a` (quema `⌈a·(tss+10⁶)/(tsa+1)⌉` acciones del adapter), el devengamiento del `withdraw` de la penalidad ve
+`R' = R + δ` (δ, el redondeo de ese retiro, calculado con la aritmética de Blue), `_totalAssets = min(R', tope) − pA`
+con `pA = ⌈a·p/W⌉`, a `onBehalf` se le queman `⌈pA·(T+v)/(A+1)⌉` acciones, lo ocioso sube `a` (la penalidad queda en el
+vault) y quien llama no paga nada.
+
 **Blue Public Allocator (V-PA).** `BluePublicAllocator` (periferia en alcance, desplegado) deja que cualquiera reasigne la
 liquidez del vault entre mercados de Blue alcanzados por el `MorphoMarketV1AdapterV2`, dentro de los topes del vault y de
 los suyos, pagando una penalidad proporcional que va al vault como donación. En el harness es allocator del vault y lo
@@ -344,8 +356,9 @@ empujada al vault, liquidez retirada) son ataques económicos conocidos; estas l
 2. **Variante B — adapter real.** VaultV2 + `MorphoMarketV1AdapterV2` sobre Morpho Blue (§4, "Variante B"): valida que
    el adapter real respeta el modelo, contra el estado crudo de Blue, con el Blue Public Allocator montado encima.
    Escrita el 27-oct (`NexusVaultV2Blue.t.sol`): 256×500 sin falsos positivos ni reversiones con `0x2a` y `0x3`, y las
-   mutaciones V22–V33 (adapter y allocator) detectadas, cada ley V-ADP y V-PA por al menos una. Falta sumarle el adapter
-   de liquidez y forceDeallocate sobre Blue.
+   mutaciones V22–V33 (adapter y allocator) detectadas, cada ley V-ADP y V-PA por al menos una; con el adapter de
+   liquidez y forceDeallocate sobre Blue (mutaciones V34–V35 del camino de liquidez del vault, y V14–V16 de la penalidad,
+   que ahora también recorren Blue).
 3. **Tres sub-variantes** cada una, como en MetaMorpho: sin comisión, con comisión, y activo de 6 decimales.
 4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de
    cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida

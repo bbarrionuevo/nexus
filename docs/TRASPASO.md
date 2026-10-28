@@ -220,12 +220,12 @@ En orden de prioridad:
      Blue (`realAssets` exacto, allocations, acciones internas, `marketIds`, movimiento exacto con redondeo demostrado
      en `[−⌈p⌉, +1]`), más V-TA-1, V-LOSS-1 y V-SOLV-1. **Y el Blue Public Allocator** (periferia en alcance, el código
      más nuevo): `reallocate` y `allocateFromIdle` públicos y su configuración, con las leyes V-PA-1 a 4 (penalidad
-     exacta al vault, flujo exacto en Blue, permisos y tope propio, guardas). Con forge en la PC: 256×500 sin falsos
-     positivos ni reversiones con `0x2a` y `0x3`, y las 12 mutaciones del adapter y del allocator (V22–V33) detectadas,
-     cada ley por al menos una. `tools/forge_v2` ya arma el proyecto reducido con Blue, la IRM y el allocator y muta
-     cualquier archivo.
-   - **Falta:** en la variante B, el adapter de liquidez y forceDeallocate sobre Blue; el gobierno con timelock; la cota
-     V-BOUND como ley; y la etapa E de MetaMorpho (punto 5).
+     exacta al vault, flujo exacto en Blue, permisos y tope propio, guardas). **Y el adapter de liquidez y
+     forceDeallocate sobre Blue** (V-FD-1 con el redondeo del retiro en Blue). Con forge en la PC: 256×500 sin falsos
+     positivos ni reversiones con `0x2a` y `0x3`; las 14 mutaciones de la variante B (V22–V35) detectadas, cada ley por al
+     menos una, y las de la penalidad (V14–V16) también las ve la variante B. `tools/forge_v2` ya arma el proyecto
+     reducido con Blue, la IRM y el allocator y muta cualquier archivo.
+   - **Falta:** el gobierno con timelock (V-GOV); la cota V-BOUND como ley; y la etapa E de MetaMorpho (punto 5).
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
