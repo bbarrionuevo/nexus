@@ -28,7 +28,10 @@ SOURCES = ("src/VaultV2.sol", "src/VaultV2Factory.sol", "test/mocks/ERC20Mock.so
            "src/adapters/MorphoMarketV1AdapterV2.sol", "src/adapters/MorphoMarketV1AdapterV2Factory.sol",
            "src/adapters/interfaces/IMorphoMarketV1AdapterV2.sol",
            "src/adapters/interfaces/IMorphoMarketV1AdapterV2Factory.sol",
-           "src/imports/MorphoImport.sol", "src/imports/AdaptiveCurveIrmImport.sol")
+           "src/imports/MorphoImport.sol", "src/imports/AdaptiveCurveIrmImport.sol",
+           # el Blue Public Allocator (periferia en alcance), sobre la misma infraestructura de la variante B
+           "src/periphery/blue-public-allocator/BluePublicAllocator.sol",
+           "src/periphery/blue-public-allocator/interfaces/IBluePublicAllocator.sol")
 TREES = ("src/interfaces", "src/libraries", "lib/forge-std", "lib/openzeppelin-contracts/contracts",
          "lib/morpho-blue/src", "lib/morpho-blue-irm/src", "lib/morpho-blue-irm/lib/morpho-blue/src")
 # Sin solc_version: como en el repo, cada archivo usa el solc de su pragma (VaultV2 0.8.28, Morpho Blue 0.8.19).

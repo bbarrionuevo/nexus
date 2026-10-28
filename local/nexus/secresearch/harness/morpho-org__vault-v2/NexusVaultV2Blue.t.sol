@@ -19,6 +19,7 @@ import {MorphoMarketV1AdapterV2Factory} from "../../src/adapters/MorphoMarketV1A
 import {IMorpho, MarketParams, Id, Market, Position} from "../../lib/morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "../../lib/morpho-blue/src/libraries/MarketParamsLib.sol";
 import {OracleMock} from "../../lib/morpho-blue/src/mocks/OracleMock.sol";
+import {BluePublicAllocator} from "../../src/periphery/blue-public-allocator/BluePublicAllocator.sol";
 import {ERC20Mock} from "../mocks/ERC20Mock.sol";
 import {NexusV2Math, NexusV2Clock} from "./NexusVaultV2Hunter.sol";
 
@@ -42,7 +43,12 @@ abstract contract NexusVaultV2BlueBase is Test {
     address internal constant SEEDER = address(uint160(uint256(keccak256("nexus.v2b.seeder"))));
     address internal constant LIQUIDATOR = address(uint160(uint256(keccak256("nexus.v2b.liquidator"))));
 
+    uint256 internal constant PA_CAP = 1e26; // tope propio del Public Allocator por mercado, al empezar
+    uint64 internal constant PA_PENALTY = 0.003e18; // penalidad del Public Allocator (0,3 %), al empezar
+
     VaultV2 internal vault;
+    VaultV2Factory internal vaultFactory;
+    BluePublicAllocator internal pa;
     ERC20Mock internal token;
     IMorpho internal morpho;
     address internal irm;
@@ -92,7 +98,8 @@ abstract contract NexusVaultV2BlueBase is Test {
             vm.stopPrank();
         }
 
-        vault = VaultV2(new VaultV2Factory().createVaultV2(OWNER, address(token), bytes32(0)));
+        vaultFactory = new VaultV2Factory();
+        vault = VaultV2(vaultFactory.createVaultV2(OWNER, address(token), bytes32(0)));
         vm.startPrank(OWNER);
         vault.setCurator(CURATOR);
         vault.setIsSentinel(ALLOCATOR, true);
@@ -113,6 +120,20 @@ abstract contract NexusVaultV2BlueBase is Test {
 
         vm.prank(ALLOCATOR);
         vault.setMaxRate(MAX_MAX_RATE / 2);
+
+        // Blue Public Allocator: allocator del vault; lo configura un allocator (ALLOCATOR).
+        pa = new BluePublicAllocator(address(vaultFactory));
+        _curated(abi.encodeCall(IVaultV2.setIsAllocator, (address(pa), true)));
+        vm.startPrank(ALLOCATOR);
+        pa.setIsActiveAdapter(address(vault), address(adapter), true);
+        for (uint256 i; i < 2; ++i) {
+            pa.setAbsoluteCap(address(vault), address(adapter), mps[i], PA_CAP);
+            pa.setCanPullFromMarket(address(vault), address(adapter), mps[i], true);
+        }
+        pa.setCanPullFromIdle(address(vault), true);
+        pa.setPenalty(address(vault), PA_PENALTY);
+        vm.stopPrank();
+
         if (fee > 0) {
             _curated(abi.encodeCall(IVaultV2.setPerformanceFeeRecipient, (address(0xFEE1))));
             _curated(abi.encodeCall(IVaultV2.setPerformanceFee, (fee)));
@@ -162,7 +183,11 @@ abstract contract NexusVaultV2BlueHunter is NexusVaultV2BlueBase {
     uint8 internal constant L_ADP3 = 5; // V-ADP-3 acciones internas = posición en Blue
     uint8 internal constant L_ADP4 = 6; // V-ADP-4 lista de mercados
     uint8 internal constant L_ADP5 = 7; // V-ADP-5 movimiento exacto en Blue
-    uint8 internal constant N_LAWS = 8;
+    uint8 internal constant L_PA1 = 8; // V-PA-1 penalidad exacta, al vault
+    uint8 internal constant L_PA2 = 9; // V-PA-2 flujo exacto en Blue y en lo ocioso
+    uint8 internal constant L_PA3 = 10; // V-PA-3 permisos y tope propio respetados
+    uint8 internal constant L_PA4 = 11; // V-PA-4 guardas: penalidad distinta o configuración sin rol revierten
+    uint8 internal constant N_LAWS = 12;
 
     struct BSnap {
         uint256 ts;
@@ -193,6 +218,9 @@ abstract contract NexusVaultV2BlueHunter is NexusVaultV2BlueBase {
     uint256 internal hDeallocs;
     uint256 internal hBorrows;
     uint256 internal hMaxRound; // mayor pérdida por redondeo en un allocate o deallocate
+    uint256 internal hPaMoves; // reallocate y allocateFromIdle públicos que pasaron
+    uint256 internal hPaRejected; // los que revirtieron (permisos, topes, penalidad distinta, liquidez)
+    uint256 internal hPaConfigs; // cambios de configuración del Public Allocator
 
     function _hunterInit() internal {
         hClock = new NexusV2Clock();
@@ -288,6 +316,49 @@ abstract contract NexusVaultV2BlueHunter is NexusVaultV2BlueBase {
         ++checks;
     }
 
+    /// @dev Leyes de un movimiento público del Blue Public Allocator que pasó (reallocate de f a t, o allocateFromIdle a t
+    /// si `fromIdle`), de `a` activos con penalidad `pA` pagada por `c`:
+    ///   V-PA-1: `c` pagó exactamente pA = ⌈a·penalidad/W⌉ y el vault la recibió en lo ocioso;
+    ///   V-PA-2: Blue movió exactamente `a` (sale de f y entra en t; lo ocioso solo cambia por la penalidad, o por −a desde
+    ///           lo ocioso);
+    ///   V-PA-3: se cumplían los permisos (`ok`: adapter activo, retirar de f o de lo ocioso, tope propio de t > 0) y la
+    ///           allocation de t quedó dentro de su tope propio;
+    ///   V-TA-1: el devengamiento (lo hace el allocate, después de cobrar la penalidad y de desasignar) usa R' = lo
+    ///           ocioso con la penalidad y el retiro + el valor de las posiciones tras desasignar.
+    function _lawsPa(BSnap memory pre, BSnap memory post, uint256 paid, uint256 pA, uint256 a, uint256 f, uint256 t, bool fromIdle, bool ok, uint256 cap)
+        internal
+    {
+        _ok(paid == pA, L_PA1, "quien llamo no pago exactamente la penalidad (esperada, pagada)", pA, paid);
+        uint256 expIdle = fromIdle ? pre.idle + pA - a : pre.idle + pA;
+        _ok(post.idle == expIdle, L_PA1, "lo ocioso del vault no cambio en la penalidad (y el monto) (esperado, real)", expIdle, post.idle);
+        if (fromIdle || f != t) {
+            _ok(post.tsa[t] == pre.tsa[t] + a, L_PA2, "Blue no recibio exactamente el monto en el destino (esperado, Blue)", pre.tsa[t] + a, post.tsa[t]);
+        }
+        if (!fromIdle) {
+            uint256 expF = f == t ? pre.tsa[f] : pre.tsa[f] - a;
+            _ok(post.tsa[f] == expF, L_PA2, "Blue no entrego exactamente el monto desde el origen (esperado, Blue)", expF, post.tsa[f]);
+        }
+        _ok(ok, L_PA3, "el Public Allocator movio fondos sin los permisos (adapter, retiro, tope propio > 0)", 0, 1);
+        _ok(post.allocM[t] <= cap, L_PA3, "la allocation del destino supero el tope propio del Public Allocator (tope, allocation)", cap, post.allocM[t]);
+        // V-TA-1 con el R que ve el devengamiento del allocate
+        uint256 rSeen = pre.idle + pA + pre.real;
+        if (!fromIdle) {
+            uint256 burned = NexusV2Math.mulDivUp(a, pre.tss[f] + VIRTUAL_SHARES, pre.tsa[f] + VIRTUAL_ASSETS);
+            uint256 vBefore = pre.listed[f] != 0 ? _value(pre.shares[f], pre.tsa[f], pre.tss[f]) : 0;
+            uint256 vAfter = _value(pre.shares[f] - burned, pre.tsa[f] - a, pre.tss[f] - burned);
+            rSeen = rSeen + a - vBefore + vAfter;
+        }
+        uint256 maxTA = pre.TA + NexusV2Math.mulDivDown(pre.TA * (pre.ts - pre.lu), pre.mr, WAD);
+        uint256 expTA = NexusV2Math.min(rSeen, maxTA);
+        _ok(post.TA == expTA, L_TA, "devengamiento dentro del Public Allocator fuera del modelo (modelo, real)", expTA, post.TA);
+        if (rSeen < pre.TA) ++hLosses;
+        _lawAllocAfter(post, t);
+        if (!fromIdle) _lawAllocAfter(post, f);
+        _lawsAdapter(post);
+        ++hPaMoves;
+        ++checks;
+    }
+
     /// @dev V-SOLV-1 tras un devengamiento puro: _totalAssets ≤ R, así que lo reclamable está respaldado.
     function _lawSolvency(BSnap memory s) internal {
         uint256 claim = NexusV2Math.mulDivDown(s.T, s.TA + 1, s.T + s.vShares);
@@ -314,7 +385,11 @@ abstract contract NexusVaultV2BlueHunter is NexusVaultV2BlueBase {
         if (law == L_ADP2) return "V-ADP-2";
         if (law == L_ADP3) return "V-ADP-3";
         if (law == L_ADP4) return "V-ADP-4";
-        return "V-ADP-5";
+        if (law == L_ADP5) return "V-ADP-5";
+        if (law == L_PA1) return "V-PA-1";
+        if (law == L_PA2) return "V-PA-2";
+        if (law == L_PA3) return "V-PA-3";
+        return "V-PA-4";
     }
 
     function check() external view returns (string memory) {
@@ -332,6 +407,10 @@ abstract contract NexusVaultV2BlueHunter is NexusVaultV2BlueBase {
         returns (uint256 laws, uint256 checks_, uint256 losses, uint256 badDebt, uint256 allocs, uint256 deallocs, uint256 borrows, uint256 maxRound)
     {
         return (hLaws, checks, hLosses, hBadDebt, hAllocs, hDeallocs, hBorrows, hMaxRound);
+    }
+
+    function paStats() external view returns (uint256 moves, uint256 rejected, uint256 configs) {
+        return (hPaMoves, hPaRejected, hPaConfigs);
     }
 }
 
@@ -444,6 +523,104 @@ contract NexusVaultV2BlueHandler is NexusVaultV2BlueHunter {
         if (loss > hMaxRound) hMaxRound = loss;
     }
 
+    /* BLUE PUBLIC ALLOCATOR: cualquiera reasigna entre mercados pagando la penalidad */
+
+    /// @dev reallocate público de f a t (pueden ser el mismo mercado), a lo sumo el valor de la posición en f y la
+    /// liquidez de Blue. Una de cada ocho veces con una penalidad que no es la configurada: tiene que revertir (V-PA-4).
+    function paReallocate(uint256 callerSeed, uint256 fromSeed, uint256 toSeed, uint256 assets) external {
+        address c = actors[callerSeed % actors.length];
+        uint256 f = fromSeed % 2;
+        uint256 t = toSeed % 2;
+        _accrueBlue();
+        BSnap memory pre = _snap();
+        if (pre.allocM[f] == 0) return; // el vault exige allocation > 0 para desasignar
+        uint256 a = _clamp(assets, 0, _min(_value(pre.shares[f], pre.tsa[f], pre.tss[f]), pre.tsa[f] - pre.tba[f]));
+        (, uint64 pen) = pa.vaultData(address(vault));
+        bool wrong = assets % 8 == 0;
+        uint256 pA = NexusV2Math.mulDivUp(a, pen, WAD);
+        uint256 before = _fund(c, pA);
+        bool ok = pa.isActiveAdapter(address(vault), address(adapter))
+            && pa.canPullFromMarket(address(vault), vaultMarketIds[f]) && pa.absoluteCap(address(vault), vaultMarketIds[t]) > 0;
+        uint256 cap = pa.absoluteCap(address(vault), vaultMarketIds[t]);
+        vm.prank(c);
+        try pa.reallocate(address(vault), address(adapter), mps[f], address(adapter), mps[t], uint128(a), wrong ? pen + 1 : pen) {
+            _ok(!wrong, L_PA4, "reallocate paso con una penalidad que no es la configurada (configurada, usada)", pen, pen + 1);
+            _lawsPa(pre, _snap(), before - token.balanceOf(c), pA, a, f, t, false, ok, cap);
+        } catch {
+            ++hPaRejected;
+        }
+    }
+
+    /// @dev allocateFromIdle público a t, a lo sumo lo ocioso.
+    function paAllocateFromIdle(uint256 callerSeed, uint256 toSeed, uint256 assets) external {
+        address c = actors[callerSeed % actors.length];
+        uint256 t = toSeed % 2;
+        _accrueBlue();
+        BSnap memory pre = _snap();
+        uint256 a = _clamp(assets, 0, pre.idle);
+        (bool canIdle, uint64 pen) = pa.vaultData(address(vault));
+        bool wrong = assets % 8 == 0;
+        uint256 pA = NexusV2Math.mulDivUp(a, pen, WAD);
+        uint256 before = _fund(c, pA);
+        bool ok = canIdle && pa.isActiveAdapter(address(vault), address(adapter))
+            && pa.absoluteCap(address(vault), vaultMarketIds[t]) > 0;
+        uint256 cap = pa.absoluteCap(address(vault), vaultMarketIds[t]);
+        vm.prank(c);
+        try pa.allocateFromIdle(address(vault), address(adapter), mps[t], uint128(a), wrong ? pen + 1 : pen) {
+            _ok(!wrong, L_PA4, "allocateFromIdle paso con una penalidad que no es la configurada (configurada, usada)", pen, pen + 1);
+            _lawsPa(pre, _snap(), before - token.balanceOf(c), pA, a, t, t, true, ok, cap);
+        } catch {
+            ++hPaRejected;
+        }
+    }
+
+    /// @dev Configuración del Public Allocator: la hace un allocator del vault y tiene que pasar; una de cada siete
+    /// veces la intenta un actor sin rol y tiene que revertir (V-PA-4). which % 6: permiso de retirar de un mercado,
+    /// tope propio de un mercado (a veces 0), permiso de retirar de lo ocioso, penalidad (≤ 2 %), adapter activo, o
+    /// volver a la configuración inicial.
+    function paConfig(uint256 which, uint256 value) external {
+        uint256 w = which % 6;
+        MarketParams memory mp = mps[value % 2];
+        bytes memory data;
+        if (w == 0) {
+            data = abi.encodeCall(pa.setCanPullFromMarket, (address(vault), address(adapter), mp, value % 3 != 0));
+        } else if (w == 1) {
+            data = abi.encodeCall(pa.setAbsoluteCap, (address(vault), address(adapter), mp, value % 4 == 0 ? 0 : _clamp(value, 1, 2 * PA_CAP)));
+        } else if (w == 2) {
+            data = abi.encodeCall(pa.setCanPullFromIdle, (address(vault), value % 3 != 0));
+        } else if (w == 3) {
+            data = abi.encodeCall(pa.setPenalty, (address(vault), uint64(_clamp(value, 0, 0.02e18))));
+        } else if (w == 4) {
+            data = abi.encodeCall(pa.setIsActiveAdapter, (address(vault), address(adapter), value % 5 != 0));
+        } else {
+            vm.startPrank(ALLOCATOR);
+            pa.setIsActiveAdapter(address(vault), address(adapter), true);
+            for (uint256 i; i < 2; ++i) {
+                pa.setAbsoluteCap(address(vault), address(adapter), mps[i], PA_CAP);
+                pa.setCanPullFromMarket(address(vault), address(adapter), mps[i], true);
+            }
+            pa.setCanPullFromIdle(address(vault), true);
+            pa.setPenalty(address(vault), PA_PENALTY);
+            vm.stopPrank();
+            ++hPaConfigs;
+            return;
+        }
+        bool stranger = value % 7 == 0;
+        vm.prank(stranger ? actors[which % actors.length] : ALLOCATOR);
+        (bool ok,) = address(pa).call(data);
+        if (stranger) _ok(!ok, L_PA4, "un actor sin rol configuro el Public Allocator (0, configuro)", 0, 1);
+        else _ok(ok, L_PA4, "un allocator no pudo configurar el Public Allocator (0, revirtio)", 0, 1);
+        ++hPaConfigs;
+    }
+
+    /// @dev Le da a `c` la penalidad a pagar y la allowance al Public Allocator; devuelve su saldo antes de pagar.
+    function _fund(address c, uint256 amount) internal returns (uint256) {
+        deal(address(token), c, token.balanceOf(c) + amount, true);
+        vm.prank(c);
+        token.approve(address(pa), type(uint256).max);
+        return token.balanceOf(c);
+    }
+
     /* PRESTATARIOS Y PRECIOS EN BLUE */
 
     /// @dev Un prestatario pone colateral y toma prestado hasta su LTV y la liquidez del mercado.
@@ -547,5 +724,9 @@ contract NexusVaultV2BlueTest is Test {
         emit log_named_uint("cobertura: desasignaciones con efecto", deallocs);
         emit log_named_uint("cobertura: prestamos", borrows);
         emit log_named_uint("cazador: mayor perdida por redondeo de Blue", maxRound);
+        (uint256 moves, uint256 rejected, uint256 configs) = handler.paStats();
+        emit log_named_uint("cobertura: movimientos del Public Allocator", moves);
+        emit log_named_uint("cobertura: movimientos del Public Allocator rechazados", rejected);
+        emit log_named_uint("cobertura: cambios de configuracion del Public Allocator", configs);
     }
 }

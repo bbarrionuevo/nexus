@@ -4,9 +4,9 @@ Modelo formal y leyes exactas para el harness de `morpho-org/vault-v2` (línea b
 cambió `MidnightAdapter`, fuera de alcance), al estilo del de MetaMorpho ([CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md)).
 Estado: **variante A verificada con forge en la PC** (27-oct), con capital asignado de verdad en el adapter, las leyes
 del precio por acción (V-INF-2), de realización de pérdidas (V-LOSS-1, V-LOSS-2), de `forceDeallocate` (V-FD-1) y de
-los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP) escrita y verificada el mismo
-día. Faltan, en la variante B, el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator; el
-gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
+los topes (V-CAP-1); y **variante B** (el adapter real sobre Morpho Blue, leyes V-ADP, y el Blue Public Allocator,
+leyes V-PA) escrita y verificada el mismo día. Faltan, en la variante B, el adapter de liquidez y forceDeallocate sobre
+Blue; el gobierno con timelock y la cota V-BOUND como ley. La etapa E (duplicados) está hecha y vive, privada, en
 `NEXUS_HOME/secresearch/etapa_e/morpho-org__vault-v2/`.
 
 **Harness (variante A).** `harness/morpho-org__vault-v2/`: `NexusVaultV2Hunter.sol` (contabilidad fantasma, leyes V-...
@@ -174,6 +174,7 @@ V-SOLV-1. Las demás son el plan.
 | V-SOLV-1 | `⌊T⁺(TA+1)/(T⁺+v)⌋ ≤ R`: lo reclamable está respaldado por los activos reales | Insolvencia |
 | V-BOUND | Las macros exigen `TA, T < ~10³⁵` antes de operar (el `mulDiv` de una palabra puede desbordar) | Falsos positivos por `Panic(0x11)` |
 | V-ADP-1..5 | Variante B (adapter real sobre Blue): `realAssets` exacto contra Blue; allocations por mercado, adapter y colateral; acciones internas = posición en Blue; `marketIds` ⟺ allocation > 0; movimiento exacto en Blue con redondeo en `[−⌈p⌉, +1]`. Ver §4 | Adapter que informa de más o de menos, contabilidad de acciones o de allocations desviada, mercados olvidados |
+| V-PA-1..4 | Blue Public Allocator: penalidad `⌈a·p/W⌉` exacta y al vault; flujo exacto en Blue; permisos y tope propio respetados; penalidad distinta o configuración sin rol revierten. Ver §4 | Penalidad evadida o desviada, reasignaciones sin permiso o por encima del tope |
 
 ## 4. Demostraciones: precio por acción (V-INF-2) y pérdidas (V-LOSS)
 
@@ -310,6 +311,27 @@ Las leyes del vault que no dependen del adapter (V-TA-1 y V-LOSS-1 con `R = ocio
 devengamiento) también se evalúan; una liquidación con deuda incobrable baja `realAssets` y el vault realiza la pérdida
 entera en su próximo devengamiento.
 
+**Blue Public Allocator (V-PA).** `BluePublicAllocator` (periferia en alcance, desplegado) deja que cualquiera reasigne la
+liquidez del vault entre mercados de Blue alcanzados por el `MorphoMarketV1AdapterV2`, dentro de los topes del vault y de
+los suyos, pagando una penalidad proporcional que va al vault como donación. En el harness es allocator del vault y lo
+configura el ALLOCATOR (adapter activo, tope propio por mercado, permiso de retirar de cada mercado y de lo ocioso,
+penalidad); los actores llaman a `reallocate` y `allocateFromIdle`.
+
+`reallocate(f → t, a, penalidad)` hace, en orden: cobra `pA = ⌈a·penalidad/W⌉` de quien llama al vault, controla
+penalidad = la configurada, adapter activo, permiso de retirar de `f` y tope propio de `t` > 0, desasigna `a` de `f` (sin
+devengar), asigna `a` en `t` (el vault devenga acá) y exige `allocation(t) ≤` su tope propio. Entonces, si pasa:
+
+- **V-PA-1:** quien llama pagó exactamente `pA` y lo ocioso del vault subió `pA` (en `allocateFromIdle`, `pA − a`).
+- **V-PA-2:** Blue entregó exactamente `a` desde `f` y recibió exactamente `a` en `t` (nada si `f = t`).
+- **V-PA-3:** se cumplían los permisos y la allocation de `t` quedó dentro del tope propio.
+- **V-PA-4:** con una penalidad distinta de la configurada revierte, y solo un allocator del vault puede configurarlo.
+- **V-TA-1** en el devengamiento del `allocate`, que ve `R' = ocioso + pA + a + realAssets` con el valor del mercado `f`
+  ya desasignado (aritmética de Blue): la penalidad entra como donación y, si `maxRate` no la acota, se devenga en el acto.
+
+Los movimientos que no cumplen las condiciones revierten (y el handler los cuenta); las leyes V-ADP siguen valiendo
+tras cada movimiento. Lo que las auditorías de agosto de 2026 ya señalaron (manipulación de tasas, deuda incobrable
+empujada al vault, liquidez retirada) son ataques económicos conocidos; estas leyes son de exactitud contable.
+
 ## 5. Harness previsto
 
 1. **Variante A — adapter controlable.** VaultV2 + `NexusAdapterMock`, un adapter de nexus que cumple la
@@ -320,8 +342,10 @@ entera en su próximo devengamiento.
    da por llamada. El `AdapterMock` del repo no sirve con capital asignado: suma `interest − loss` en cada llamada, la
    allocation se desvía y, tras una pérdida, una desasignación puede dejar `realAssets()` en underflow.
 2. **Variante B — adapter real.** VaultV2 + `MorphoMarketV1AdapterV2` sobre Morpho Blue (§4, "Variante B"): valida que
-   el adapter real respeta el modelo, contra el estado crudo de Blue. Escrita el 27-oct (`NexusVaultV2Blue.t.sol`); falta
-   sumarle el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator, que se monta sobre lo mismo.
+   el adapter real respeta el modelo, contra el estado crudo de Blue, con el Blue Public Allocator montado encima.
+   Escrita el 27-oct (`NexusVaultV2Blue.t.sol`): 256×500 sin falsos positivos ni reversiones con `0x2a` y `0x3`, y las
+   mutaciones V22–V33 (adapter y allocator) detectadas, cada ley V-ADP y V-PA por al menos una. Falta sumarle el adapter
+   de liquidez y forceDeallocate sobre Blue.
 3. **Tres sub-variantes** cada una, como en MetaMorpho: sin comisión, con comisión, y activo de 6 decimales.
 4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de
    cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida

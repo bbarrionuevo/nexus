@@ -218,12 +218,14 @@ En orden de prioridad:
      `NexusVaultV2Blue.t.sol`, el `MorphoMarketV1AdapterV2` real sobre Morpho Blue con la IRM adaptativa, dos mercados,
      prestatarios, cambios de precio y liquidaciones con deuda incobrable. Leyes V-ADP-1 a 5 contra el estado crudo de
      Blue (`realAssets` exacto, allocations, acciones internas, `marketIds`, movimiento exacto con redondeo demostrado
-     en `[−⌈p⌉, +1]`), más V-TA-1, V-LOSS-1 y V-SOLV-1. Con forge en la PC: 256×500 sin falsos positivos ni reversiones
-     con `0x2a` y `0x3`, y las 5 mutaciones del adapter (V22–V26) detectadas, una por ley. `tools/forge_v2` ya arma el
-     proyecto reducido con Blue y la IRM y muta cualquier archivo.
-   - **Falta:** en la variante B, el adapter de liquidez, forceDeallocate sobre Blue y el Blue Public Allocator (en
-     alcance, el código más nuevo; se monta sobre la misma infraestructura: es el siguiente objetivo); el gobierno con
-     timelock y la cota V-BOUND como ley.
+     en `[−⌈p⌉, +1]`), más V-TA-1, V-LOSS-1 y V-SOLV-1. **Y el Blue Public Allocator** (periferia en alcance, el código
+     más nuevo): `reallocate` y `allocateFromIdle` públicos y su configuración, con las leyes V-PA-1 a 4 (penalidad
+     exacta al vault, flujo exacto en Blue, permisos y tope propio, guardas). Con forge en la PC: 256×500 sin falsos
+     positivos ni reversiones con `0x2a` y `0x3`, y las 12 mutaciones del adapter y del allocator (V22–V33) detectadas,
+     cada ley por al menos una. `tools/forge_v2` ya arma el proyecto reducido con Blue, la IRM y el allocator y muta
+     cualquier archivo.
+   - **Falta:** en la variante B, el adapter de liquidez y forceDeallocate sobre Blue; el gobierno con timelock; la cota
+     V-BOUND como ley; y la etapa E de MetaMorpho (punto 5).
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
