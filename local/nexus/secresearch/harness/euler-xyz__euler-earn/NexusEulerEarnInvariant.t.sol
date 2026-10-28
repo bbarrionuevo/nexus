@@ -371,8 +371,15 @@ contract NexusEulerEarnHandler is NexusEEHunter {
         }
         uint256 addL;
         if (v > pre.cap[i]) {
+            // el alta adopta las acciones reales con toUint112: si no entran (seguidas de antes de una remoción más las
+            // donadas, compradas a precio casi 0 tras una pérdida total), acceptCap revierte y el tope queda pendiente
+            bool fits = pre.enabled[i] || pre.real[i] <= type(uint112).max;
             (ok,) = address(vault).call(abi.encodeCall(IEulerEarnBase.acceptCap, (id)));
-            _ok(ok, L_LIVE, "acceptCap revirtio con el timelock vencido (pedido, tope)", v, pre.cap[i]);
+            _ok(ok == fits, L_LIVE, ok ? "acceptCap paso con mas acciones reales de las que entran en uint112 (acciones, 0)" : "acceptCap revirtio con el timelock vencido (pedido, tope)", ok ? pre.real[i] : v, ok ? 0 : pre.cap[i]);
+            if (!ok) {
+                ++hBound;
+                return _lawsStillPrice(pre);
+            }
             if (!pre.enabled[i]) {
                 addL = _redeem(i, pre.real[i], pre.tA[i], pre.tS[i]);
                 gExtra[i] = 0;
@@ -564,7 +571,7 @@ contract NexusEulerEarnInvariantTest is Test {
         emit log_named_uint("cobertura: operaciones con una estrategia pausada", skips);
         emit log_named_uint("cobertura: operaciones rechazadas como predijo el modelo", rejected);
         emit log_named_uint("cobertura: donaciones de acciones de estrategias", donations);
-        emit log_named_uint("cota: depositos que revientan el uint112 de una estrategia (E-BOUND)", handler.coverageBound());
+        emit log_named_uint("cota: operaciones que tocan el uint112 del seguimiento interno (E-BOUND)", handler.coverageBound());
         (uint256 reallocs, uint256 removals, uint256 enables) = handler.coverage2();
         emit log_named_uint("cobertura: reallocate con efecto", reallocs);
         emit log_named_uint("cobertura: estrategias removidas de la withdrawQueue", removals);
@@ -596,6 +603,20 @@ contract NexusEulerEarnBoundTest is Test {
         h.lose(2, 1e24); // pierde todo
         h.deposit(1, 1e18 - 1); // 1e18 a precio ~0: ~1e48 acciones, no entran en uint112
         assertEq(h.coverageBound(), 1, "el modelo predijo la reversion por el uint112");
+        assertEq(bytes(h.check()).length, 0, h.check());
+    }
+
+    /// @dev El alta de una estrategia adopta sus acciones reales con toUint112. Tras una pérdida total, un tercero compra
+    /// acciones a precio casi 0 y se las dona a EulerEarn; si la estrategia se retira y se vuelve a dar de alta,
+    /// acceptCap revierte (el tope queda pendiente). Una estrategia muerta que no se puede volver a agregar: nadie pierde.
+    function test_ebound_alta_con_mas_acciones_reales_que_uint112() public {
+        NexusEulerEarnHandler h = new NexusEulerEarnHandler(0, 18);
+        h.deposit(0, 1e24 - 1); // 1e24 a la estrategia 2: 1e30 acciones
+        h.lose(2, 1e24); // pierde todo
+        h.outsider(2, 1e4 - 1, true); // 1e4 a precio ~0: ~1e34 acciones para el tercero
+        h.donateShares(2, 1e34 + 1e10); // se las dona todas: 1e4·(1e30 + 1e6)/(0 + 1)
+        h.retire(2, true); // tope 0, remoción, salida y alta otra vez: acceptCap revierte
+        assertEq(h.coverageBound(), 1, "el modelo predijo la reversion del alta");
         assertEq(bytes(h.check()).length, 0, h.check());
     }
 }
