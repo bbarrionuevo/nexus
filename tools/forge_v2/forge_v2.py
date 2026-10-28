@@ -10,7 +10,8 @@ los mismos ajustes de compilación del foundry.toml del repo (solc 0.8.28, via_i
 bytecode de VaultV2 es el mismo. correr: copia el harness de nexus y corre las tres variantes. mutar: la batería de
 mutaciones.json; cada mutación tiene que hacer fallar al menos una ley V-... (el motivo trae "[leyes: ...]").
 
-NEXUS_PERFIL=euler-earn hace lo mismo con EulerEarn (su harness, sus fuentes y mutaciones_euler_earn.json).
+NEXUS_PERFIL=euler-earn hace lo mismo con EulerEarn (su harness, sus fuentes y mutaciones_euler_earn.json), y
+NEXUS_PERFIL=tokenized-strategy con TokenizedStrategy de Yearn V3 (mutaciones_tokenized_strategy.json).
 
 Todo en local con FFI apagado (REGLAS R-2 y R-6): solo forge build y forge test. La referencia sigue siendo
 `python -m nexus.secresearch.validate morpho-org/vault-v2 --harness morpho-org__vault-v2`, sobre el repo entero.
@@ -84,6 +85,28 @@ remappings = ["ethereum-vault-connector/=lib/ethereum-vault-connector/src/"]
 [lint]
 lint_on_build = false
 """
+# Perfil de TokenizedStrategy (yearn/tokenized-strategy @ v3.1.0, lo desplegado en 0x310f…1e76): TokenizedStrategy,
+# BaseStrategy, sus interfaces y la librería, OpenZeppelin 4.9.5 y forge-std 1.5.2, sin los tests del repo (viven en
+# src/test), con los ajustes del foundry.toml del repo (solc 0.8.18, sin via_ir, 200 runs, paris).
+TS_FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness de TokenizedStrategy: mismos ajustes que el foundry.toml del repo.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.18"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+ffi = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "ds-test/=lib/forge-std/lib/ds-test/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+]
+
+[lint]
+lint_on_build = false
+"""
 PERFILES = {
     "vault-v2": {"harness": HARNESS, "sources": SOURCES, "trees": TREES, "toml": FOUNDRY_TOML,
                  "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol"},
@@ -92,11 +115,18 @@ PERFILES = {
                              "lib/ethereum-vault-connector/src"),
                    "toml": EE_FOUNDRY_TOML, "match": "^NexusEulerEarn",
                    "mutaciones": HERE / "mutaciones_euler_earn.json", "archivo": "src/EulerEarn.sol"},
+    "tokenized-strategy": {"harness": HARNESS.parent / "yearn__tokenized-strategy",
+                           "sources": ("src/TokenizedStrategy.sol", "src/BaseStrategy.sol"),
+                           "trees": ("src/interfaces", "src/libraries", "lib/forge-std",
+                                     "lib/openzeppelin-contracts/contracts"),
+                           "toml": TS_FOUNDRY_TOML, "match": "^NexusTokenizedStrategy",
+                           "mutaciones": HERE / "mutaciones_tokenized_strategy.json",
+                           "archivo": "src/TokenizedStrategy.sol"},
 }
 
 
 def _perfil():
-    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto) o euler-earn."""
+    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn o tokenized-strategy."""
     nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
     if nombre not in PERFILES:
         raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")

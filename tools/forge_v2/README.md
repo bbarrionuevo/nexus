@@ -53,3 +53,22 @@ $env:NEXUS_PERFIL = "euler-earn"
 .venv\Scripts\python tools\forge_v2\forge_v2.py correr $RED 256 500 0x2a
 .venv\Scripts\python tools\forge_v2\forge_v2.py mutar  $RED $CLON
 ```
+
+## Perfil de TokenizedStrategy
+
+`NEXUS_PERFIL=tokenized-strategy` hace lo mismo con `yearn/tokenized-strategy` (programa Yearn V3): `armar` copia
+`TokenizedStrategy.sol`, `BaseStrategy.sol`, sus interfaces y la librería, OpenZeppelin 4.9.5 y forge-std 1.5.2 (sin
+los tests del repo, que viven en `src/test`) con los ajustes del repo (solc 0.8.18, sin via_ir, 200 runs, paris),
+`correr` usa el harness de `harness/yearn__tokenized-strategy/` y el filtro `^NexusTokenizedStrategy`, y `mutar` toma
+`mutaciones_tokenized_strategy.json` (sobre `src/TokenizedStrategy.sol`). El clon tiene que estar en el tag `v3.1.0`
+(`8c8929f`), la versión en alcance: su `BaseStrategy` apunta a la dirección desplegada, donde el harness copia la
+implementación local (ver [CAZADOR_TOKENIZED_STRATEGY.md](../../docs/CAZADOR_TOKENIZED_STRATEGY.md)).
+
+```powershell
+$CLON = "$env:LOCALAPPDATA\nexus\work\yearn__tokenized-strategy"   # git checkout v3.1.0
+$RED  = "$env:LOCALAPPDATA\nexus\work\ts-reducido"
+$env:NEXUS_PERFIL = "tokenized-strategy"
+.venv\Scripts\python tools\forge_v2\forge_v2.py armar  $CLON $RED
+.venv\Scripts\python tools\forge_v2\forge_v2.py correr $RED 256 500 0x2a
+.venv\Scripts\python tools\forge_v2\forge_v2.py mutar  $RED $CLON
+```
