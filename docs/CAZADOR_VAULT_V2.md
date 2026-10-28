@@ -25,7 +25,8 @@ performance y de gestión, y activo de 6 decimales).
 - Gobierno (V-GOV-1): el handler propone, ejecuta y revoca cambios con demora (comisiones y sus receptores, la
   penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de un segundo adapter vacío y el registro de
   adapters), con timelocks iniciales distintos de 0, y una copia fantasma predice cada resultado. Ejecuta un segundo
-  antes de la fecha y justo en ella, intenta lo revocado y, tras una abdicación, vuelve a proponer la función abdicada.
+  antes de la fecha y justo en ella, intenta lo revocado, y sondea: tras una abdicación vuelve a proponer la función
+  abdicada, y tras poner el registro o dar de alta el segundo adapter prueba el otro lado del registro y la baja.
 - Las secuencias de una sola transacción las hace `NexusV2Macro` (§4): forge 1.8.6 corre con `isolate = true` y cada
   llamada del handler al vault es una transacción aparte.
 - Los montos de cada acción los **deriva** el cazador del cambio de estado observado (activos: el cambio de lo ocioso;
@@ -35,12 +36,13 @@ performance y de gestión, y activo de 6 decimales).
   reales desde el token y el adapter.
 - Ninguna ley revierte: con `fail_on_revert = false`, un cazador que revierte esconde la violación como una reversión
   más. Y el estado no sale del dominio donde la aritmética de una palabra del vault no desborda (V-BOUND, §4): el
-  handler no hace el depósito o mint que lo sacaría. El motivo de una falla termina con todas las leyes que fallaron, por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
+  handler no hace el depósito o mint que lo sacaría. El motivo de una falla termina con todas las leyes que fallaron,
+  por ejemplo `[leyes: V-TA-1 V-LOSS-1]`.
 - `afterInvariant` informa la cobertura de la corrida: pérdidas realizadas, bajas de precio sin pérdida (solo puede
   haberlas por la comisión de gestión), asignaciones, desasignaciones y transferencias con efecto, forceDeallocate con
   monto, salidas tras forzar, allocate rechazados por los topes y aceptados justo en el tope, cambios de topes,
   depósitos con allocate en la misma transacción; del gobierno: propuestas, ejecuciones que pasaron, intentos un
-  segundo antes de la fecha, intentos rechazados como predijo el modelo y revocaciones; y de V-BOUND, los bits de
+  segundo antes de la fecha, intentos rechazados como predijo el modelo, revocaciones y sondas; y de V-BOUND, los bits de
   margen mínimos del dominio y los depósitos o mints que el handler no hizo porque lo sacaban de él.
 
 **Verificación en la nube (sin forge), commit `04e5f4a9`, solc 0.8.28 + EDR (27-oct, versión anterior del harness).**
@@ -149,6 +151,46 @@ V2: las ve V-FEE-1, que aplica el devengamiento con la comisión vieja. V45 solo
 V46 también con 6 decimales, donde el gobierno pone primero el receptor y después la comisión. V50 a V52 necesitan dos
 ejecuciones del gobierno en orden (registro y alta, o alta y baja del segundo adapter), por eso las ven menos
 variantes a 64×200.
+
+**V-BOUND y las sondas del gobierno (28-oct, con forge en el proyecto reducido).** Con la cota de dominio y las sondas
+deterministas del registro y de los adapters, las 4 variantes pasan 256×500 sin falsos positivos con las semillas
+`0x2a` y `0x3`, con 0 reversiones, y las 3 pruebas de `NexusVaultV2BoundTest` pasan. En la última corrida de cada
+variante, el margen mínimo del dominio fue de 60 a 62 bits con 18 decimales y de 21 a 23 con 6 (las acciones virtuales
+`v = 10^12` acercan el producto al borde, como predice la cota), y el handler no tuvo que recortar ningún depósito ni
+mint. La referencia, con `validate` sobre el repo entero (`6047e158`, semilla `0x3b07c967b0bae4be`), da 7 de 7 con 0
+reversiones (745 s de compilación y 879 s de tests). Las 20 mutaciones del gobierno y de la cota (64×200, semilla
+`0x2a`, variante A):
+
+| Mutación | Variantes que la ven | Leyes |
+|---|---|---|
+| V36 una función con demora se ejecuta un segundo antes | las 3 | V-INF-2, V-LEDGER, **V-GOV-1** |
+| V37 `decreaseTimelock` usa su propio timelock y no el de la función objetivo | las 3 | **V-GOV-1** |
+| V38 lo abdicado se sigue ejecutando | las 3 | **V-GOV-1** |
+| V39 `revoke` sin rol | las 3 | **V-GOV-1** |
+| V40 ejecutar no borra el pendiente | las 3 | **V-GOV-1** |
+| V41 `increaseTimelock` acepta bajas | las 3 | **V-GOV-1** |
+| V42 `submit` sin rol | las 3 | **V-GOV-1** |
+| V43 `submit` pisa un pendiente | las 3 | **V-GOV-1** |
+| V44 se ejecuta sin propuesta | las 3 | V-TA-1, V-INF-2, V-LEDGER, **V-GOV-1** |
+| V45 la comisión de performance nueva es retroactiva | las 3 | V-FEE-1, V-INF-2, V-LEDGER |
+| V46 la comisión de gestión nueva es retroactiva | con comisión | V-FEE-1, V-INF-2, V-LEDGER |
+| V47 penalidad sin tope | las 3 | **V-GOV-1** |
+| V48 comisión de performance sin receptor | sin comisión, 6 decimales | **V-GOV-1** |
+| V49 `increaseTimelock` sobre `decreaseTimelock` | sin comisión | **V-GOV-1** |
+| V50 `addAdapter` ignora el registro | las 3 | **V-GOV-1** |
+| V51 `setAdapterRegistry` no revisa los adapters vigentes | las 3 | **V-GOV-1** |
+| V52 `removeAdapter` deja `isAdapter` en true | las 3 | **V-GOV-1** |
+| V53 `increaseAbsoluteCap` acepta bajas | las 3 | **V-GOV-1** |
+| V54 tope relativo por encima de `WAD` | las 3 | **V-GOV-1** |
+| V55 acciones virtuales fuera de escala (las conversiones desbordan) | las 3 | **V-BOUND** |
+
+V55 la ve solo V-BOUND: el fantasma lee `v` del vault, así que las leyes exactas siguen cuadrando; lo que cambia es que
+las conversiones dejan de caber en una palabra. Con las sondas, V50 a V52 las ven las 3 variantes (antes, una o dos).
+Las leyes que aparecen junto a V-GOV-1 en algunas filas son el efecto en cadena de la mutación (por ejemplo, una
+comisión que se cambia un segundo antes devenga donde el handler esperaba un intento fallido): no son falsos positivos.
+Cuántas variantes ven V45, V46, V48 y V49 depende de que el fuzzer arme la secuencia (el gobierno tiene que prender
+una comisión, o proponer un timelock sobre `decreaseTimelock`), así que cambia de una versión del harness a otra sin
+que cambie la ley.
 
 Vault V2 es un ERC-4626 que delega el capital en *adapters*. Cada adapter reporta cuánto valen sus inversiones con
 `realAssets()`; el vault devenga interés y realiza pérdidas a partir de esa suma. Es una contabilidad distinta a la de
@@ -339,21 +381,23 @@ cota: el handler lleva una copia fantasma (timelock por selector, abdicaciones y
   handler lo intenta un segundo antes de la fecha (tiene que fallar) y justo en la fecha.
 - `revoke(d)` pasa si y solo si lo llama el curador o un centinela y `d` está pendiente; deja `executableAt[d] = 0`, y
   `d` ya no se ejecuta aunque llegue su fecha. Tras una abdicación, una propuesta nueva de esa función se acepta, pero
-  no se ejecuta.
+  no se ejecuta. Tras poner el registro, el alta del segundo adapter (que no está en él) falla; tras darlo de alta,
+  poner el registro falla, y darlo de baja y de alta otra vez pasa con su efecto. Estas sondas del handler no esperan
+  a que el fuzzer encadene las propuestas.
 - Las comisiones y sus receptores llaman a `accrueInterest()` antes de cambiar, así que lo devengado hasta ese momento
   se cobra con la comisión vieja: el cazador aplica V-TA-1, V-FEE-1 y el resto de las leyes de devengamiento con la
   foto previa, y una comisión retroactiva rompe V-FEE-1. Lo demás (penalidad, timelocks, abdicaciones, propuestas y
   revocaciones) no devenga ni mueve `_totalAssets`, `totalSupply` ni los activos reales.
 
 El predicado es exacto porque el harness descarta las demás causas de reversión: los timelocks propuestos son de a lo
-sumo 60 días, así que `t + timelock` no desborda y el reloj nunca llega a los 10 años sin devengar en que las
-comisiones superarían a los activos y el vault revertiría (lo documenta `accrueInterestView`). Timelocks iniciales: 3 días la comisión de performance, 1 día la de gestión, 12 h la
-penalidad, 2 días el receptor de performance, 5 días `abdicate`, 4 días `addAdapter`, 1 día el registro, 1 h
-`increaseTimelock`; el receptor de gestión, `removeAdapter` y `decreaseTimelock` quedan en 0 (el camino sin demora).
-Los topes también: `setCap` los sube con submit y ejecución inmediata, y si el gobierno tiene pendiente el mismo dato,
-lo ejecuta en vez de proponerlo de nuevo. El alta y la baja son de un segundo adapter siempre vacío, y el registro solo
-contiene al principal: así cada caso del predicado (alta con y sin registro, registro con y sin el segundo adapter
-dado de alta) se puede dar, y la contabilidad no cambia. ∎
+sumo 60 días, así que `t + timelock` no desborda y el reloj nunca llega a los 10 años sin devengar en que las comisiones
+superarían a los activos y el vault revertiría (lo documenta `accrueInterestView`). Timelocks iniciales: 3 días la
+comisión de performance, 1 día la de gestión, 12 h la penalidad, 2 días el receptor de performance, 5 días `abdicate`, 4
+días `addAdapter`, 1 día el registro, 1 h `increaseTimelock`; el receptor de gestión, `removeAdapter` y
+`decreaseTimelock` quedan en 0 (el camino sin demora). Los topes también: `setCap` los sube con submit y ejecución
+inmediata, y si el gobierno tiene pendiente el mismo dato, lo ejecuta en vez de proponerlo de nuevo. El alta y la baja
+son de un segundo adapter siempre vacío, y el registro solo contiene al principal: así cada caso del predicado (alta con
+y sin registro, registro con y sin el segundo adapter dado de alta) se puede dar, y la contabilidad no cambia. ∎
 
 **V-BOUND: el dominio de la aritmética de una palabra.** VaultV2 multiplica con `MathLib.mulDivDown(x, y, d) =
 x·y/d` (una palabra, con el chequeo de 0.8) y guarda `_totalAssets` en `uint128`. Recorriendo cada producto del vault:
@@ -469,13 +513,14 @@ empujada al vault, liquidez retirada) son ataques económicos conocidos; estas l
    liquidez y forceDeallocate sobre Blue (mutaciones V34–V35 del camino de liquidez del vault, y V14–V16 de la penalidad,
    que ahora también recorren Blue).
 3. **Tres sub-variantes** cada una, como en MetaMorpho: sin comisión, con comisión, y activo de 6 decimales.
-4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de
-   cada conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida
-   repartida en saldos, dilución al entrar, la penalidad de forceDeallocate (redondeo, destino y a quién se cobra) y
-   los topes (absoluto, relativo contra el total actual, borde estricto, bookkeeping de la allocation y
-   `firstTotalAssets`) y el gobierno con timelock (fecha, timelock de la función objetivo, abdicación, permisos de
-   propuesta y revocación, pendientes que se pisan o no se borran, ejecución sin propuesta, comisiones retroactivas y
-   las condiciones de comisiones, penalidad, timelocks, topes, registro y alta y baja de adapters). Resultados arriba. Cada una tiene que disparar una ley `V-...`.
+4. **Mutaciones de referencia** en [tools/forge_v2/mutaciones.json](../tools/forge_v2/mutaciones.json): redondeo de cada
+   conversión, tope de tasa ignorado, bases y redondeos de las comisiones, pérdida diferida y exagerada, pérdida
+   repartida en saldos, dilución al entrar, la penalidad de forceDeallocate (redondeo, destino y a quién se cobra) y los
+   topes (absoluto, relativo contra el total actual, borde estricto, bookkeeping de la allocation y `firstTotalAssets`)
+   y el gobierno con timelock (fecha, timelock de la función objetivo, abdicación, permisos de propuesta y revocación,
+   pendientes que se pisan o no se borran, ejecución sin propuesta, comisiones retroactivas y las condiciones de
+   comisiones, penalidad, timelocks, topes, registro y alta y baja de adapters). Resultados arriba. Cada una tiene que
+   disparar una ley `V-...`.
 
 Build: `src/` de V2 es solc 0.8.28, `via_ir`, `cancun`. forge 1.8.6 compila el repo entero, `MidnightAdapter` (osaka)
 incluido, en ~11 min en la PC. Para iterar alcanza con VaultV2, la factory, el `ERC20Mock`, forge-std y el harness:

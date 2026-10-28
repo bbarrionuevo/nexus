@@ -109,7 +109,7 @@ Lo que conviene saber de forge en un handler:
 | C. Método de invariantes | Funciona: P0–P6 en Python, con autoverificación |
 | D. Validación con Foundry | Funciona en la PC: `validate` clona fijado a un commit, FFI apagado, informe privado |
 | D'. Harness de MetaMorpho | Funciona: suite a16z, handler original y `NexusVulnerabilityHunter` con una suite multi-mercado con gobierno |
-| D''. Harness de Vault V2 | Funciona (27-oct): variante A con capital asignado de verdad y 11 leyes `V-...` (con `forceDeallocate`, los topes y el gobierno con timelock), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 19 del gobierno con el del #83 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
+| D''. Harness de Vault V2 | Funciona (28-oct): variante A con capital asignado de verdad y 12 leyes `V-...` (con `forceDeallocate`, los topes, el gobierno con timelock y la cota de dominio V-BOUND), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 20 del gobierno y de la cota (V36–V55) con el del #84 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15) y de MetaMorpho (3) resumidas en `NEXUS_HOME`, privadas |
@@ -164,12 +164,14 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #81 | Vault V2: `forceDeallocate` (V-FD-1) y los topes con su borde exacto (V-CAP-1), con `NexusV2Macro` para las secuencias de una transacción (forge corre con `isolate = true`); 21 mutaciones de referencia |
 | #82 | Vault V2, variante B: el `MorphoMarketV1AdapterV2` real sobre Morpho Blue (V-ADP), el Blue Public Allocator (V-PA), el adapter de liquidez y forceDeallocate sobre Blue; `tools/forge_v2` con Blue y mutaciones sobre cualquier archivo; 35 mutaciones de referencia. Va sobre el #81 |
 | #83 | Vault V2: el gobierno con timelock (V-GOV-1: comisiones y receptores, penalidad, timelocks, abdicaciones, topes, adapters y registro, con el borde exacto de la fecha); 19 mutaciones nuevas (V36–V54); y la etapa E de MetaMorpho (privada) |
+| #84 | Vault V2: la cota de dominio V-BOUND como ley (el estado no sale del dominio de la aritmética de una palabra del vault; el handler no hace el depósito que lo sacaría) y sondas deterministas del registro y de los adapters para V-GOV-1; mutación V55. Va sobre el #83 |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #83 (el #81 y el #82 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76
+1. **Dueño:** fusionar el #83 y después el #84 (va sobre el #83; el #81 y el #82 ya están en `main`), y hacer
+   `git pull` en `main`. Lo que pedía el #76
    ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
@@ -228,15 +230,26 @@ En orden de prioridad:
      positivos ni reversiones con `0x2a` y `0x3`; las 14 mutaciones de la variante B (V22–V35) detectadas, cada ley por al
      menos una, y las de la penalidad (V14–V16) también las ve la variante B. `tools/forge_v2` ya arma el proyecto
      reducido con Blue, la IRM y el allocator y muta cualquier archivo.
-   - **Gobierno con timelock (V-GOV-1), en el #83** (rama `claude/vault-v2-gobierno`): el handler de
-     la variante A propone, ejecuta y revoca cambios con demora contra una copia fantasma (comisiones y sus receptores,
-     penalidad, timelocks, abdicaciones, subidas de topes, alta y baja de un segundo adapter y el registro de
-     adapters), con timelocks iniciales distintos de 0, el intento un segundo antes de la fecha y justo en ella, lo
-     revocado y lo abdicado. Especificación en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 4 de 4 a 256×500 sin falsos positivos con
-     `0x2a` y `0x3` (proyecto reducido) y con `0x8f3701367e64ccea` (`validate`, repo entero), siempre con 0
-     reversiones; las 19 mutaciones nuevas (V36–V54) detectadas en la variante A: 17 por V-GOV-1 y las dos de
-     comisión retroactiva por V-FEE-1. Las de registro y adapters (V50–V52) las ven una o dos variantes a 64×200.
-   - **Falta:** la cota V-BOUND como ley.
+   - **Gobierno con timelock (V-GOV-1), en el #83** (rama `claude/vault-v2-gobierno`): el handler de la variante A
+     propone, ejecuta y revoca cambios con demora contra una copia fantasma (comisiones y sus receptores, penalidad,
+     timelocks, abdicaciones, subidas de topes, alta y baja de un segundo adapter y el registro de adapters), con
+     timelocks iniciales distintos de 0, el intento un segundo antes de la fecha y justo en ella, lo revocado y lo
+     abdicado. Especificación en CAZADOR_VAULT_V2.md §4. Con forge en la PC: 4 de 4 a 256×500 sin falsos positivos con
+     `0x2a` y `0x3` (proyecto reducido) y con `0x8f3701367e64ccea` (`validate`, repo entero), siempre con 0 reversiones;
+     las 19 mutaciones nuevas (V36–V54) detectadas en la variante A: 17 por V-GOV-1 y las dos de comisión retroactiva
+     por V-FEE-1. Las de registro y adapters (V50–V52) las veían una o dos variantes a 64×200; con las sondas del
+     #84, las tres.
+   - **V-BOUND, en el #84** (rama `claude/vault-v2-cota`, sobre la del #83): la cota de dominio como ley. Después de
+     cada acción el estado queda en el dominio donde la acción siguiente no desborda la aritmética de una palabra del
+     vault (`_totalAssets` en 128 bits, los productos de las conversiones y de las comisiones en 256, las comisiones
+     acotadas); el handler no hace el depósito o mint que lo sacaría (el borde es depositar tras una pérdida total) y
+     devenga antes de un salto de reloj que lo sacaría. Demostración en CAZADOR_VAULT_V2.md §4. Además, sondas
+     deterministas de V-GOV-1 para el registro y los adapters. Con forge en la PC: 4 de 4 a 256×500 sin falsos
+     positivos con `0x2a` y `0x3` (proyecto reducido) y 7 de 7 con `0x3b07c967b0bae4be` (`validate`, repo entero,
+     con las 3 pruebas de `NexusVaultV2BoundTest`), siempre con 0 reversiones; margen mínimo del dominio de 60 a 62
+     bits con 18 decimales y de 21 a 23 con 6, sin depósitos recortados; las 20 mutaciones V36–V55 detectadas (V55
+     solo por V-BOUND, y V50–V52 ahora en las tres variantes).
+   - **Con esto están los nueve objetivos del plan de Vault V2.** Lo que no cubre está en CAZADOR_VAULT_V2.md §6.
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
 5. **Etapa E para MetaMorpho: hecha** (27-oct). Las tres auditorías de `audits/` (Cantina 2023-11, OpenZeppelin de la
@@ -245,8 +258,21 @@ En orden de prioridad:
    de cada hallazgo contra `ded84e5` y su relación con las leyes H-.... Aviso clave: la competencia publica solo sus 13
    hallazgos medios; los 113 bajos no están en el repo, así que un candidato de severidad baja puede ser duplicado sin
    que se pueda comprobar.
-6. **Yearn V3 y Euler v2:** `yearn-vaults-v3` no compiló dentro del tope de 2400 s del 26-oct; hay que ver si falta
-   `vyper` 0.3.10 en el venv. Después viene Euler v2.
+6. **Próximo objetivo (Euler v2 o Yearn V3, programas ya verificados por el dueño).** Candidatos, con la etapa E
+   empezada para el primero:
+   - **EulerEarn** (`euler-xyz/euler-earn`): fork de MetaMorpho V1.1 con estrategias ERC-4626, `lostAssets`,
+     `VIRTUAL_AMOUNT` en acciones y activos y seguimiento interno de las acciones de cada estrategia
+     (`config[id].balance`, no el saldo real). Se reutiliza mucho del cazador de MetaMorpho. Ya tiene la suite de
+     invariantes de Enigma Dark y la verificación de Certora, con propiedades aproximadas; lo que agregaría nexus es
+     el modelo exacto de 512 bits (fantasma de `lostAssets`, del seguimiento interno y de las comisiones bit a bit).
+     Las tres auditorías están extraídas y resumidas en `NEXUS_HOME/secresearch/etapa_e/euler-xyz__euler-earn/`
+     (privado). El reglamento de Euler en Cantina cubre Euler Earn (hasta USD 500.000 Critical), evalúa contra la
+     implementación **desplegada** y no paga Low ni informativos: el primer paso es fijar qué commit está desplegado
+     (hay cambios del repo del 23-oct-2026, posteriores a las auditorías, en `SafeERC20Permit2Lib`).
+   - **TokenizedStrategy de Yearn V3** (`yearn/tokenized-strategy`, Solidity): el desbloqueo de ganancias en el
+     tiempo (`profitUnlockingRate` en punto fijo de 10^12, acciones bloqueadas que se queman al desbloquear) es
+     contabilidad sutil con redondeos propios. `yearn-vaults-v3` (Vyper) no compiló dentro del tope de 2400 s del
+     26-oct; hay que ver si falta `vyper` 0.3.10 en el venv.
 7. **Mejoras del cazador:**
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;
