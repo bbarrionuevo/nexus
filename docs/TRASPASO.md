@@ -112,7 +112,7 @@ Lo que conviene saber de forge en un handler:
 | D''. Harness de Vault V2 | Funciona (27-oct): variante A con capital asignado de verdad, 10 leyes `V-...` (con `forceDeallocate` y los topes) verificadas con forge en la PC, 21 mutaciones de referencia detectadas ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
-| E. Duplicados | Parcial: falta revisar las auditorías previas de MetaMorpho |
+| E. Duplicados | Funciona: auditorías de Vault V2 (15) y de MetaMorpho (3) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
 **Hallazgos:** ninguno. No hay candidatos ni expedientes abiertos.
@@ -230,9 +230,12 @@ En orden de prioridad:
    - **Falta:** el gobierno con timelock (V-GOV); la cota V-BOUND como ley; y la etapa E de MetaMorpho (punto 5).
    - La línea base de V2 (los tests del repo) es cara: compila en ~11 min y los tests tardan ~35. El harness solo, con
      `validate`, tarda ~10 min de compilación y ~11 de tests; para iterar, `tools/forge_v2` (~30 s).
-5. **Etapa E para MetaMorpho:** revisar las auditorías que trae el repo de MetaMorpho en `audits/` (la revisión de
-   Cantina de 2023-11, la de OpenZeppelin de la periferia de Morpho Blue de 2023-11 y la competencia de Cantina de
-   2024-01) contra las leyes y los comportamientos conocidos, para que un candidato futuro no resulte un duplicado.
+5. **Etapa E para MetaMorpho: hecha** (27-oct). Las tres auditorías de `audits/` (Cantina 2023-11, OpenZeppelin de la
+   periferia 2023-11 y la competencia de Cantina 2024-01) están extraídas a texto y resumidas en
+   `NEXUS_HOME/secresearch/etapa_e/morpho-org__metamorpho/` (`indice.md` y `duplicados.md`, privados), con el estado
+   de cada hallazgo contra `ded84e5` y su relación con las leyes H-.... Aviso clave: la competencia publica solo sus 13
+   hallazgos medios; los 113 bajos no están en el repo, así que un candidato de severidad baja puede ser duplicado sin
+   que se pueda comprobar.
 6. **Yearn V3 y Euler v2:** `yearn-vaults-v3` no compiló dentro del tope de 2400 s del 26-oct; hay que ver si falta
    `vyper` 0.3.10 en el venv. Después viene Euler v2.
 7. **Mejoras del cazador:**

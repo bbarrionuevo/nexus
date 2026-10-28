@@ -10,13 +10,20 @@ pragma solidity 0.8.28;
 
 import {Test} from "../../lib/forge-std/src/Test.sol";
 import {IVaultV2} from "../../src/interfaces/IVaultV2.sol";
-import {NexusVaultV2Hunter, NexusVaultV2Base, NexusV2Math} from "./NexusVaultV2Hunter.sol";
+import {
+    NexusVaultV2Hunter,
+    NexusVaultV2Base,
+    NexusV2Math,
+    NexusAdapterMock,
+    NexusAdapterRegistry
+} from "./NexusVaultV2Hunter.sol";
 
 contract NexusVaultV2Handler is NexusVaultV2Hunter {
     constructor(uint256 fee, uint256 mgmtFee, uint8 assetDecimals, uint256 penalty)
         NexusVaultV2Base(fee, mgmtFee, assetDecimals, penalty)
     {
         _hunterInit();
+        _govInit();
     }
 
     /* ACCIONES DE USUARIO (el monto se acota aquí; el cazador lo deriva del estado) */
@@ -209,18 +216,353 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         bytes32 id = keccak256(idData);
         uint256 cur = abs ? vault.absoluteCap(id) : vault.relativeCap(id);
         if (abs && nv >= cur) {
-            _curated(abi.encodeCall(IVaultV2.increaseAbsoluteCap, (idData, nv)));
+            _curatedGov(abi.encodeCall(IVaultV2.increaseAbsoluteCap, (idData, nv)));
         } else if (abs) {
             vm.prank(CURATOR);
             vault.decreaseAbsoluteCap(idData, nv);
         } else if (nv >= cur) {
-            _curated(abi.encodeCall(IVaultV2.increaseRelativeCap, (idData, nv)));
+            _curatedGov(abi.encodeCall(IVaultV2.increaseRelativeCap, (idData, nv)));
         } else {
             vm.prank(CURATOR);
             vault.decreaseRelativeCap(idData, nv);
         }
         uint256 got = abs ? vault.absoluteCap(id) : vault.relativeCap(id);
         _ok(got == nv, L_CAP, "el tope no quedo en el valor pedido (pedido, real)", nv, got);
+    }
+
+    /* GOBIERNO CON TIMELOCK (V-GOV-1). El handler lleva una copia fantasma de timelocks, abdicaciones, pendientes, el
+       registro de adapters y si el segundo adapter está dado de alta, y compara cada propuesta, ejecución y revocación
+       con ella. Toca comisiones, sus receptores, la penalidad de forceDeallocate, los timelocks, abdicaciones, subidas
+       de topes, el alta y la baja de un segundo adapter (vacío: no cambia la contabilidad) y el registro de adapters.
+       Los topes tienen timelock 0, porque setCap los sube en el acto. Las comisiones y los receptores devengan antes de
+       cambiar: V-FEE-1, sobre la foto previa, ve que el cambio no es retroactivo. */
+
+    struct Pend {
+        bytes data;
+        bytes4 sel; // función con demora
+        bytes4 tsel; // selector objetivo (increaseTimelock, decreaseTimelock, abdicate)
+        uint256 v; // valor propuesto (un receptor o un registro van como uint160)
+        bytes32 id; // id del tope (increaseAbsoluteCap, increaseRelativeCap)
+    }
+
+    bytes4 internal constant S_PF = IVaultV2.setPerformanceFee.selector;
+    bytes4 internal constant S_MF = IVaultV2.setManagementFee.selector;
+    bytes4 internal constant S_PFR = IVaultV2.setPerformanceFeeRecipient.selector;
+    bytes4 internal constant S_MFR = IVaultV2.setManagementFeeRecipient.selector;
+    bytes4 internal constant S_FDP = IVaultV2.setForceDeallocatePenalty.selector;
+    bytes4 internal constant S_INC = IVaultV2.increaseTimelock.selector;
+    bytes4 internal constant S_DEC = IVaultV2.decreaseTimelock.selector;
+    bytes4 internal constant S_ABD = IVaultV2.abdicate.selector;
+    bytes4 internal constant S_IAC = IVaultV2.increaseAbsoluteCap.selector;
+    bytes4 internal constant S_IRC = IVaultV2.increaseRelativeCap.selector;
+    bytes4 internal constant S_ADD = IVaultV2.addAdapter.selector;
+    bytes4 internal constant S_RM = IVaultV2.removeAdapter.selector;
+    bytes4 internal constant S_REG = IVaultV2.setAdapterRegistry.selector;
+    uint256 internal constant MAX_GOV_TIMELOCK = 60 days;
+
+    Pend[] internal gPending;
+    mapping(bytes32 => uint256) internal gExec; // keccak256(data) → executableAt según el modelo
+    mapping(bytes4 => uint256) internal gTimelock;
+    mapping(bytes4 => bool) internal gAbdicated;
+    NexusAdapterMock internal adapter2; // segundo adapter, siempre vacío
+    NexusAdapterRegistry internal registry; // solo contiene al adapter principal
+    bool internal gAdapter2; // adapter2 dado de alta, según el modelo
+    address internal gRegistry; // registro vigente, según el modelo
+
+    /// @dev Timelocks iniciales distintos de 0 y distintos entre sí, para que cada propuesta tenga una fecha futura y el
+    /// borde exacto se pruebe desde el principio (con todo en 0 casi no había intentos un segundo antes). Quedan en 0
+    /// el receptor de la comisión de gestión y removeAdapter (el camino sin demora), los topes (setCap) y
+    /// decreaseTimelock, cuyas propuestas usan el timelock de la función objetivo. increaseTimelock va último: después
+    /// ya no se ejecuta en el acto.
+    function _govInit() internal {
+        adapter2 = new NexusAdapterMock(address(vault), address(token));
+        registry = new NexusAdapterRegistry(address(adapter));
+        _govSetTimelock(S_PF, 3 days);
+        _govSetTimelock(S_MF, 1 days);
+        _govSetTimelock(S_FDP, 12 hours);
+        _govSetTimelock(S_PFR, 2 days);
+        _govSetTimelock(S_ABD, 5 days);
+        _govSetTimelock(S_ADD, 4 days);
+        _govSetTimelock(S_REG, 1 days);
+        _govSetTimelock(S_INC, 1 hours);
+    }
+
+    /// @dev Como _curated, pero si el gobierno ya tiene ese mismo dato pendiente (un tope, con timelock 0: ya
+    /// ejecutable), lo ejecuta y lo saca de los pendientes en vez de proponerlo de nuevo, que revertiría con
+    /// DataAlreadyPending.
+    function _curatedGov(bytes memory data) internal {
+        bytes32 h = keccak256(data);
+        if (gExec[h] == 0) return _curated(data);
+        (bool ok,) = address(vault).call(data);
+        require(ok, "nexus: tope pendiente");
+        for (uint256 i; i < gPending.length; ++i) {
+            if (keccak256(gPending[i].data) == h) return _govDrop(i, gPending[i]);
+        }
+    }
+
+    function _govSetTimelock(bytes4 sel, uint256 tl) internal {
+        _curated(abi.encodeCall(IVaultV2.increaseTimelock, (sel, tl)));
+        gTimelock[sel] = tl;
+    }
+
+    /// @dev El curador propone un cambio con demora; una de cada siete veces lo intenta un actor y tiene que fallar.
+    /// Proponer un dato ya pendiente revierte. Si pasa, executableAt = ahora + timelock de la función (para
+    /// decreaseTimelock, el timelock de la función objetivo).
+    function govSubmit(uint256 which, uint256 value) external {
+        Pend memory p = _govPick(which, value);
+        bool stranger = value % 7 == 0;
+        bytes32 h = keccak256(p.data);
+        uint256 tl = p.sel == S_DEC ? gTimelock[p.tsel] : gTimelock[p.sel];
+        Snap memory pre = _snap();
+        vm.prank(stranger ? actors[0] : CURATOR);
+        (bool ok,) = address(vault).call(abi.encodeCall(IVaultV2.submit, (p.data)));
+        _ok(ok == (!stranger && gExec[h] == 0), L_GOV, ok ? "submit paso sin ser el curador o con el dato pendiente (pendiente, 0)" : "el curador no pudo proponer un dato nuevo (pendiente, 0)", gExec[h], 0);
+        _lawsNoAccrual(OP_STILL, address(0), address(0), pre, _snap());
+        if (!ok) {
+            ++hGovRejected;
+            return;
+        }
+        uint256 at = hClock.time() + tl;
+        _ok(vault.executableAt(p.data) == at, L_GOV, "executableAt no es ahora + timelock (modelo, real)", at, vault.executableAt(p.data));
+        gExec[h] = at;
+        gPending.push(p);
+        ++hGovSubmits;
+    }
+
+    /// @dev Ejecuta un pendiente (cualquiera puede). Si su fecha todavía no llegó, tres de cada cuatro veces primero lo
+    /// intenta un segundo antes (tiene que fallar) y después justo en la fecha; la cuarta, ahora (y falla). Pasa si y
+    /// solo si llegó la fecha, la función no fue abdicada y se cumplen sus condiciones; si pasa, el efecto es el valor
+    /// propuesto y el pendiente se borra.
+    function govExecute(uint256 idx, uint256 edge) external {
+        if (gPending.length == 0) return;
+        uint256 i = idx % gPending.length;
+        Pend memory p = gPending[i];
+        uint256 at = gExec[keccak256(p.data)];
+        if (edge % 4 != 3 && at > hClock.time() + 1) {
+            vm.warp(at - 1);
+            Snap memory pre0 = _snap();
+            (bool early,) = address(vault).call(p.data);
+            _ok(!early, L_GOV, "una funcion con demora se ejecuto antes de su fecha (fecha, ahora)", at, hClock.time());
+            _lawsNoAccrual(OP_STILL, address(0), address(0), pre0, _snap());
+            ++hGovEarly;
+            vm.warp(at);
+        }
+        _govExec(i, p, at);
+    }
+
+    /// @dev Revoca un pendiente: el curador o un centinela (ALLOCATOR) pueden; un actor sin rol (la mitad de las veces)
+    /// tiene que fallar. Lo revocado ya no se ejecuta, ni aunque haya llegado su fecha.
+    function govRevoke(uint256 idx, uint256 who) external {
+        if (gPending.length == 0) return;
+        uint256 i = idx % gPending.length;
+        Pend memory p = gPending[i];
+        uint256 at = gExec[keccak256(p.data)];
+        uint256 w = who % 4;
+        Snap memory pre = _snap();
+        vm.prank(w == 0 ? CURATOR : w == 1 ? ALLOCATOR : actors[1]);
+        (bool ok,) = address(vault).call(abi.encodeCall(IVaultV2.revoke, (p.data)));
+        _ok(ok == (w < 2), L_GOV, ok ? "un actor sin rol revoco un pendiente (0, revoco)" : "el curador o un centinela no pudo revocar (0, revirtio)", 0, 1);
+        _lawsNoAccrual(OP_STILL, address(0), address(0), pre, _snap());
+        if (!ok) {
+            ++hGovRejected;
+            return;
+        }
+        _ok(vault.executableAt(p.data) == 0, L_GOV, "revoke no borro el pendiente (0, executableAt)", 0, vault.executableAt(p.data));
+        _govDrop(i, p);
+        ++hGovRevokes;
+        if (at > hClock.time()) vm.warp(at);
+        Snap memory pre1 = _snap();
+        (bool late,) = address(vault).call(p.data);
+        _ok(!late, L_GOV, "se ejecuto un dato revocado (0, ejecuto)", 0, 1);
+        _lawsNoAccrual(OP_STILL, address(0), address(0), pre1, _snap());
+    }
+
+    function _govExec(uint256 i, Pend memory p, uint256 at) internal {
+        bool expect = hClock.time() >= at && !gAbdicated[p.sel] && _govPre(p);
+        Snap memory pre = _snap();
+        vm.prank(actors[i % actors.length]);
+        (bool ok,) = address(vault).call(p.data);
+        Snap memory post = _snap();
+        _ok(ok == expect, L_GOV, ok ? "una funcion con demora paso sin fecha, abdicada o sin sus condiciones (fecha, ahora)" : "una funcion con demora vencida y valida revirtio (fecha, ahora)", at, hClock.time());
+        if (!ok) {
+            _lawsNoAccrual(OP_STILL, address(0), address(0), pre, post);
+            ++hGovRejected;
+            return;
+        }
+        // comisiones y receptores devengan antes de cambiar (con lo viejo); lo demás no devenga
+        if (p.sel == S_PF || p.sel == S_MF || p.sel == S_PFR || p.sel == S_MFR) {
+            _lawsAccruing(OP_ACCRUE, address(0), pre, post);
+        } else {
+            _lawsNoAccrual(OP_STILL, address(0), address(0), pre, post);
+        }
+        _govEffect(p);
+        _ok(vault.executableAt(p.data) == 0, L_GOV, "el pendiente no se borro al ejecutarse (0, executableAt)", 0, vault.executableAt(p.data));
+        _govDrop(i, p);
+        ++hGovExecs;
+    }
+
+    /// @dev Condiciones propias de cada función, con el estado actual: comisión ≤ máximo y con receptor (o 0), receptor
+    /// no nulo salvo con comisión 0, penalidad ≤ 2 %, increaseTimelock sube y decreaseTimelock baja (y ninguno sobre
+    /// decreaseTimelock), un tope absoluto sube y cabe en 128 bits, uno relativo sube sin pasar de WAD, addAdapter
+    /// solo sin registro (adapter2 no está en él), un registro no nulo tiene que contener a todos los adapters (al
+    /// principal sí; a adapter2 no); removeAdapter y abdicate siempre.
+    function _govPre(Pend memory p) internal view returns (bool) {
+        if (p.sel == S_PF) return p.v <= MAX_PERFORMANCE_FEE && (vault.performanceFeeRecipient() != address(0) || p.v == 0);
+        if (p.sel == S_MF) return p.v <= MAX_MANAGEMENT_FEE && (vault.managementFeeRecipient() != address(0) || p.v == 0);
+        if (p.sel == S_PFR) return p.v != 0 || vault.performanceFee() == 0;
+        if (p.sel == S_MFR) return p.v != 0 || vault.managementFee() == 0;
+        if (p.sel == S_FDP) return p.v <= 0.02e18;
+        if (p.sel == S_INC) return p.tsel != S_DEC && p.v >= gTimelock[p.tsel];
+        if (p.sel == S_DEC) return p.tsel != S_DEC && p.v <= gTimelock[p.tsel];
+        if (p.sel == S_IAC) return p.v >= vault.absoluteCap(p.id) && p.v <= type(uint128).max;
+        if (p.sel == S_IRC) return p.v <= WAD && p.v >= vault.relativeCap(p.id);
+        if (p.sel == S_ADD) return gRegistry == address(0);
+        if (p.sel == S_REG) return p.v == 0 || !gAdapter2;
+        return true;
+    }
+
+    function _govEffect(Pend memory p) internal {
+        uint256 got;
+        if (p.sel == S_PF) {
+            got = vault.performanceFee();
+        } else if (p.sel == S_MF) {
+            got = vault.managementFee();
+        } else if (p.sel == S_PFR) {
+            got = uint160(vault.performanceFeeRecipient());
+        } else if (p.sel == S_MFR) {
+            got = uint160(vault.managementFeeRecipient());
+        } else if (p.sel == S_FDP) {
+            got = vault.forceDeallocatePenalty(address(adapter));
+        } else if (p.sel == S_INC || p.sel == S_DEC) {
+            got = vault.timelock(p.tsel);
+            gTimelock[p.tsel] = p.v;
+        } else if (p.sel == S_IAC) {
+            got = vault.absoluteCap(p.id);
+        } else if (p.sel == S_IRC) {
+            got = vault.relativeCap(p.id);
+        } else if (p.sel == S_REG) {
+            gRegistry = address(uint160(p.v));
+            got = uint160(vault.adapterRegistry());
+        } else if (p.sel == S_ADD || p.sel == S_RM) {
+            gAdapter2 = p.sel == S_ADD;
+            bool real = vault.isAdapter(address(adapter2));
+            _ok(real == gAdapter2, L_GOV, "isAdapter de adapter2 no quedo como lo pidio el gobierno (esperado, real)", gAdapter2 ? 1 : 0, real ? 1 : 0);
+            uint256 n = gAdapter2 ? 2 : 1;
+            _ok(vault.adaptersLength() == n, L_GOV, "la lista de adapters no tiene el largo esperado (esperado, real)", n, vault.adaptersLength());
+            return;
+        } else {
+            gAbdicated[p.tsel] = true;
+            _ok(vault.abdicated(p.tsel), L_GOV, "abdicate no marco la funcion como abdicada (1, 0)", 1, 0);
+            _govProbeAbdicated(p.tsel);
+            return;
+        }
+        _ok(got == p.v, L_GOV, "el efecto no es el valor propuesto (propuesto, real)", p.v, got);
+    }
+
+    /// @dev Tras abdicar: una propuesta nueva de esa función, con el valor vigente (que cumple sus condiciones), se
+    /// acepta, pero llegada su fecha no se ejecuta. Si se ejecutara (la falla), no se revoca: revocaría un dato que ya
+    /// no está pendiente, la llamada revertiría y forge descartaría la falla.
+    function _govProbeAbdicated(bytes4 tsel) internal {
+        bytes memory data = tsel == S_FDP
+            ? abi.encodeCall(IVaultV2.setForceDeallocatePenalty, (address(adapter), vault.forceDeallocatePenalty(address(adapter))))
+            : abi.encodeCall(IVaultV2.setManagementFee, (vault.managementFee()));
+        if (gExec[keccak256(data)] != 0) return; // ya está pendiente
+        vm.prank(CURATOR);
+        vault.submit(data);
+        uint256 at = vault.executableAt(data);
+        if (at > hClock.time()) vm.warp(at);
+        Snap memory pre = _snap();
+        (bool ok,) = address(vault).call(data);
+        _ok(!ok, L_GOV, "se ejecuto una funcion abdicada (0, ejecuto)", 0, 1);
+        _lawsNoAccrual(OP_STILL, address(0), address(0), pre, _snap());
+        if (ok) return;
+        vm.prank(CURATOR);
+        vault.revoke(data);
+    }
+
+    function _govDrop(uint256 i, Pend memory p) internal {
+        gExec[keccak256(p.data)] = 0;
+        gPending[i] = gPending[gPending.length - 1];
+        gPending.pop();
+    }
+
+    /// @dev which % 12: comisión de performance, de gestión, penalidad (a veces por encima del máximo), subir o bajar el
+    /// timelock de una de esas tres (a veces sobre decreaseTimelock, que tiene que fallar), abdicar la penalidad o la
+    /// comisión de gestión (la mitad de las veces; si no, otra penalidad), el receptor de una comisión (el del harness
+    /// o 0: con otro, el fantasma no sabría a quién mirar), subir un tope absoluto o relativo (alrededor del vigente: la
+    /// mitad baja y tiene que fallar; a veces más de 128 bits o más de WAD), dar de alta o de baja a adapter2, o poner o
+    /// sacar el registro.
+    function _govPick(uint256 which, uint256 value) internal view returns (Pend memory p) {
+        uint256 w = which % 12;
+        if (w >= 8) return _govPickVault(w, value);
+        if (w == 5 && value % 2 != 0) w = 2;
+        bytes4 t = value % 3 == 0 ? S_PF : (value % 3 == 1 ? S_MF : S_FDP);
+        if (w == 0) {
+            p.sel = S_PF;
+            p.v = _clamp(value, 0, MAX_PERFORMANCE_FEE + 0.1e18);
+            p.data = abi.encodeCall(IVaultV2.setPerformanceFee, (p.v));
+        } else if (w == 1) {
+            p.sel = S_MF;
+            p.v = _clamp(value, 0, MAX_MANAGEMENT_FEE * 2);
+            p.data = abi.encodeCall(IVaultV2.setManagementFee, (p.v));
+        } else if (w == 2) {
+            p.sel = S_FDP;
+            p.v = _clamp(value, 0, 0.03e18);
+            p.data = abi.encodeCall(IVaultV2.setForceDeallocatePenalty, (address(adapter), p.v));
+        } else if (w == 3) {
+            // alrededor del timelock vigente: la mitad sube y la otra mitad (que tiene que fallar) baja. A lo sumo
+            // 60 días: el gobierno avanza el reloj hasta la fecha, y sin devengar 10 años las comisiones superan a los
+            // activos y el vault revierte (lo documenta accrueInterestView): sería una falsa alarma.
+            p.sel = S_INC;
+            p.tsel = value % 11 == 0 ? S_DEC : t;
+            p.v = _clamp(value, 0, _min(2 * gTimelock[p.tsel] + 1 hours, MAX_GOV_TIMELOCK));
+            p.data = abi.encodeCall(IVaultV2.increaseTimelock, (p.tsel, p.v));
+        } else if (w == 4) {
+            p.sel = S_DEC;
+            p.tsel = value % 11 == 0 ? S_DEC : t;
+            // sobre sí misma, 0: que falle solo por eso
+            p.v = p.tsel == S_DEC ? 0 : _clamp(value, 0, _min(2 * gTimelock[p.tsel] + 1 hours, MAX_GOV_TIMELOCK));
+            p.data = abi.encodeCall(IVaultV2.decreaseTimelock, (p.tsel, p.v));
+        } else if (w == 5) {
+            p.sel = S_ABD;
+            p.tsel = value % 2 == 0 ? S_FDP : S_MF;
+            p.data = abi.encodeCall(IVaultV2.abdicate, (p.tsel));
+        } else if (w == 6) {
+            p.sel = S_PFR;
+            p.v = value % 2 == 0 ? uint160(PERF) : 0;
+            p.data = abi.encodeCall(IVaultV2.setPerformanceFeeRecipient, (address(uint160(p.v))));
+        } else {
+            p.sel = S_MFR;
+            p.v = value % 2 == 0 ? uint160(MGMT) : 0;
+            p.data = abi.encodeCall(IVaultV2.setManagementFeeRecipient, (address(uint160(p.v))));
+        }
+    }
+
+    /// @dev Los casos 8–11 de _govPick: topes, alta o baja de adapter2 y registro.
+    function _govPickVault(uint256 w, uint256 value) internal view returns (Pend memory p) {
+        bytes memory idData = value % 2 == 0 ? idData0 : idData1;
+        if (w == 8) {
+            p.sel = S_IAC;
+            p.id = keccak256(idData);
+            uint256 cur = vault.absoluteCap(p.id);
+            p.v = value % 13 == 0 ? uint256(type(uint128).max) + 1 : _clamp(value / 2, 0, 2 * cur + 1);
+            p.data = abi.encodeCall(IVaultV2.increaseAbsoluteCap, (idData, p.v));
+        } else if (w == 9) {
+            p.sel = S_IRC;
+            p.id = keccak256(idData);
+            p.v = _clamp(value / 2, 0, WAD + WAD / 10);
+            p.data = abi.encodeCall(IVaultV2.increaseRelativeCap, (idData, p.v));
+        } else if (w == 10) {
+            bool add = value % 3 != 0;
+            p.sel = add ? S_ADD : S_RM;
+            p.data = add
+                ? abi.encodeCall(IVaultV2.addAdapter, (address(adapter2)))
+                : abi.encodeCall(IVaultV2.removeAdapter, (address(adapter2)));
+        } else {
+            p.sel = S_REG;
+            p.v = value % 2 == 0 ? uint160(address(registry)) : 0;
+            p.data = abi.encodeCall(IVaultV2.setAdapterRegistry, (address(uint160(p.v))));
+        }
     }
 
     /* AYUDAS */
@@ -233,7 +575,7 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         uint256 m = mode % 5;
         uint256 target;
         if (m == 0) target = cap;
-        else if (m == 1) target = cap + 1; // cap ≤ 2·ABS_CAP: no desborda
+        else if (m == 1) target = cap + 1; // cap < 2^128 (toUint128 en el vault): no desborda
         else if (m == 2) target = cap == 0 ? 0 : cap - 1;
         else if (m == 3) target = _effCap(s.TA); // el tope si contara el _totalAssets actual (con un depósito de esta transacción)
         else target = s.held + seed % (idle + 1);
@@ -345,6 +687,16 @@ contract NexusVaultV2InvariantTest is Test {
         _logHunter();
         _logCoverage();
         _logForceAndCaps();
+        _logGov();
+    }
+
+    function _logGov() internal {
+        (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes) = handler.coverageGov();
+        emit log_named_uint("gobierno: propuestas con demora (V-GOV-1)", submits);
+        emit log_named_uint("gobierno: ejecuciones que pasaron", execs);
+        emit log_named_uint("gobierno: intentos un segundo antes de la fecha", early);
+        emit log_named_uint("gobierno: intentos rechazados como predijo el modelo", rejected);
+        emit log_named_uint("gobierno: revocaciones", revokes);
     }
 
     function _logHunter() internal {

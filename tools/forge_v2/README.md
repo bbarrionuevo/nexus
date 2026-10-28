@@ -28,8 +28,9 @@ afuera) y muestra el log de `afterInvariant` (cobertura y métricas del cazador)
 ejemplo sobre el adapter real) a una copia limpia de ese archivo del clon, corre todas las variantes sin achicar la
 secuencia y lista, por variante, las leyes `V-...` que fallaron. El cazador informa todas las
 leyes que fallan, no solo la primera, con `[leyes: ...]` al final del motivo. Por defecto corre 64×200 con la semilla
-`0x2a`; `NEXUS_MUT_RUNS="256 500 0x3"` cambia la intensidad. Una mutación que ninguna variante detecta es un punto ciego
-del harness.
+`0x2a`; `NEXUS_MUT_RUNS="256 500 0x3"` cambia la intensidad, y `NEXUS_MUT_MATCH="^NexusVaultV2Invariant"` corre solo
+la variante A (la única con gobierno: para las mutaciones V36–V54 alcanza y ahorra la variante B). Una mutación que
+ninguna variante detecta es un punto ciego del harness.
 
 El mismo `mutaciones.json` sirve en la nube con `MUTATION='{"file":"src/VaultV2.sol","old":...,"new":...}' node
 tools/edr/build_v2.js ...` (ver `tools/edr/README.md`).

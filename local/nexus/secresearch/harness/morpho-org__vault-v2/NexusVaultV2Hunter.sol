@@ -22,6 +22,7 @@ import {VaultV2} from "../../src/VaultV2.sol";
 import {VaultV2Factory} from "../../src/VaultV2Factory.sol";
 import {IVaultV2} from "../../src/interfaces/IVaultV2.sol";
 import {IAdapter} from "../../src/interfaces/IAdapter.sol";
+import {IAdapterRegistry} from "../../src/interfaces/IAdapterRegistry.sol";
 import {IERC20} from "../../src/interfaces/IERC20.sol";
 import {ERC20Mock} from "../mocks/ERC20Mock.sol";
 
@@ -96,6 +97,16 @@ library NexusV2Math {
 contract NexusV2Clock {
     function time() external view returns (uint256) {
         return block.timestamp;
+    }
+}
+
+/// @notice Registro de adapters del harness (V-GOV-1): fijo, con el único adapter que recibe al crearse. El handler lo
+/// pone y lo saca con setAdapterRegistry y prueba addAdapter con un segundo adapter que no está en él.
+contract NexusAdapterRegistry is IAdapterRegistry {
+    mapping(address => bool) public override isInRegistry;
+
+    constructor(address member) {
+        isInRegistry[member] = true;
     }
 }
 
@@ -312,7 +323,8 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint8 internal constant L_SOLV = 7; // V-SOLV-1
     uint8 internal constant L_FD = 8; // V-FD-1
     uint8 internal constant L_CAP = 9; // V-CAP-1
-    uint8 internal constant N_LAWS = 10;
+    uint8 internal constant L_GOV = 10; // V-GOV-1: gobierno con timelock (fecha, ejecutabilidad, efecto, roles)
+    uint8 internal constant N_LAWS = 11;
 
     uint256 internal constant NONE = 6; // _idx de una cuenta que no se sigue
 
@@ -354,6 +366,11 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint256 internal hCapEdges; // allocate aceptados justo en el tope efectivo
     uint256 internal hCapChanges; // cambios de topes
     uint256 internal hSameTx; // depósito y allocate en la misma transacción
+    uint256 internal hGovSubmits; // propuestas con demora aceptadas
+    uint256 internal hGovExecs; // ejecuciones que pasaron
+    uint256 internal hGovEarly; // intentos un segundo antes de la fecha (tienen que fallar)
+    uint256 internal hGovRejected; // intentos rechazados como predijo el modelo (propuestas, ejecuciones y revocaciones)
+    uint256 internal hGovRevokes; // revocaciones
 
     function _hunterInit() internal {
         hClock = new NexusV2Clock();
@@ -748,6 +765,7 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         if (law == L_LEDGER) return "V-LEDGER";
         if (law == L_FD) return "V-FD-1";
         if (law == L_CAP) return "V-CAP-1";
+        if (law == L_GOV) return "V-GOV-1";
         return "V-SOLV-1";
     }
 
@@ -818,5 +836,14 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         )
     {
         return (hForces, hForceExits, hCapRejects, hCapEdges, hCapChanges, hSameTx);
+    }
+
+    /// @notice Cobertura del gobierno con timelock: propuestas, ejecuciones, intentos tempranos, rechazos y revocaciones.
+    function coverageGov()
+        external
+        view
+        returns (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes)
+    {
+        return (hGovSubmits, hGovExecs, hGovEarly, hGovRejected, hGovRevokes);
     }
 }
