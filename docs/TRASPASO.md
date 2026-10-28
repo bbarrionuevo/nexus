@@ -175,8 +175,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #83, el #84 y el #85, en ese orden (cada uno va sobre el anterior; el #81 y el #82 ya
-   están en `main`), y hacer `git pull` en `main`. Lo que pedía el #76
+1. **Dueño:** fusionar el #85 (el #83 y el #84 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76
    ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
