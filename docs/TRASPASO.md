@@ -305,9 +305,15 @@ En orden de prioridad:
    - Por qué antes que lo que falta de EulerEarn: el núcleo de EulerEarn es un fork de MetaMorpho ya verificado
      formalmente (Certora), y su Public Allocator es casi literal el de Morpho; la contabilidad de la 3.1.0 es nueva.
    - **Falta en Yearn:** el Vault V3 3.1.0 (Vyper, también en alcance) con estrategias en vivo: su `process_report`
-     lee `convertToAssets` de la estrategia, que ahora incluye lo simulado. `yearn-vaults-v3` no compiló dentro del
-     tope de 2400 s del 26-oct, y `vyper` 0.3.10 no está en el venv (28-oct). Y la 3.0.4 (su contabilidad es la del
-     modo por reporte, sin pestillo ni piso).
+     lee `convertToAssets` de la estrategia, que ahora incluye lo simulado, y `_update_debt` no mira las acciones que
+     recibe al depositar. Frente a la 3.0.4 cambió poco en contabilidad (hooks con callback después del depósito y
+     del retiro, pausa, cola de retiro). Y la 3.0.4 de TokenizedStrategy (su contabilidad es la del modo por reporte,
+     sin pestillo ni piso).
+   - **Herramienta nueva:** `vyper` 0.3.10 quedó instalado en el venv (28-oct, `pip install vyper==0.3.10`; anda en
+     Python 3.12 con avisos de deprecación y compila `VaultV3.vy` en ~6 s). Los tests de foundry de
+     `yearn-vaults-v3` despliegan con `VyperDeployer`, que llama a `vyper` por FFI: con FFI apagado (R-2, R-6) no
+     sirven. El harness del vault tiene que compilar Vyper con forge (nativo, con el `vyper` del venv en el PATH) y
+     desplegar con `deployCode`. Probablemente eso explica la línea base del 26-oct que no compiló.
 8. **Mejoras del cazador:**
    - una variante de 18 decimales con depósito inicial, como recomienda MetaMorpho, donde un depósito con 0 acciones
      sí sería una señal;
