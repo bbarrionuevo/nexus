@@ -162,15 +162,16 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #79 | Primera sesión en la PC (el #78 se fusionó por error en la rama vieja `claude/nice-sagan-inp0u8`; el #79 lo lleva a `main`) y el harness de Vault V2 variante A: el ciclo ya no se cae con la línea base de Euler, `devcheck` usa el `ruff` del venv, el alcance quedó contrastado con la página de direcciones de Morpho, y el cazador de Vault V2 (leyes V-..., 3 variantes) pasa verificado en la nube |
 | #80 | Vault V2 con forge en la PC: capital asignado de verdad (`NexusAdapterMock`, topes relativos, transferencias reales), las leyes V-INF-2, V-LOSS-1 y V-LOSS-2 con sus demostraciones, `tools/forge_v2` (proyecto reducido y batería de mutación con forge), y `validate`/`expediente` al día con forge 1.8.6 y las leyes `V-...` |
 | #81 | Vault V2: `forceDeallocate` (V-FD-1) y los topes con su borde exacto (V-CAP-1), con `NexusV2Macro` para las secuencias de una transacción (forge corre con `isolate = true`); 21 mutaciones de referencia |
+| #82 | Vault V2, variante B: el `MorphoMarketV1AdapterV2` real sobre Morpho Blue (V-ADP), el Blue Public Allocator (V-PA), el adapter de liquidez y forceDeallocate sobre Blue; `tools/forge_v2` con Blue y mutaciones sobre cualquier archivo; 35 mutaciones de referencia. Va sobre el #81 |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #81 y hacer `git pull` en `main` (el #80 ya está fusionado). Lo que pedía el #76 ya está
-   probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a 18–19 por
-   corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el `TypeError` del
-   27-oct se corrigió en el #79).
+1. **Dueño:** fusionar el #81 y después el #82 (va sobre el #81), y hacer `git pull` en `main`. Lo que pedía el #76
+   ya está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
+   18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
+   `TypeError` del 27-oct se corrigió en el #79).
 2. **Dueño:** dar de baja la tarea vieja `nexus-latido`, que apunta a un script del trading que ya no existe. Ya está
    deshabilitada y no falla más, pero sigue registrada. La sesión de la PC no la pudo borrar porque el control de
    permisos de Claude Code bloquea las bajas: `Unregister-ScheduledTask -TaskName nexus-latido -Confirm:$false`.
@@ -214,7 +215,8 @@ En orden de prioridad:
      positivos con `0x2a` y `0x3` (proyecto reducido) y con `0x2fef01ee4e27ce41` (`validate`, repo entero), y las 21
      mutaciones de referencia detectadas (las 8 nuevas por V-FD-1 y V-CAP-1). En el camino apareció que forge 1.8.6
      corre con `isolate = true` (§2): por eso `NexusV2Macro`.
-   - **Variante B, en el PR de esta iteración** (rama `claude/vault-v2-variante-b`, sobre la del #81):
+   - **Variante B, en el #82** (rama `claude/vault-v2-variante-b`, sobre la del #81; referencia con `validate` sobre el
+     repo entero: 4 de 4, las tres variantes A y la B, semilla `0xa03dcb8635632b88`):
      `NexusVaultV2Blue.t.sol`, el `MorphoMarketV1AdapterV2` real sobre Morpho Blue con la IRM adaptativa, dos mercados,
      prestatarios, cambios de precio y liquidaciones con deuda incobrable. Leyes V-ADP-1 a 5 contra el estado crudo de
      Blue (`realAssets` exacto, allocations, acciones internas, `marketIds`, movimiento exacto con redondeo demostrado
