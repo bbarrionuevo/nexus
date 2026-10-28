@@ -379,6 +379,7 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
     uint256 internal hBoundBits = 256; // bits de margen mínimos del dominio de V-BOUND en la corrida
     uint256 internal hBoundCuts; // depósitos y mints que el handler no hizo porque sacaban al estado del dominio
     uint256 internal hGovRevokes; // revocaciones
+    uint256 internal hGovProbes; // sondas del gobierno: abdicación, registro, baja y alta de adapter2
 
     function _hunterInit() internal {
         hClock = new NexusV2Clock();
@@ -879,13 +880,14 @@ abstract contract NexusVaultV2Hunter is NexusVaultV2Base {
         return (hForces, hForceExits, hCapRejects, hCapEdges, hCapChanges, hSameTx);
     }
 
-    /// @notice Cobertura del gobierno con timelock: propuestas, ejecuciones, intentos tempranos, rechazos y revocaciones.
+    /// @notice Cobertura del gobierno con timelock: propuestas, ejecuciones, intentos tempranos, rechazos, revocaciones y
+    /// sondas.
     function coverageGov()
         external
         view
-        returns (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes)
+        returns (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes, uint256 probes)
     {
-        return (hGovSubmits, hGovExecs, hGovEarly, hGovRejected, hGovRevokes);
+        return (hGovSubmits, hGovExecs, hGovEarly, hGovRejected, hGovRevokes, hGovProbes);
     }
 
     /// @notice Cobertura de V-BOUND: bits de margen mínimos del dominio y depósitos o mints que el handler no hizo

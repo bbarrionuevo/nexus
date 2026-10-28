@@ -402,9 +402,11 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         } else {
             _lawsNoAccrual(OP_STILL, address(0), address(0), pre, post);
         }
-        _govEffect(p);
+        // primero el pendiente (borrado en el vault y en el modelo); después el efecto, cuyas sondas pueden volver a
+        // proponer el mismo dato (la baja y el alta de adapter2)
         _ok(vault.executableAt(p.data) == 0, L_GOV, "el pendiente no se borro al ejecutarse (0, executableAt)", 0, vault.executableAt(p.data));
         _govDrop(i, p);
+        _govEffect(p);
         ++hGovExecs;
     }
 
@@ -450,12 +452,13 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
         } else if (p.sel == S_REG) {
             gRegistry = address(uint160(p.v));
             got = uint160(vault.adapterRegistry());
+            // con el registro puesto, dar de alta a adapter2 (que no está en él) tiene que fallar
+            if (gRegistry != address(0)) {
+                _govProbe(abi.encodeCall(IVaultV2.addAdapter, (address(adapter2))), false, "addAdapter paso con un registro que no contiene al adapter (debia, paso)");
+            }
         } else if (p.sel == S_ADD || p.sel == S_RM) {
-            gAdapter2 = p.sel == S_ADD;
-            bool real = vault.isAdapter(address(adapter2));
-            _ok(real == gAdapter2, L_GOV, "isAdapter de adapter2 no quedo como lo pidio el gobierno (esperado, real)", gAdapter2 ? 1 : 0, real ? 1 : 0);
-            uint256 n = gAdapter2 ? 2 : 1;
-            _ok(vault.adaptersLength() == n, L_GOV, "la lista de adapters no tiene el largo esperado (esperado, real)", n, vault.adaptersLength());
+            _govAdapter2(p.sel == S_ADD);
+            if (p.sel == S_ADD) _govProbeAdapters();
             return;
         } else {
             gAbdicated[p.tsel] = true;
@@ -467,24 +470,53 @@ contract NexusVaultV2Handler is NexusVaultV2Hunter {
     }
 
     /// @dev Tras abdicar: una propuesta nueva de esa función, con el valor vigente (que cumple sus condiciones), se
-    /// acepta, pero llegada su fecha no se ejecuta. Si se ejecutara (la falla), no se revoca: revocaría un dato que ya
-    /// no está pendiente, la llamada revertiría y forge descartaría la falla.
+    /// acepta, pero llegada su fecha no se ejecuta.
     function _govProbeAbdicated(bytes4 tsel) internal {
         bytes memory data = tsel == S_FDP
             ? abi.encodeCall(IVaultV2.setForceDeallocatePenalty, (address(adapter), vault.forceDeallocatePenalty(address(adapter))))
             : abi.encodeCall(IVaultV2.setManagementFee, (vault.managementFee()));
-        if (gExec[keccak256(data)] != 0) return; // ya está pendiente
+        _govProbe(data, false, "se ejecuto una funcion abdicada (debia, paso)");
+    }
+
+    /// @dev Tras dar de alta a adapter2 (sin registro): poner el registro, que no lo contiene, tiene que fallar; darlo de
+    /// baja tiene que pasar y dejar isAdapter en false, y volver a darlo de alta también (el estado queda como estaba).
+    /// Así cada alta prueba los dos sentidos del registro y la baja, sin esperar que el fuzzer encadene las propuestas.
+    function _govProbeAdapters() internal {
+        _govProbe(abi.encodeCall(IVaultV2.setAdapterRegistry, (address(registry))), false, "el registro paso sin contener a un adapter vigente (debia, paso)");
+        if (!_govProbe(abi.encodeCall(IVaultV2.removeAdapter, (address(adapter2))), true, "removeAdapter no paso (debia, paso)")) return;
+        _govAdapter2(false);
+        if (_govProbe(abi.encodeCall(IVaultV2.addAdapter, (address(adapter2))), true, "addAdapter sin registro no paso (debia, paso)")) {
+            _govAdapter2(true);
+        }
+    }
+
+    /// @dev Efecto del alta o la baja de adapter2, contra el modelo: isAdapter y el largo de la lista.
+    function _govAdapter2(bool added) internal {
+        gAdapter2 = added;
+        bool real = vault.isAdapter(address(adapter2));
+        _ok(real == added, L_GOV, "isAdapter de adapter2 no quedo como lo pidio el gobierno (esperado, real)", added ? 1 : 0, real ? 1 : 0);
+        uint256 n = added ? 2 : 1;
+        _ok(vault.adaptersLength() == n, L_GOV, "la lista de adapters no tiene el largo esperado (esperado, real)", n, vault.adaptersLength());
+    }
+
+    /// @dev Propone `data` como el curador, avanza hasta su fecha y lo ejecuta: tiene que pasar si y solo si `expectOk`.
+    /// No hace nada si el modelo ya lo tiene pendiente. Lo que no pasó se revoca; lo que pasó sin deber no (revocaría un
+    /// dato que ya no está pendiente, la llamada revertiría y forge descartaría la falla). Devuelve si pasó.
+    function _govProbe(bytes memory data, bool expectOk, string memory what) internal returns (bool ok) {
+        if (gExec[keccak256(data)] != 0) return false;
+        ++hGovProbes;
         vm.prank(CURATOR);
         vault.submit(data);
         uint256 at = vault.executableAt(data);
         if (at > hClock.time()) _warpTo(at);
         Snap memory pre = _snap();
-        (bool ok,) = address(vault).call(data);
-        _ok(!ok, L_GOV, "se ejecuto una funcion abdicada (0, ejecuto)", 0, 1);
+        (ok,) = address(vault).call(data);
+        _ok(ok == expectOk, L_GOV, what, expectOk ? 1 : 0, ok ? 1 : 0);
         _lawsNoAccrual(OP_STILL, address(0), address(0), pre, _snap());
-        if (ok) return;
-        vm.prank(CURATOR);
-        vault.revoke(data);
+        if (!ok) {
+            vm.prank(CURATOR);
+            vault.revoke(data);
+        }
     }
 
     function _govDrop(uint256 i, Pend memory p) internal {
@@ -735,12 +767,14 @@ contract NexusVaultV2InvariantTest is Test {
     }
 
     function _logGov() internal {
-        (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes) = handler.coverageGov();
+        (uint256 submits, uint256 execs, uint256 early, uint256 rejected, uint256 revokes, uint256 probes) =
+            handler.coverageGov();
         emit log_named_uint("gobierno: propuestas con demora (V-GOV-1)", submits);
         emit log_named_uint("gobierno: ejecuciones que pasaron", execs);
         emit log_named_uint("gobierno: intentos un segundo antes de la fecha", early);
         emit log_named_uint("gobierno: intentos rechazados como predijo el modelo", rejected);
         emit log_named_uint("gobierno: revocaciones", revokes);
+        emit log_named_uint("gobierno: sondas (abdicacion, registro, baja y alta de adapter2)", probes);
     }
 
     function _logHunter() internal {
