@@ -52,6 +52,17 @@ def test_lo_que_se_lanza_esta_validado():
             panel.validate_params(bad)
 
 
+def test_el_panel_conoce_todos_los_perfiles_de_forge_v2():
+    """29-oct: el perfil vault-v3 estaba en tools/forge_v2 y no en el panel."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("forge_v2", panel.FORGE_V2)
+    fv2 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fv2)
+    assert set(panel.PERFILES) == set(fv2.PERFILES)
+    for nombre, (_, prefijo) in panel.PERFILES.items():
+        assert fv2.PERFILES[nombre]["match"] == "^" + prefijo, nombre
+
+
 def test_solo_se_sirven_archivos_de_secresearch(home):
     (home / "secresearch.yaml").write_text("catalogo", encoding="utf-8")
     (home / "secresearch" / "campanas").mkdir(parents=True)

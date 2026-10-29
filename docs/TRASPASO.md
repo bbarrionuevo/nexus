@@ -178,7 +178,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #85 | EulerEarn: el cazador de la variante A (leyes E-...) sobre la versión desplegada, el perfil `euler-earn` de `tools/forge_v2` con 22 mutaciones, y en nexus `core.longpaths` para clonar, la compilación aislada (`"aislado": true` en el manifiesto) y leyes `E-` en el expediente. Va sobre el #84 |
 | #86 | Yearn V3: el cazador de TokenizedStrategy `v3.1.0` (leyes Y-...) en los dos modos de contabilidad, el perfil `tokenized-strategy` de `tools/forge_v2` con 39 mutaciones, leyes `Y-` en el expediente y `gh` en la PC |
 | #87 | El panel local (`nexus.secresearch.panel`): forge en vivo, lanzar y frenar campañas y descargar informes sin pasar por Claude; `NEXUS_MATCH` y el commit desplegado fijado en `tools/forge_v2` |
-| #88 | Yearn V3: el cazador del Vault V3 3.1.0 (leyes YV-...), el perfil `vault-v3` de `tools/forge_v2` con 28 mutaciones, el `vyper` del venv en el PATH de forge y `validate`, leyes `YV-` en el expediente y el panel, y `validate` ya no da por buena una corrida del harness en la que no corrió ningún test (el manifiesto puede fijar `match_path`) |
+| #88 | Yearn V3: el cazador del Vault V3 3.1.0 (leyes YV-...), el perfil `vault-v3` de `tools/forge_v2` con 28 mutaciones, el `vyper` del venv en el PATH de forge y `validate`, leyes `YV-` en el expediente y el panel, el perfil `vault-v3` en el panel, y `validate` ya no da por buena una corrida del harness en la que no corrió ningún test (el manifiesto puede fijar `match_path`) |
 
 ## 5. Próximos pasos
 
