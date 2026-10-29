@@ -38,12 +38,15 @@ FORGE_V2 = REPO / "tools" / "forge_v2" / "forge_v2.py"
 PERFILES = {"vault-v2": ("morpho-org__vault-v2", "NexusVaultV2"),
             "euler-earn": ("euler-xyz__euler-earn", "NexusEulerEarn"),
             "tokenized-strategy": ("yearn__tokenized-strategy", "NexusTokenizedStrategy"),
-            "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3")}
-LAW = re.compile(r"\b(?:YV|[HVEY])-[A-Z]+(?:-\d+)?")
+            "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3"),
+            "midnight": ("morpho-org__midnight", "NexusMidnight")}
+LAW = re.compile(r"\b(?:YV|MN|[HVEY])-[A-Z]+(?:-\d+)?")
 SEED = re.compile(r"^0x[0-9a-f]{1,16}$")
 MATCH = re.compile(r"^\^?[A-Za-z0-9]+\$?$")
 EXT = {".md", ".txt", ".json", ".html", ".csv"}
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+BREAKAWAY = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+BELOW_NORMAL = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
 
 
 def sec(home=None):
@@ -115,11 +118,19 @@ def launch(params, home=None):
     rec = {**p, "id": cid, "dest": str(home / "work" / "panel" / cid), "log": str(camp_dir(home) / f"{cid}.txt"),
            "started": now.isoformat(timespec="seconds")}
     _save(rec, home)
-    flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP) if os.name == "nt" else 0
-    proc = subprocess.Popen([sys.executable, "-m", "nexus.secresearch.panel", "--run", cid], cwd=REPO / "local",
-                            env={**os.environ, "NEXUS_HOME": str(home)}, stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
-                            start_new_session=os.name != "nt")
+    # prioridad por debajo de lo normal (la heredan forge_v2 y forge): la campaña usa todo el CPU libre y le cede el
+    # paso a lo corto (una verificación, el uso de la PC)
+    flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | BELOW_NORMAL) if os.name == "nt" else 0
+    kw = {"cwd": REPO / "local", "env": {**os.environ, "NEXUS_HOME": str(home)}, "stdin": subprocess.DEVNULL,
+          "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "start_new_session": os.name != "nt"}
+    cmd = [sys.executable, "-m", "nexus.secresearch.panel", "--run", cid]
+    # 29-oct: tres campañas lanzadas desde una sesión de Claude Code murieron sin terminar cuando la sesión se reinició:
+    # quedaban dentro del job de quien las lanzó. Separada del job, la campaña sigue; si el job no lo permite, queda
+    # atada a él como antes.
+    try:
+        proc = subprocess.Popen(cmd, creationflags=flags | BREAKAWAY, **kw)
+    except OSError:
+        proc = subprocess.Popen(cmd, creationflags=flags, **kw)
     rec["pid"] = proc.pid
     _save(rec, home)
     return rec

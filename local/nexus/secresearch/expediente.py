@@ -22,7 +22,7 @@ from . import catalog
 from .dashboard import failure_key
 from .limits import results_dir
 
-LAW = re.compile(r"\b(?:YV|[HVEY])-[A-Z]+(?:-\d+)?")  # H-, V-, E-, Y- y YV- (Yearn)
+LAW = re.compile(r"\b(?:YV|MN|[HVEY])-[A-Z]+(?:-\d+)?")  # H-, V-, E-, Y-, YV- (Yearn) y MN- (Midnight)
 STATES = "borrador → confirmado → enviado → aceptado → cobrado (o descartado / rechazado)"
 
 
