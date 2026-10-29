@@ -389,9 +389,12 @@ En orden de prioridad:
      - Certora verifica los invariantes centrales, con `mulDiv` como axiomas, bucles acotados y sin `multicall`.
      El cazador aporta la aritmética concreta en secuencias largas y la ley MN-CLAIM, que exige que los reclamos no
      superen el respaldo.
+   - **La periferia nueva, revisada a mano el 29-oct:** `RateRatifierV1` y `PriceRatifierV1` (2026-09-24),
+     `BlueFallbackRolling` (2026-09-02) y `BlueBuyCallback`. Sin candidatos, y lo de sus auditorías está aceptado o
+     documentado. Un cazador de fuzzing aportaría poco: son contratos chicos, y el ratifier por firma necesitaría
+     firmas en el harness, que el test de coherencia no permite. El detalle está en
+     `etapa_e/morpho-org__midnight/revision_periferia.md` (privado).
    - **Falta:**
-     - la periferia: ratifiers reales, `BlueBuyCallback`, `BlueFallbackRolling` (2026-09-02) y `RateRatifierV1` y
-       `PriceRatifierV1` (2026-09-24, los más nuevos);
      - los callbacks, `multicall`, el préstamo flash y los gates;
      - un cazador de MetaMorpho V1.1.
 
