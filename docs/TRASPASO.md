@@ -318,6 +318,16 @@ En orden de prioridad:
      TokenizedStrategy v3.1.0 en vivo (su `convertToAssets` incluye lo simulado, y `_update_debt` no mira las acciones
      que recibe al depositar), y la 3.0.4 de TokenizedStrategy (la contabilidad del modo por reporte, sin pestillo ni
      piso).
+   - **Variante B del vault, evaluada el 29-oct:**
+     - El repo del vault fija `lib/tokenized-strategy` en la **v3.0.3**, no en la 3.1.0. Una variante B con la 3.1.0
+       necesita dos repos: `tools/forge_v2` puede armarla, pero `validate` trabaja con un solo clon.
+     - Aporta poco frente a la variante A. El vault ve la estrategia solo por sus vistas, y el cazador de
+       TokenizedStrategy ya demostró que esas vistas son la ejecución (Y-VIEW-1).
+     - Lo que sí queda abierto es el punto 3 del análisis privado de TokenizedStrategy: el vault no controla las
+       acciones que recibe en `update_debt`. Se puede medir con un escenario determinista privado, pero según R-7 hoy
+       no es candidato.
+   - **Campaña profunda del vault:** 768×1000, semilla `0xe782c4dd280d82a0`, lanzada el 29-oct a las 16:22 desde el
+     código del panel. Con la PC cargada, se estiman unas 12 h.
    - **Campaña profunda (28-oct):** 512×1500 (768.000 llamadas por variante, ~9 h), semilla `0x4a9cb1e5a489dc29`:
      las 4 variantes y los 4 escenarios en verde, **ninguna ley violada**, pero con 11 reversiones del handler en
      la variante con protocolo (en `report` y en `lockThenLose`, que lo llama): no es una falla de ley, y puede
