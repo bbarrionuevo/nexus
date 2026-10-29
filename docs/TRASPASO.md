@@ -377,6 +377,10 @@ En orden de prioridad:
    - El cazador del núcleo desplegado está escrito y verificado; ver [CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md).
      32×300 con `0x2a` y `0x3` y `validate` 4 de 4, sin falsos positivos ni reversiones; las 37 mutaciones
      detectadas. **Sin hallazgos.**
+   - **Campaña profunda:** 1536×500 (768.000 llamadas por variante), semilla `0xd965aa70462df72e`, lanzada el 29-oct a
+     las 20:29 desde el código del panel (`20261029-202954_midnight_1536x500_0xd965aa70462df72e`). Corre en paralelo con
+     la del vault (768×1000, desde las 18:17); las dos van por debajo de la prioridad normal. Al terminar, leer
+     `FIN ... salida N` en `NEXUS_HOME\secresearch\campanas\` (o en el panel) y anotar el resultado acá.
    - La etapa E está en `NEXUS_HOME/secresearch/etapa_e/morpho-org__midnight/` (privado): el índice, las 15
      auditorías en texto, la versión desplegada de cada contrato y el diseño del cazador.
    - Contexto de verificación previa:
