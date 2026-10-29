@@ -107,6 +107,29 @@ remappings = [
 [lint]
 lint_on_build = false
 """
+# Perfil del Vault V3 de Yearn (yearn/yearn-vaults-v3 @ v3.1.0, lo desplegado en 0xdD3F…7824): VaultV3.vy y
+# VaultFactory.vy (Vyper 0.3.10, compilados por forge con el vyper del venv), OpenZeppelin 4.9.5 y forge-std, con los
+# ajustes del repo (solc 0.8.18, paris, vyper optimize codesize).
+YV_FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness del Vault V3: mismos ajustes que el foundry.toml del repo.
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["lib"]
+solc = "0.8.18"
+evm_version = "paris"
+ffi = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "ds-test/=lib/forge-std/lib/ds-test/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+]
+
+[profile.default.vyper]
+optimize = "codesize"
+
+[lint]
+lint_on_build = false
+"""
 PERFILES = {
     "vault-v2": {"harness": HARNESS, "sources": SOURCES, "trees": TREES, "toml": FOUNDRY_TOML,
                  "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol"},
@@ -123,11 +146,16 @@ PERFILES = {
                            "toml": TS_FOUNDRY_TOML, "match": "^NexusTokenizedStrategy",
                            "mutaciones": HERE / "mutaciones_tokenized_strategy.json",
                            "archivo": "src/TokenizedStrategy.sol", "ref": "8c8929f"},
+    "vault-v3": {"harness": HARNESS.parent / "yearn__yearn-vaults-v3",
+                 "sources": ("contracts/VaultV3.vy", "contracts/VaultFactory.vy"),
+                 "trees": ("lib/forge-std", "lib/openzeppelin-contracts/contracts"),
+                 "toml": YV_FOUNDRY_TOML, "match": "^NexusVaultV3",
+                 "mutaciones": HERE / "mutaciones_vault_v3.json", "archivo": "contracts/VaultV3.vy", "ref": "5b698f9"},
 }
 
 
 def _perfil():
-    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn o tokenized-strategy."""
+    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy o vault-v3."""
     nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
     if nombre not in PERFILES:
         raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")
@@ -157,7 +185,9 @@ def armar(clone, dest):
 
 
 def _env(runs, depth, seed, **extra):
-    return {**os.environ, "FOUNDRY_INVARIANT_RUNS": str(runs), "FOUNDRY_INVARIANT_DEPTH": str(depth),
+    # el vyper del venv (perfil vault-v3) tiene que estar en el PATH de forge
+    path = os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")])
+    return {**os.environ, "PATH": path, "FOUNDRY_INVARIANT_RUNS": str(runs), "FOUNDRY_INVARIANT_DEPTH": str(depth),
             "FOUNDRY_FUZZ_SEED": seed, **extra, "FOUNDRY_FFI": "false"}
 
 
