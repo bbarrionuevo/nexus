@@ -56,6 +56,7 @@ Las reglas que más pesan al trabajar:
 | Expedientes | `%LOCALAPPDATA%\nexus\secresearch\expedientes\` |
 | Ciclo programado | tarea `nexus-ciclo`, registrada con `tools/windows/registrar_ciclo.ps1` |
 | GitHub CLI | `C:\Program Files\GitHub CLI\gh.exe`, autenticada como `bbarrionuevo` (28-oct): la sesión abre los PR y lee el CI con `gh`; si la shell no la ve en el PATH, con la ruta completa. Fusionar sigue siendo del dueño |
+| Panel local | Desde `local`: `..\.venv\Scripts\python -m nexus.secresearch.panel` abre el navegador en `127.0.0.1` con un token: procesos forge en vivo, campañas (estado, leyes, cobertura, log en vivo), lanzar y frenar campañas de `tools/forge_v2`, y descargar todo lo de `NEXUS_HOME\secresearch`. Cerrarlo no frena las campañas |
 
 El Explorador oculta `AppData`: `explorer $env:LOCALAPPDATA\nexus\secresearch`.
 
@@ -117,6 +118,7 @@ Lo que conviene saber de forge en un handler:
 | D''. Harness de Vault V2 | Funciona (28-oct): variante A con capital asignado de verdad y 12 leyes `V-...` (con `forceDeallocate`, los topes, el gobierno con timelock y la cota de dominio V-BOUND), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 20 del gobierno y de la cota (V36–V55) con el del #84 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
 | Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
+| Panel | Nuevo (28-oct): servidor local (`nexus.secresearch.panel`, solo biblioteca estándar) para monitorear forge, lanzar y frenar campañas y descargar informes sin pasar por Claude; solo `127.0.0.1`, token por arranque, control de `Host` y del encabezado de las acciones |
 | D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
 | D''''. Harness de TokenizedStrategy | Nuevo (28-oct): Yearn V3, `v3.1.0` (lo desplegado en `0x310f…1e76` y en alcance), la contabilidad nueva ("constant accrual", pestillo por bloque, piso de 1e3 acciones, quema de bloqueadas por pérdida en vivo) y la de reporte, 11 leyes `Y-...` exactas contra el almacenamiento crudo ([CAZADOR_TOKENIZED_STRATEGY.md](CAZADOR_TOKENIZED_STRATEGY.md)). Verificado con forge en la PC: 4 de 4 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada, 8 de 8 con los escenarios) y las 39 mutaciones de referencia detectadas. Sin hallazgos |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
@@ -289,6 +291,10 @@ En orden de prioridad:
      implementación **desplegada** y no paga Low ni informativos. Lo desplegado en Ethereum es `a8cc099` (comparado por
      SHA-256 contra el código verificado de la fábrica); los cambios del 23-oct-2026 en `SafeERC20Permit2Lib` no están
      desplegados.
+   - **Campaña profunda (28-oct):** 512 corridas × 1.500 llamadas (768.000 por variante, ~6 h en la PC), semilla
+     `0x416da32f22ae83af`: las 3 variantes y las 2 pruebas de la cota en verde, sin reversiones, **ninguna ley
+     violada**. El 28-oct a la noche quedó corriendo otra de 128×6000 (secuencias largas), semilla
+     `0xf204663f1abb7cbe`.
    - **Falta en EulerEarn:** la variante B con estrategias reales del EVK (crédito, IRM, deuda incobrable), el Public
      Allocator, el guardian y los timelocks distintos de 0.
 7. **TokenizedStrategy de Yearn V3, en el #86** (rama `claude/yearn-tokenized-strategy`). Verificado con forge en la PC:
@@ -309,6 +315,13 @@ En orden de prioridad:
      recibe al depositar. Frente a la 3.0.4 cambió poco en contabilidad (hooks con callback después del depósito y
      del retiro, pausa, cola de retiro). Y la 3.0.4 de TokenizedStrategy (su contabilidad es la del modo por reporte,
      sin pestillo ni piso).
+   - **Campaña profunda (28-oct):** 512×1500 (768.000 llamadas por variante, ~9 h), semilla `0x4a9cb1e5a489dc29`:
+     las 4 variantes y los 4 escenarios en verde, **ninguna ley violada**, pero con 11 reversiones del handler en
+     la variante con protocolo (en `report` y en `lockThenLose`, que lo llama): no es una falla de ley, y puede
+     ser un borde de dominio del harness (una vista que revierte con suministros enormes tras una pérdida casi
+     total). Para diagnosticarlo quedó corriendo la misma variante y semilla con `fail_on_revert`, que frena en
+     la primera e imprime el motivo y la secuencia; y otra campaña de 128×6000, semilla `0x558c16a948b3b745`.
+     Los resultados están en `NEXUS_HOME\secresearch\campanas\` (privado) y se ven en el panel.
    - **Herramienta nueva:** `vyper` 0.3.10 quedó instalado en el venv (28-oct, `pip install vyper==0.3.10`; anda en
      Python 3.12 con avisos de deprecación y compila `VaultV3.vy` en ~6 s). Los tests de foundry de
      `yearn-vaults-v3` despliegan con `VyperDeployer`, que llama a `vyper` por FFI: con FFI apagado (R-2, R-6) no

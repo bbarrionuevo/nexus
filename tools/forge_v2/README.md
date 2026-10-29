@@ -72,3 +72,12 @@ $env:NEXUS_PERFIL = "tokenized-strategy"
 .venv\Scripts\python tools\forge_v2\forge_v2.py correr $RED 256 500 0x2a
 .venv\Scripts\python tools\forge_v2\forge_v2.py mutar  $RED $CLON
 ```
+
+## Filtro, versión fijada y panel
+
+- `NEXUS_MATCH="^NexusTokenizedStrategyInvariantFeeTest$"` hace que `correr` corra una sola variante (sin eso, todas
+  las del perfil).
+- Los perfiles de EulerEarn y TokenizedStrategy fijan el commit desplegado (`a8cc099`, `8c8929f`): `armar` se niega a
+  copiar un clon que esté en otro commit (lo puede haber movido `validate`).
+- El panel local (`python -m nexus.secresearch.panel`, desde `local`) lanza `armar` + `correr` con estos mismos
+  parámetros en un proyecto propio dentro de `NEXUS_HOME/work/panel/` y deja el log en `secresearch/campanas/`.
