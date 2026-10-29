@@ -81,3 +81,11 @@ $env:NEXUS_PERFIL = "tokenized-strategy"
   copiar un clon que esté en otro commit (lo puede haber movido `validate`).
 - El panel local (`python -m nexus.secresearch.panel`, desde `local`) lanza `armar` + `correr` con estos mismos
   parámetros en un proyecto propio dentro de `NEXUS_HOME/work/panel/` y deja el log en `secresearch/campanas/`.
+
+## Perfil del Vault V3 de Yearn
+
+`NEXUS_PERFIL=vault-v3` hace lo mismo con `yearn/yearn-vaults-v3` (programa Yearn V3): `armar` copia `VaultV3.vy` y
+`VaultFactory.vy`, OpenZeppelin 4.9.5 y forge-std con los ajustes del repo (solc 0.8.18, paris, vyper `optimize =
+"codesize"`), y `mutar` toma `mutaciones_vault_v3.json` (sobre `contracts/VaultV3.vy`). El clon tiene que estar en el
+tag `v3.1.0` (`5b698f9`). Forge compila Vyper con el `vyper` 0.3.10 del venv: `forge_v2` lo pone en el PATH (si se
+corre forge a mano, agregar `.venv\Scripts` al PATH).

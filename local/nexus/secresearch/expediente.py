@@ -22,7 +22,7 @@ from . import catalog
 from .dashboard import failure_key
 from .limits import results_dir
 
-LAW = re.compile(r"\b[HVEY]-[A-Z]+(?:-\d+)?")  # H- (MetaMorpho), V- (Vault V2), E- (EulerEarn) e Y- (Yearn)
+LAW = re.compile(r"\b(?:YV|[HVEY])-[A-Z]+(?:-\d+)?")  # H-, V-, E-, Y- y YV- (Yearn)
 STATES = "borrador → confirmado → enviado → aceptado → cobrado (o descartado / rechazado)"
 
 

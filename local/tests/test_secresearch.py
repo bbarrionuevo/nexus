@@ -135,6 +135,34 @@ def test_harness_aislado_compila_solo_src_y_el_harness(tmp_path, monkeypatch):
         validate.validate("o/v", harness="raro", **kw)
 
 
+def test_harness_sin_tests_no_queda_en_verde(tmp_path, monkeypatch):
+    """29-oct: el foundry.toml de yearn-vaults-v3 fija match_path a sus propios tests; forge no corrió ninguno del
+    harness y validate lo daba por bueno (0 fallas). El manifiesto puede fijar su match_path y validate lo pasa."""
+    import sys
+
+    from nexus.secresearch import validate
+    src = _foundry_repo(tmp_path)
+    fake = tmp_path / "forge.py"
+    fake.write_text(FAKE_FORGE, encoding="utf-8")
+    log = tmp_path / "forge.log"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    monkeypatch.setenv("FAKE_EMPTY", "1")
+    hb = tmp_path / "harness"
+    (hb / "h").mkdir(parents=True)
+    man = {"repo": "o/v", "match_contract": "^Nexus", "match_path": "test/nexus/*", "aislado": True}
+    (hb / "h" / "harness.json").write_text(json.dumps(man))
+    (hb / "h" / "P.t.sol").write_text("contract P {}\n")
+    progs = [{"name": "Prog", "rules_url": "https://example.org", "in_scope": True, "verified_by_owner": True,
+              "repos": [{"repo": "o/v"}]}]
+    rec = validate.validate("o/v", harness="h", seed="0x2a", out=tmp_path / "out", programs=progs,
+                            forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work",
+                            harness_base=hb)
+    test = json.loads(log.read_text().splitlines()[-1])
+    assert test["argv"] == ["test", "--json", "-vv", "--match-path", "test/nexus/*", "--match-contract", "^Nexus"]
+    assert not rec["ok"] and "ningún test" in rec["error"]
+    assert "No se pudo validar" in validate.report(rec)
+
+
 def test_tests_mocks_y_scripts_no_estan_en_alcance():
     ok = ["src/TokenizedStrategy.sol", "contracts/VaultV3.vy", "src/EVault/modules/Vault.sol",
           "src/libraries/TokenizedStrategyLib.sol"]
@@ -225,6 +253,9 @@ with open(log, "a") as f:
 if sys.argv[1] == "build":
     print("Compiling 42 files")
     sys.exit(int(os.environ.get("FAKE_BUILD_EXIT", "0")))
+if os.environ.get("FAKE_EMPTY"):  # un filtro que no deja pasar ningún test
+    print("{}")
+    sys.exit(0)
 # Indicador de progreso como el de forge en Windows (26-oct): bytes que cp1252 no decodifica (0x81) y que
 # tampoco son UTF-8 válido. Antes mataban el hilo lector de subprocess y forge quedaba trabado.
 sys.stderr.buffer.write(b"\xe2\xa0\x81 compilando \x81\xff\n" * 2000)
@@ -382,6 +413,20 @@ def test_harness_de_vault_v2_es_coherente_y_no_sale_de_la_evm_local():
     man, files = validate.load_harness("morpho-org__vault-v2")
     assert man["repo"] == "morpho-org/vault-v2" and man["match_contract"] == "^NexusVaultV2"
     assert {f.name for f in files} == {"NexusVaultV2Hunter.sol", "NexusVaultV2Invariant.t.sol", "NexusVaultV2Blue.t.sol"}
+    banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
+              "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert not [b for b in banned if b in text], f.name
+
+
+def test_harness_del_vault_v3_es_coherente_y_no_sale_de_la_evm_local():
+    from nexus.secresearch import limits, validate
+    man, files = validate.load_harness("yearn__yearn-vaults-v3")
+    assert man["repo"] == "yearn/yearn-vaults-v3" and man["match_contract"] == "^NexusVaultV3"
+    # el foundry.toml del repo fija match_path a sus tests: sin el del manifiesto, forge no corre ninguno del harness
+    assert man["match_path"] == "test/nexus/*" and man["aislado"] is True
+    assert {f.name for f in files} == {"NexusVaultV3Hunter.sol", "NexusVaultV3Invariant.t.sol"}
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

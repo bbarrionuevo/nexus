@@ -114,11 +114,15 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     function updateDebt(uint256 which, uint256 targetSeed, uint256 lossSeed) external {
         uint256 i = which % NS;
+        uint256 k = targetSeed % 5;
+        (,, uint256 cd,) = vault.strategies(address(strat[i]));
+        uint256 target = k == 0 ? 0 : (k == 1 ? type(uint256).max : _clamp(targetSeed >> 3, 0, cd + vault.totalIdle()));
+        _updateDebt(i, target, lossSeed % 3 == 0 ? MAX_BPS : (lossSeed % 3 == 1 ? 0 : 100));
+    }
+
+    function _updateDebt(uint256 i, uint256 target, uint256 ml) internal {
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
-        uint256 k = targetSeed % 5;
-        uint256 target = k == 0 ? 0 : (k == 1 ? type(uint256).max : _clamp(targetSeed >> 3, 0, pre.cur[i] + pre.idle));
-        uint256 ml = lossSeed % 3 == 0 ? MAX_BPS : (lossSeed % 3 == 1 ? 0 : 100);
         (bool expect, bool lossy) = _simUpdateDebt(m, i, target, ml);
         vm.prank(GOV);
         (bool ok,) = address(vault).call(
@@ -126,8 +130,14 @@ contract NexusVaultV3Handler is NexusV3Hunter {
         );
         _settle("update_debt", ok, expect, pre, m, !lossy);
         if (ok && expect) {
-            if (m.cur[i] > pre.cur[i]) ++hDebtUp;
-            else if (m.cur[i] < pre.cur[i]) ++hDebtDown;
+            if (m.cur[i] > pre.cur[i]) {
+                ++hDebtUp;
+            } else if (m.cur[i] < pre.cur[i]) {
+                ++hDebtDown;
+                // el mínimo ocioso hizo retirar más de lo pedido
+                if (!pre.shutdown && target < pre.cur[i] && pre.idle + (pre.cur[i] - target) < pre.minIdle
+                        && pre.cur[i] - m.cur[i] > pre.cur[i] - target) ++hIdleFloor;
+            }
         }
     }
 
@@ -194,6 +204,19 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     /* CONFIGURACIÓN DEL VAULT */
 
+    /// @dev Tope de deuda de una estrategia: un tercio de las veces sin tope, si no un monto.
+    function setMaxDebt(uint256 which, uint256 v) external {
+        uint256 i = which % NS;
+        Snap memory pre = _snap();
+        Snap memory m = _copy(pre);
+        m.maxd[i] = v % 3 == 0 ? type(uint256).max : _amt(v >> 2);
+        vm.prank(GOV);
+        (bool ok,) = address(vault).call(
+            abi.encodeWithSignature("update_max_debt_for_strategy(address,uint256)", address(strat[i]), m.maxd[i])
+        );
+        _settle("update_max_debt_for_strategy", ok, true, pre, m, true);
+    }
+
     /// @dev 0 (desbloquea todo de golpe), más de un año (revierte) o hasta 30 días.
     function setUnlockTime(uint256 v) external {
         uint256 t = v % 8 == 0 ? 0 : (v % 8 == 1 ? 31_556_953 : 1 + (v >> 3) % 30 days);
@@ -214,9 +237,13 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     /// @dev Mínimo ocioso: casi siempre 0 (con uno alto no entra deuda), a veces polvo o un monto.
     function setMinIdle(uint256 v) external {
+        _setMinIdle(v % 4 != 1 ? 0 : _amt(v >> 2));
+    }
+
+    function _setMinIdle(uint256 v) internal {
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
-        m.minIdle = v % 4 != 1 ? 0 : _amt(v >> 2);
+        m.minIdle = v;
         vm.prank(GOV);
         (bool ok,) = address(vault).call(abi.encodeWithSignature("set_minimum_total_idle(uint256)", m.minIdle));
         _settle("set_minimum_total_idle", ok, true, pre, m, true);
@@ -275,12 +302,30 @@ contract NexusVaultV3Handler is NexusV3Hunter {
         _exit(h, _c2a(pre, s, false), s, MAX_BPS, true, pre);
     }
 
+    /// @dev Baja de deuda con el mínimo ocioso por encima de lo ocioso: depósito, toda la deuda en la estrategia i, un
+    /// mínimo ocioso mayor que lo ocioso más la baja pedida y una baja parcial; el vault retira de más para llegar al
+    /// mínimo, acotado a la deuda y a lo retirable. Sin esto, el caso casi no aparece (la mitad de las veces el mínimo
+    /// vuelve a 0 al final).
+    function idleFloor(uint256 actorSeed, uint256 which, uint256 amount, uint256 seed) external {
+        uint256 i = which % NS;
+        this.deposit(actorSeed, amount);
+        _updateDebt(i, type(uint256).max, MAX_BPS);
+        Snap memory pre = _snap();
+        uint256 cd = pre.cur[i];
+        if (cd < 2) return;
+        uint256 cut = 1 + seed % (cd - 1);
+        _setMinIdle(pre.idle + cut + 1 + (seed >> 128) % cd);
+        _updateDebt(i, cd - cut, (seed >> 64) % 3 == 0 ? MAX_BPS : 0);
+        if ((seed >> 192) % 2 == 0) _setMinIdle(0);
+    }
+
     /// @dev Vuelta a una configuración sana: sin pausa, sin mínimo ocioso, estrategias líquidas y sin recorte.
     function restore() external {
         if (vault.isPaused()) this.setPaused(1);
         if (vault.minimum_total_idle() != 0) this.setMinIdle(0);
         for (uint256 i; i < NS; ++i) {
             this.knobs(i, 0, 0, 1);
+            this.setMaxDebt(i, 0);
         }
     }
 
@@ -307,7 +352,12 @@ contract NexusVaultV3Handler is NexusV3Hunter {
             return;
         }
         _lawState(m, post);
-        _ok(post.minIdle == m.minIdle && post.depLimit == m.depLimit && post.paused == m.paused && post.shutdown == m.shutdown, L_LIVE, "configuracion del vault distinta del modelo (0, 0)", 0, 0);
+        bool cfg = post.minIdle == m.minIdle && post.depLimit == m.depLimit && post.paused == m.paused
+            && post.shutdown == m.shutdown;
+        for (uint256 i; i < NS; ++i) {
+            cfg = cfg && post.maxd[i] == m.maxd[i];
+        }
+        _ok(cfg, L_LIVE, "configuracion del vault distinta del modelo (0, 0)", 0, 0);
         _lawViews(post);
         if (strict) _lawPrice(pre, post);
     }
@@ -376,6 +426,7 @@ contract NexusVaultV3InvariantTest is Test {
         emit log_named_uint("cobertura: bajas de deuda", down);
         emit log_named_uint("cobertura: operaciones rechazadas como predijo el modelo", rej);
         emit log_named_uint("cobertura: retiros con exceso sobre la deuda", ex);
+        emit log_named_uint("cobertura: bajas de deuda que retiraron de mas por el minimo ocioso", handler.coverage3());
     }
 }
 

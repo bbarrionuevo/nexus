@@ -272,6 +272,7 @@ abstract contract NexusV3Hunter is NexusV3Base {
     uint256 internal hDebtDown;
     uint256 internal hRejected;
     uint256 internal hExcess; // retiros con exceso por encima de la deuda (queda fuera de total_idle)
+    uint256 internal hIdleFloor; // bajas de deuda en las que el mínimo ocioso hizo retirar más de lo pedido
 
     function _holder(uint256 h) internal view returns (address) {
         if (h < 4) return actors[h];
@@ -755,5 +756,9 @@ abstract contract NexusV3Hunter is NexusV3Base {
         returns (uint256 withdrawLoss, uint256 fromStrat, uint256 debtUp, uint256 debtDown, uint256 rejected, uint256 excess)
     {
         return (hWithdrawLoss, hFromStrat, hDebtUp, hDebtDown, hRejected, hExcess);
+    }
+
+    function coverage3() external view returns (uint256 idleFloor) {
+        return hIdleFloor;
     }
 }

@@ -1,0 +1,14 @@
+{
+  "repo": "yearn/yearn-vaults-v3",
+  "match_contract": "^NexusVaultV3",
+  "match_path": "test/nexus/*",
+  "aislado": true,
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "64",
+    "FOUNDRY_INVARIANT_DEPTH": "500",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "29-oct-2026 con forge 1.8.6 en la PC, yearn/yearn-vaults-v3 v3.1.0 (5b698f9, el VaultV3.vy del original desplegado en 0xdD3F...7824, comparado por SHA-256 contra el codigo verificado): en el proyecto reducido de tools/forge_v2 (NEXUS_PERFIL=vault-v3), las 4 variantes (comision 10 %, reembolso y protocolo, 6 decimales y sin bloqueo) pasan 24x500 sin falsos positivos ni reversiones con 0x2a y 0x3; con validate sobre el repo entero (compilacion aislada, 64x500, semilla 0x68a90a1321ee064a), 4 de 4 con 0 reversiones; las 28 mutaciones de mutaciones_vault_v3.json detectadas"
+}
