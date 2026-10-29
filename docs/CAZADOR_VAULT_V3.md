@@ -1,0 +1,157 @@
+# Cazador del Vault V3 (Yearn)
+
+Estado: **variante A escrita y verificada con forge en la PC** (29-oct). Pasa sin falsos positivos ni reversiones
+en sus cuatro variantes (24×500 con las semillas `0x2a` y `0x3`, y `validate` sobre el repo entero a 64×500), y
+las 28 mutaciones de referencia se detectan. **No hay hallazgos.**
+
+## 1. Qué versión y qué alcance
+
+- **Programa:** Yearn Finance en Immunefi (en el catálogo, `in_scope` y `verified_by_owner`). El alcance (página
+  actualizada el 25-jul-2026) lista **Vault V3.1.0** (`0xdD3F…7824`, el original) y su fábrica (`0x310a…bcAC`), y
+  también la 3.0.4.
+- **Versión probada: `v3.1.0` (`5b698f9`).** El `VaultV3.vy` verificado en Etherscan para el original
+  `0xdD3FA86409658d207A9BE0141eE560C8db557824` (Vyper 0.3.10) tiene, normalizado a LF, el mismo SHA-256 que el del
+  tag. Frente a la 3.0.4 la contabilidad casi no cambió: los módulos de límites pasaron a ser hooks con callback
+  después del depósito y del retiro, se agregó una pausa y se reordenó la cola de retiro.
+- **Sin FFI:** los tests del repo despliegan Vyper con `VyperDeployer` por FFI, que nexus no puede usar (R-2, R-6).
+  El harness compila `VaultV3.vy` y `VaultFactory.vy` con forge (Vyper nativo, con el `vyper` 0.3.10 del venv en el
+  PATH) y despliega como producción: la fábrica clona el original con `create_minimal_proxy_to` y lo inicializa.
+
+## 2. Modelo
+
+Estado crudo del vault (Vyper no empaqueta; el layout sale de `vyper -f layout`): `total_supply` (slot 20),
+`total_debt` (21), `total_idle` (22), `balance_of` (HashMap en el slot 18, clave `keccak256(slot ++ dirección)`), y por
+getters la deuda y el tope de cada estrategia, el bloqueo (`profit_unlocking_rate`, `full_profit_unlock_date`,
+`last_profit_update`, `profit_max_unlock_time`), el mínimo ocioso, el límite de depósito, la pausa y el apagado.
+
+- **Acciones:** `total_assets = total_idle + total_debt`; suministro efectivo `total_supply` menos lo desbloqueado
+  (mismo esquema que TokenizedStrategy); conversión 1:1 con suministro 0 y 0 con activos 0; sin desplazamiento
+  virtual.
+- **Retiro (`_redeem`):** lo ocioso primero; después la cola, y por estrategia la parte de la pérdida no realizada del
+  que retira (`convertToAssets(balanceOf(vault))` contra la deuda, redondeada hacia arriba, y acotada por lo líquido),
+  el canje de `previewWithdraw` acciones, el exceso (acotado a la deuda: lo que la pasa queda en el balance del vault,
+  fuera de `total_idle`) y la pérdida realizada, y `max_loss`.
+- **Deuda (`_update_debt`):** bajar respeta el mínimo ocioso y lo retirable, exige que no haya pérdida no realizada y
+  controla `max_loss`; subir respeta `max_debt`, el `maxDeposit` de la estrategia y el mínimo ocioso, y registra lo
+  que de verdad salió.
+- **Reporte (`_process_report`):** ganancia o pérdida contra la deuda; comisión y reembolso del accountant
+  (acotado a lo que tiene); quema `⌈(pérdida + comisión)·s/A⌉` y bloquea `⌊(ganancia + reembolso)·s/A⌋`, neteando
+  con lo desbloqueado; acciones de comisión al accountant y al protocolo; promedio ponderado del período.
+
+## 3. Leyes (exactas, contra el almacenamiento crudo)
+
+| Ley | Qué exige |
+|---|---|
+| YV-TA | `total_idle`, `total_debt` y la deuda de cada estrategia exactos; lo que devuelve `process_report` |
+| YV-SUP | `total_supply` crudo exacto |
+| YV-LOCK | buffer, tasa, fecha y `last_profit_update` exactos |
+| YV-FEE | acciones del accountant y del protocolo exactas |
+| YV-WD | acciones y activo de cada usuario exactos: lo que paga, cobra y pierde |
+| YV-INF-2 | el precio contable (`total_assets / suministro efectivo`) no baja, salvo en un reporte con pérdida que el buffer no cubre o al bajar deuda con pérdida realizada |
+| YV-VIEW | totales, conversiones, previews y `maxDeposit` exactos |
+| YV-FUNDS | el activo en el vault, las estrategias, el accountant y lo perdido; el vault nunca tiene menos que `total_idle` |
+| YV-LIVE | cada operación pasa si y solo si el modelo dice que pasa, y la configuración queda como se pidió |
+| YV-LEDGER | Σ saldos crudos = `total_supply` |
+
+## 4. Demostraciones
+
+**El retiro no le pasa la pérdida a los demás.** Con `A` = activos contables y `s` el suministro efectivo, un retiro
+de `a` deja `A − a` (lo ocioso baja lo pagado; la deuda baja lo retirado más la parte de la pérdida no realizada, y
+el que retira cobra eso de menos), y quema `⌈a·s/A⌉` (withdraw) o pide `a = ⌊x·A/s⌋` (redeem): en los dos casos
+`(A − a)/(s − x) ≥ A/s`. La pérdida no realizada la carga quien retira de esa estrategia; la realizada en el canje,
+también (contra su `max_loss`).
+
+**El reporte con ganancia no baja el precio.** Las comisiones se pagan con acciones que salen de lo que se bloquea
+(la quema de `⌈comisión·s/A⌉` y la emisión de las mismas al accountant se compensan), y lo bloqueado es
+`⌊ganancia·s/A⌋`: `(A + g)/(s + ⌊g·s/A⌋) ≥ A/s`. Con pérdida, la quema `⌈ℓ·s/A⌉` sale del buffer; si alcanza, el precio
+no baja (`A·⌈ℓ·s/A⌉ ≥ ℓ·s`); si no alcanza, la pérdida baja el precio (excepción de YV-INF-2).
+
+**El período del reporte nunca es 0** por el mismo argumento que en TokenizedStrategy (docs/CAZADOR_TOKENIZED_STRATEGY.md
+§4): con buffer, el numerador del promedio ponderado es al menos el buffer.
+
+## 5. Harness (variante A)
+
+`local/nexus/secresearch/harness/yearn__yearn-vaults-v3/`:
+
+- **`NexusVaultV3Hunter.sol`**: tres estrategias ERC-4626 de OpenZeppelin 4.9.5 (sin offset) con perillas de liquidez
+  (`maxRedeem`), recorte por retiro (pérdida realizada) y pausa de depósitos; un accountant de prueba (comisión sobre
+  la ganancia y reembolso sobre la pérdida, en bps); el modelo y las leyes.
+- **`NexusVaultV3Invariant.t.sol`**: el handler y cuatro variantes: comisión del accountant 10 %; con 20 %, reembolso
+  50 % y protocolo 10 %; 6 decimales sin comisión; sin bloqueo de ganancias. Acciones: deposit, mint, withdraw y redeem
+  con `max_loss` 0, 1, 100 y 10.000 bps, transferencias; `update_debt` (subir, bajar, a 0, al máximo) y
+  `process_report`; ganancia, pérdida, liquidez, recorte y pausa de cada estrategia; accountant, protocolo, tope de
+  deuda, mínimo ocioso, tiempo de desbloqueo, pausa, apagado y saltos de reloj; y las secuencias ciclo completo,
+  salida con la estrategia en problemas, baja de deuda con el mínimo ocioso por encima de lo ocioso (el vault retira
+  de más) y vuelta a una configuración sana.
+- Compila sin `via_ir` (como el repo).
+
+Para iterar: `NEXUS_PERFIL=vault-v3` en [tools/forge_v2](../tools/forge_v2/README.md) (el clon en `5b698f9`). La
+referencia es `validate` sobre el repo entero con `"aislado": true` y `"match_path": "test/nexus/*"`. El
+`foundry.toml` del repo fija `match_path` a sus propios tests y, sin pisarlo, forge no corre ninguno del harness;
+desde el 29-oct `validate` marca como error una corrida del harness sin tests. El manifiesto pide 64×500 y no
+256×500: con el vault de Vyper y unas 35 leyes por llamada, 256×500 no entra en la hora que `limits.py` le da a los
+tests. Las campañas largas van por el panel o por `tools/forge_v2`, que no tienen ese tope.
+
+**Verificación (29-oct, forge 1.8.6 en la PC).**
+
+- **Proyecto reducido:** con el harness final, las 4 variantes pasan 24×500 sin falsos positivos y con 0
+  reversiones, con las semillas `0x2a` y `0x3` (12.000 llamadas por variante y semilla).
+- **Referencia:** `validate` sobre el repo entero (`v3.1.0`, compilación aislada, 64×500, semilla
+  `0x68a90a1321ee064a`) da 4 de 4 con 0 reversiones: 74 s de compilación y 1.687 s de tests.
+- **Cobertura en la última corrida de cada variante a 24×500, con las dos semillas:**
+  - de 17.000 a 19.700 leyes evaluadas;
+  - reportes: 5 a 18 con ganancia, 1 a 15 con pérdida, 5 a 14 con comisión del accountant y 1 a 10 con reembolso;
+  - retiros: 1 a 9 cargaron pérdida no realizada y 3 a 15 sacaron de alguna estrategia;
+  - deuda: 8 a 45 subas y 9 a 21 bajas, de las que 2 a 12 retiraron de más por el mínimo ocioso;
+  - 74 a 179 rechazos predichos por el modelo.
+- **Lo que el cazador recorre poco:** los retiros con pérdida realizada en la estrategia (0 a 2 por corrida) y con
+  exceso sobre la deuda (0 o 1).
+- **La última corrida de `validate`:** fue más pobre (0 o 1 reporte por tipo y hasta 5 retiros desde estrategias).
+  Como las cuatro variantes comparten la semilla, es la misma secuencia de llamadas en las cuatro. El log de
+  `afterInvariant` muestra solo la última corrida.
+
+**Mutaciones de referencia** ([tools/forge_v2/mutaciones_vault_v3.json](../tools/forge_v2/mutaciones_vault_v3.json);
+64×200, semilla `0x2a`, con `NEXUS_PERFIL=vault-v3`): las 28 se detectan, cada una en las 4 variantes (la
+numeración salta W7 y W16). Cada ley ve al menos una mutación, salvo YV-LEDGER: ninguna de las 28 cambia un saldo
+sin cambiar el suministro. W14 no se detectaba hasta que se sumó la secuencia del mínimo ocioso: el fuzzer casi
+nunca bajaba deuda con el mínimo por encima de lo ocioso.
+
+| Mutación | Variantes que la ven | Leyes |
+|---|---|---|
+| W1 `convert_to_assets` no redondea hacia arriba | las 4 | YV-VIEW |
+| W2 `convert_to_shares` no redondea hacia arriba | las 4 | YV-VIEW |
+| W3 el depósito suma un activo de más a `total_idle` | las 4 | YV-TA, YV-FUNDS |
+| W4 la pérdida no realizada no se le cobra al que retira | las 4 | YV-TA, YV-WD, YV-INF-2, YV-FUNDS, YV-LIVE |
+| W5 la pérdida no realizada no baja la deuda | las 4 | YV-TA |
+| W6 la parte de la pérdida no realizada no redondea hacia arriba | las 4 | YV-TA, YV-WD, YV-FUNDS |
+| W8 el retiro de la estrategia redondea las acciones hacia abajo | las 4 | YV-TA, YV-INF-2, YV-FUNDS, YV-LIVE |
+| W9 el idle suma lo pedido aunque haya pérdida | las 4 | YV-TA, YV-FUNDS |
+| W10 `total_idle` queda con un activo de más al retirar | las 4 | YV-TA, YV-FUNDS |
+| W11 `max_loss` no se controla | las 4 | YV-LIVE |
+| W12 lo retirado al bajar deuda no se acota a la deuda | las 4 | YV-LIVE |
+| W13 bajar deuda descuenta lo retirado y no lo pedido | las 4 | YV-TA |
+| W14 bajar deuda ignora el mínimo ocioso | las 4 | YV-TA, YV-FUNDS |
+| W15 subir deuda ignora `max_debt` | las 4 | YV-TA, YV-FUNDS |
+| W17 el reporte quema acciones redondeando hacia abajo | las 4 | YV-LOCK, YV-FEE, YV-SUP |
+| W18 las acciones de comisión suman una | las 4 | YV-SUP, YV-FEE, YV-INF-2 |
+| W19 la parte del protocolo suma una acción | las 4 | YV-FEE |
+| W20 el reporte bloquea redondeando hacia arriba | las 4 | YV-SUP, YV-LOCK, YV-INF-2 |
+| W21 el suministro final no descuenta lo desbloqueado | las 4 | YV-SUP, YV-LOCK, YV-INF-2 |
+| W22 la quema del reporte no se acota al buffer | las 4 | YV-LIVE |
+| W23 el reembolso no entra a `total_idle` | las 4 | YV-TA |
+| W24 la ganancia no sube `total_debt` | las 4 | YV-TA, YV-INF-2 |
+| W25 la pérdida no baja `total_debt` | las 4 | YV-TA |
+| W26 el promedio ponderado cuenta lo recién bloqueado como previo | las 4 | YV-LOCK |
+| W27 la tasa de desbloqueo suma uno | las 4 | YV-LOCK |
+| W28 el reporte no mueve `last_profit_update` | las 4 | YV-LOCK |
+| W29 vencida la fecha no se desbloquea nada | las 4 | YV-VIEW |
+| W30 el desbloqueo en 0 no quema el buffer | las 4 | YV-SUP, YV-LOCK, YV-INF-2 |
+
+Las leyes de más en algunas filas son el efecto en cadena de la mutación.
+
+## 6. Qué NO cubre
+
+- La variante B: estrategias reales de TokenizedStrategy v3.1.0 (en vivo), donde `convertToAssets` incluye lo
+  simulado. Es el paso siguiente.
+- Los hooks de depósito y retiro (los pone un rol privilegiado), `buy_debt`, `force_revoke_strategy`, la cola elegida
+  por el usuario, el auto-asignado de deuda al depositar, `process_report` del propio vault (donaciones al vault).

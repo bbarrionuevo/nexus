@@ -1,7 +1,7 @@
 # Traspaso: estado de nexus y cómo continuar
 
 Documento de entrega para retomar el proyecto desde cualquier conversación nueva con Claude. Actualizado el
-28-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
+29-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
 las reglas.
 
 Para arrancar una sesión que trabaje directo en la PC del dueño, con acceso a GitHub, el prompt de arranque está en
@@ -106,7 +106,7 @@ Lo que conviene saber de forge en un handler:
   (el clon en el tag `v3.1.0`). Los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de Windows:
   nexus clona con `-c core.longpaths=true`.
 
-## 3. Estado por etapa (28-oct-2026)
+## 3. Estado por etapa (29-oct-2026)
 
 | Etapa | Estado |
 |---|---|
@@ -121,6 +121,7 @@ Lo que conviene saber de forge en un handler:
 | Panel | Nuevo (28-oct): servidor local (`nexus.secresearch.panel`, solo biblioteca estándar) para monitorear forge, lanzar y frenar campañas y descargar informes sin pasar por Claude; solo `127.0.0.1`, token por arranque, control de `Host` y del encabezado de las acciones |
 | D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
 | D''''. Harness de TokenizedStrategy | Nuevo (28-oct): Yearn V3, `v3.1.0` (lo desplegado en `0x310f…1e76` y en alcance), la contabilidad nueva ("constant accrual", pestillo por bloque, piso de 1e3 acciones, quema de bloqueadas por pérdida en vivo) y la de reporte, 11 leyes `Y-...` exactas contra el almacenamiento crudo ([CAZADOR_TOKENIZED_STRATEGY.md](CAZADOR_TOKENIZED_STRATEGY.md)). Verificado con forge en la PC: 4 de 4 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada, 8 de 8 con los escenarios) y las 39 mutaciones de referencia detectadas. Sin hallazgos |
+| D'''''. Harness del Vault V3 | Nuevo (29-oct): Yearn V3, `v3.1.0` (lo desplegado en `0xdD3F…7824`), el vault real por su fábrica compilado con el `vyper` del venv (sin FFI), tres estrategias ERC-4626 de prueba y un accountant; 10 leyes `YV-...` exactas contra el almacenamiento crudo ([CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md)). Verificado con forge en la PC: las 4 variantes sin falsos positivos ni reversiones (24×500 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×500, semilla `0x68a90a1321ee064a`, 4 de 4) y las 28 mutaciones de referencia detectadas. **Sin hallazgos** |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
@@ -176,12 +177,14 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #84 | Vault V2: la cota de dominio V-BOUND como ley (el estado no sale del dominio de la aritmética de una palabra del vault; el handler no hace el depósito que lo sacaría) y sondas deterministas del registro y de los adapters para V-GOV-1; mutación V55. Va sobre el #83 |
 | #85 | EulerEarn: el cazador de la variante A (leyes E-...) sobre la versión desplegada, el perfil `euler-earn` de `tools/forge_v2` con 22 mutaciones, y en nexus `core.longpaths` para clonar, la compilación aislada (`"aislado": true` en el manifiesto) y leyes `E-` en el expediente. Va sobre el #84 |
 | #86 | Yearn V3: el cazador de TokenizedStrategy `v3.1.0` (leyes Y-...) en los dos modos de contabilidad, el perfil `tokenized-strategy` de `tools/forge_v2` con 39 mutaciones, leyes `Y-` en el expediente y `gh` en la PC |
+| #87 | El panel local (`nexus.secresearch.panel`): forge en vivo, lanzar y frenar campañas y descargar informes sin pasar por Claude; `NEXUS_MATCH` y el commit desplegado fijado en `tools/forge_v2` |
+| #88 | Yearn V3: el cazador del Vault V3 3.1.0 (leyes YV-...), el perfil `vault-v3` de `tools/forge_v2` con 28 mutaciones, el `vyper` del venv en el PATH de forge y `validate`, leyes `YV-` en el expediente y el panel, el perfil `vault-v3` en el panel, y `validate` ya no da por buena una corrida del harness en la que no corrió ningún test (el manifiesto puede fijar `match_path`) |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #86 (el #85 ya está en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
+1. **Dueño:** fusionar el #88 (el #86 y el #87 ya están en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
    probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
@@ -310,17 +313,29 @@ En orden de prioridad:
      pública. La etapa E está en `NEXUS_HOME/secresearch/etapa_e/yearn__tokenized-strategy/` (privado).
    - Por qué antes que lo que falta de EulerEarn: el núcleo de EulerEarn es un fork de MetaMorpho ya verificado
      formalmente (Certora), y su Public Allocator es casi literal el de Morpho; la contabilidad de la 3.1.0 es nueva.
-   - **Falta en Yearn:** el Vault V3 3.1.0 (Vyper, también en alcance) con estrategias en vivo: su `process_report`
-     lee `convertToAssets` de la estrategia, que ahora incluye lo simulado, y `_update_debt` no mira las acciones que
-     recibe al depositar. Frente a la 3.0.4 cambió poco en contabilidad (hooks con callback después del depósito y
-     del retiro, pausa, cola de retiro). Y la 3.0.4 de TokenizedStrategy (su contabilidad es la del modo por reporte,
-     sin pestillo ni piso).
+   - **Vault V3 3.1.0, en el #88:** la variante A (estrategias ERC-4626 de prueba) está hecha y verificada; ver
+     [CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md). **Falta en Yearn:** la variante B del vault con estrategias reales de
+     TokenizedStrategy v3.1.0 en vivo (su `convertToAssets` incluye lo simulado, y `_update_debt` no mira las acciones
+     que recibe al depositar), y la 3.0.4 de TokenizedStrategy (la contabilidad del modo por reporte, sin pestillo ni
+     piso).
+   - **Variante B del vault, evaluada el 29-oct:**
+     - El repo del vault fija `lib/tokenized-strategy` en la **v3.0.3**, no en la 3.1.0. Una variante B con la 3.1.0
+       necesita dos repos: `tools/forge_v2` puede armarla, pero `validate` trabaja con un solo clon.
+     - Aporta poco frente a la variante A. El vault ve la estrategia solo por sus vistas, y el cazador de
+       TokenizedStrategy ya demostró que esas vistas son la ejecución (Y-VIEW-1).
+     - Lo que sí queda abierto es el punto 3 del análisis privado de TokenizedStrategy: el vault no controla las
+       acciones que recibe en `update_debt`. Se puede medir con un escenario determinista privado, pero según R-7 hoy
+       no es candidato.
+   - **Campaña profunda del vault:** 768×1000, semilla `0xe782c4dd280d82a0`, lanzada el 29-oct a las 16:22 desde el
+     código del panel. Con la PC cargada, se estiman unas 12 h.
    - **Campaña profunda (28-oct):** 512×1500 (768.000 llamadas por variante, ~9 h), semilla `0x4a9cb1e5a489dc29`:
      las 4 variantes y los 4 escenarios en verde, **ninguna ley violada**, pero con 11 reversiones del handler en
      la variante con protocolo (en `report` y en `lockThenLose`, que lo llama): no es una falla de ley, y puede
      ser un borde de dominio del harness (una vista que revierte con suministros enormes tras una pérdida casi
-     total). Para diagnosticarlo quedó corriendo la misma variante y semilla con `fail_on_revert`, que frena en
-     la primera e imprime el motivo y la secuencia; y otra campaña de 128×6000, semilla `0x558c16a948b3b745`.
+     total). La misma variante y semilla con `fail_on_revert` (29-oct, ~13 h) pasó las 768.000 llamadas con **0
+     reversiones**: no se reproducen (o no eran deterministas o la generación cambia con esa opción), y en ninguna
+     corrida falló una ley. Se deja ahí. Las de 128×6000 (TokenizedStrategy `0x558c16a948b3b745` y EulerEarn
+     `0xf204663f1abb7cbe`) seguían corriendo el 29-oct a la tarde: con secuencias tan largas van mucho más lento.
      Los resultados están en `NEXUS_HOME\secresearch\campanas\` (privado) y se ven en el panel.
    - **Herramienta nueva:** `vyper` 0.3.10 quedó instalado en el venv (28-oct, `pip install vyper==0.3.10`; anda en
      Python 3.12 con avisos de deprecación y compila `VaultV3.vy` en ~6 s). Los tests de foundry de
@@ -333,7 +348,11 @@ En orden de prioridad:
    - montos escalados por decimales: hoy el fuzzer usa hasta 1e28 unidades también con 6 decimales;
    - una métrica de cuánto pierde la víctima por cada unidad que gasta el atacante en la macro de inflación;
    - que `check()` informe también la primera violación del cazador. Hoy guarda solo la primera de todas, y por eso
-     `mutate.py` dejó de atribuirle M7 y M15 a una ley `H-...`, aunque siguen detectadas.
+     `mutate.py` dejó de atribuirle M7 y M15 a una ley `H-...`, aunque siguen detectadas;
+   - que el fuzzer no llame `failed()`: los handlers de TokenizedStrategy y del Vault V3 heredan `Test` de forge-std,
+     que la expone, y se lleva cerca del 4 % de las llamadas (27.474 de 768.000 en la campaña de TokenizedStrategy).
+     Se arregla con `targetSelector` en el `setUp` o con un handler que no herede `Test`. Hay que volver a verificar
+     cada harness que se toque (la distribución de llamadas cambia). Revisar también los demás harness.
 
 ## 6. Pendientes y cuidados
 

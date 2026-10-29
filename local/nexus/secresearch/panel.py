@@ -37,8 +37,9 @@ FORGE_V2 = REPO / "tools" / "forge_v2" / "forge_v2.py"
 # perfil de tools/forge_v2 -> clon en NEXUS_HOME/work y prefijo de los contratos del harness
 PERFILES = {"vault-v2": ("morpho-org__vault-v2", "NexusVaultV2"),
             "euler-earn": ("euler-xyz__euler-earn", "NexusEulerEarn"),
-            "tokenized-strategy": ("yearn__tokenized-strategy", "NexusTokenizedStrategy")}
-LAW = re.compile(r"\b[HVEY]-[A-Z]+(?:-\d+)?")
+            "tokenized-strategy": ("yearn__tokenized-strategy", "NexusTokenizedStrategy"),
+            "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3")}
+LAW = re.compile(r"\b(?:YV|[HVEY])-[A-Z]+(?:-\d+)?")
 SEED = re.compile(r"^0x[0-9a-f]{1,16}$")
 MATCH = re.compile(r"^\^?[A-Za-z0-9]+\$?$")
 EXT = {".md", ".txt", ".json", ".html", ".csv"}

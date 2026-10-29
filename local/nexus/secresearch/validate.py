@@ -88,7 +88,9 @@ def forge_run(forge, args, cwd, timeout, env=None):
     try:
         # UTF-8 y errors="replace": en Windows (cp1252) el indicador de progreso de forge (byte 0x81) mataba el
         # hilo lector, forge quedaba trabado sin poder escribir y la corrida parecía colgada (26-oct).
-        r = subprocess.run([*forge, *args], cwd=cwd, env={**os.environ, **(env or {}), **FOUNDRY_ENV},
+        # el vyper del venv (harness del Vault V3 de Yearn) tiene que estar en el PATH de forge
+        path = os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")])
+        r = subprocess.run([*forge, *args], cwd=cwd, env={**os.environ, "PATH": path, **(env or {}), **FOUNDRY_ENV},
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
                            check=False, creationflags=NO_WINDOW)
         return r.returncode, r.stdout or "", r.stderr or "", round(time.time() - t0, 1)
@@ -262,6 +264,11 @@ def validate(repo, ref=None, match=None, out=None, programs=None, forge=None, ur
     counts, failures = summarize(data)
     rec["test"] = {"exit": code, "seconds": secs, "counts": counts, "failures": failures, "activity": activity(data)}
     rec["ok"] = counts["Failure"] == 0
+    if harness and counts["Success"] + counts["Failure"] == 0:
+        # Sin tests no hay verde (29-oct: el foundry.toml de yearn-vaults-v3 fija match_path a sus propios tests y
+        # forge no corría ninguno del harness).
+        rec.update(ok=False, error="no corrió ningún test del harness: el foundry.toml del repo puede fijar "
+                                   "match_path (el manifiesto lo pisa con su propio match_path)")
     return _save(out, rec)
 
 
