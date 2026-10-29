@@ -395,8 +395,13 @@ En orden de prioridad:
      firmas en el harness, que el test de coherencia no permite. El detalle está en
      `etapa_e/morpho-org__midnight/revision_periferia.md` (privado).
    - **Falta:**
-     - los callbacks, `multicall`, el préstamo flash y los gates;
-     - un cazador de MetaMorpho V1.1.
+     - **la variante B** (lo siguiente): callbacks (`onBuy`, `onSell`, `onRepay`, `onLiquidate`) que operan sobre
+       Midnight en medio de la operación, `multicall`, el préstamo flash y los gates. Es el código más nuevo y con la
+       recompensa más alta, y Certora asume que no hay reentrada salvo en las reglas de callbacks;
+     - un cazador de MetaMorpho V1.1, evaluado el 29-oct con valor esperado bajo. Lo desplegado son los commits
+       `8b578d3` a `b60364d`. Los cuatro cambios frente a la V1.0 son chicos, `lostAssets` tiene specs de Certora y ya
+       se cazó en EulerEarn (fork), y las auditorías de la V1.1 no tienen Medium abiertos. Detalle en
+       `etapa_e/morpho-org__metamorpho-v1.1/indice.md` (privado).
 
 ## 6. Pendientes y cuidados
 
