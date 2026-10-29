@@ -114,14 +114,15 @@ PERFILES = {
                    "trees": ("src", "lib/forge-std", "lib/openzeppelin-contracts/contracts",
                              "lib/ethereum-vault-connector/src"),
                    "toml": EE_FOUNDRY_TOML, "match": "^NexusEulerEarn",
-                   "mutaciones": HERE / "mutaciones_euler_earn.json", "archivo": "src/EulerEarn.sol"},
+                   "mutaciones": HERE / "mutaciones_euler_earn.json", "archivo": "src/EulerEarn.sol",
+                   "ref": "a8cc099"},
     "tokenized-strategy": {"harness": HARNESS.parent / "yearn__tokenized-strategy",
                            "sources": ("src/TokenizedStrategy.sol", "src/BaseStrategy.sol"),
                            "trees": ("src/interfaces", "src/libraries", "lib/forge-std",
                                      "lib/openzeppelin-contracts/contracts"),
                            "toml": TS_FOUNDRY_TOML, "match": "^NexusTokenizedStrategy",
                            "mutaciones": HERE / "mutaciones_tokenized_strategy.json",
-                           "archivo": "src/TokenizedStrategy.sol"},
+                           "archivo": "src/TokenizedStrategy.sol", "ref": "8c8929f"},
 }
 
 
@@ -135,9 +136,16 @@ def _perfil():
 
 def armar(clone, dest):
     clone, dest = Path(clone), Path(dest)
+    perfil = _perfil()
+    ref = perfil.get("ref")
+    if ref:  # lo desplegado: un proyecto armado sobre otro commit probaría otra cosa
+        head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              check=False).stdout.strip()
+        if not head.startswith(ref):
+            raise SystemExit(f"el clon está en {head[:10] or '?'} y no en {ref} (lo desplegado): "
+                             f"git -C {clone} checkout {ref}")
     if dest.exists():
         shutil.rmtree(dest)
-    perfil = _perfil()
     for rel in perfil["sources"]:
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(clone / rel, dest / rel)
@@ -165,7 +173,8 @@ def correr(dest, runs, depth, seed):
     if b.returncode:
         print((b.stdout + b.stderr)[-2000:])
         return b.returncode
-    return subprocess.run([shutil.which("forge"), "test", "--match-contract", _perfil()["match"], "-vv"], cwd=dest,
+    match = os.environ.get("NEXUS_MATCH", _perfil()["match"])  # una variante sola, p. ej. desde el panel
+    return subprocess.run([shutil.which("forge"), "test", "--match-contract", match, "-vv"], cwd=dest,
                           env=env, check=False).returncode
 
 
