@@ -102,7 +102,8 @@ def test_el_expediente_reconoce_las_leyes_de_metamorpho_y_de_vault_v2():
                         ("V-LEDGER: la suma de los saldos no es totalSupply: 3, 4", "V-LEDGER"),   # sin número
                         ("E-INF-2: el precio por accion bajo [leyes: E-INF-2]: 1, 2", "E-INF-2"),   # EulerEarn
                         ("Y-REENT-1: totalAssets durante el callback [leyes: Y-REENT-1]: 1, 2", "Y-REENT-1"),
-                        ("YV-INF-2: el precio por accion bajo [leyes: YV-INF-2]: 1, 2", "YV-INF-2")):  # Vault V3
+                        ("YV-INF-2: el precio por accion bajo [leyes: YV-INF-2]: 1, 2", "YV-INF-2"),  # Vault V3
+                        ("MN-CLAIM: los reclamos superan totalUnits [leyes: MN-CLAIM]: 2, 1", "MN-CLAIM")):  # Midnight
         assert expediente.LAW.search(reason).group(0) == law
 
 

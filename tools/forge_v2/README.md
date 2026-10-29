@@ -89,3 +89,13 @@ $env:NEXUS_PERFIL = "tokenized-strategy"
 "codesize"`), y `mutar` toma `mutaciones_vault_v3.json` (sobre `contracts/VaultV3.vy`). El clon tiene que estar en el
 tag `v3.1.0` (`5b698f9`). Forge compila Vyper con el `vyper` 0.3.10 del venv: `forge_v2` lo pone en el PATH (si se
 corre forge a mano, agregar `.venv\Scripts` al PATH).
+
+## Perfil de Morpho Midnight
+
+`NEXUS_PERFIL=midnight` hace lo mismo con `morpho-org/midnight` (programa Morpho):
+- **`armar`:** copia el núcleo (`src/Midnight.sol`, sus librerías e interfaces) y forge-std con los ajustes del repo
+  (solc 0.8.34, `osaka`, via_ir, 466 runs). La periferia queda afuera: con via_ir, compilar `src` entero llevó unos 40
+  minutos con la PC cargada, y el proyecto reducido compila en unos 3.
+- **`mutar`:** toma `mutaciones_midnight.json`, 37 mutaciones sobre `src/Midnight.sol`.
+- **El clon:** tiene que estar en la etiqueta `2026-08-24` (`14e0b77`), la última idéntica al núcleo desplegado.
+- **La batería:** cada mutación recompila con via_ir. Conviene `NEXUS_MUT_RUNS="32 200 0x2a"`.

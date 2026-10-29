@@ -93,6 +93,30 @@ def test_lanzar_registra_la_campana_y_no_usa_shell(home, monkeypatch):
         panel.stop(rec["id"], home)
 
 
+def test_la_campana_se_separa_del_job_de_quien_la_lanza(home, monkeypatch):
+    """29-oct: las campañas lanzadas desde una sesión morían cuando la sesión se reiniciaba (el job de quien lanza).
+    Se pide separarse del job; si no se permite (OSError), se lanza como antes."""
+    calls = []
+
+    class FakeProc:
+        pid = 99
+
+    def fake_popen(cmd, creationflags=0, **kw):
+        calls.append(creationflags)
+        if len(calls) == 1 and creationflags & 0x01000000:
+            raise PermissionError("acceso denegado")
+        return FakeProc()
+
+    monkeypatch.setattr(panel, "BREAKAWAY", 0x01000000)
+    monkeypatch.setattr(panel, "BELOW_NORMAL", 0x00004000)
+    monkeypatch.setattr(panel.subprocess, "Popen", fake_popen)
+    rec = panel.launch({"perfil": "midnight", "runs": 8, "depth": 50, "seed": "0x2a"}, home)
+    assert rec["pid"] == 99 and len(calls) == 2
+    assert calls[0] & 0x01000000 and not calls[1] & 0x01000000
+    if panel.os.name == "nt":                     # prioridad por debajo de lo normal en los dos intentos
+        assert all(c & 0x00004000 for c in calls)
+
+
 @pytest.fixture
 def server(home, monkeypatch):
     monkeypatch.setattr(panel, "forge_procs", list)

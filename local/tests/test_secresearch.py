@@ -434,6 +434,18 @@ def test_harness_del_vault_v3_es_coherente_y_no_sale_de_la_evm_local():
         assert not [b for b in banned if b in text], f.name
 
 
+def test_harness_de_midnight_es_coherente_y_no_sale_de_la_evm_local():
+    from nexus.secresearch import limits, validate
+    man, files = validate.load_harness("morpho-org__midnight")
+    assert man["repo"] == "morpho-org/midnight" and man["match_contract"] == "^NexusMidnight" and man["aislado"] is True
+    assert {f.name for f in files} == {"NexusMidnightHunter.sol", "NexusMidnightInvariant.t.sol"}
+    banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
+              "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert not [b for b in banned if b in text], f.name
+
+
 def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     from nexus.secresearch import cycle
     home = tmp_path / "home"

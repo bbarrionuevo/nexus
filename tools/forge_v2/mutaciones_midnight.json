@@ -1,0 +1,224 @@
+[
+ [
+  "M1 take: lo que paga el comprador de una oferta de compra redondea hacia arriba",
+  "uint256 buyerAssets = offer.buy ? units.mulDivDown(buyerPrice, WAD) : units.mulDivUp(buyerPrice, WAD);",
+  "uint256 buyerAssets = offer.buy ? units.mulDivUp(buyerPrice, WAD) : units.mulDivUp(buyerPrice, WAD);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M2 take: lo que recibe el vendedor de una oferta de venta redondea hacia abajo",
+  "uint256 sellerAssets = offer.buy ? units.mulDivDown(sellerPrice, WAD) : units.mulDivUp(sellerPrice, WAD);",
+  "uint256 sellerAssets = offer.buy ? units.mulDivDown(sellerPrice, WAD) : units.mulDivDown(sellerPrice, WAD);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M3 take: no se actualiza al vendedor con credito",
+  "if (hasCredit(id, seller)) _updatePosition(offer.market, id, seller);",
+  "if (false) _updatePosition(offer.market, id, seller);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M4 take: el credito del comprador no descuenta su deuda",
+  "uint256 buyerCreditIncrease = UtilsLib.zeroFloorSub(units, buyerPos.debt);",
+  "uint256 buyerCreditIncrease = units;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M5 take: el vendedor no usa su credito",
+  "uint256 sellerCreditDecrease = UtilsLib.min(units, sellerPos.credit);",
+  "uint256 sellerCreditDecrease = 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M6 take: la comision pendiente del comprador redondea hacia arriba",
+  "UtilsLib.toUint128(buyerCreditIncrease.mulDivDown(_marketState.continuousFee * timeToMaturity, WAD));",
+  "UtilsLib.toUint128(buyerCreditIncrease.mulDivUp(_marketState.continuousFee * timeToMaturity, WAD));",
+  "src/Midnight.sol"
+ ],
+ [
+  "M7 take: la comision pendiente que pierde el vendedor redondea hacia abajo",
+  "? UtilsLib.toUint128(sellerPos.pendingFee.mulDivUp(sellerCreditDecrease, sellerPos.credit))",
+  "? UtilsLib.toUint128(sellerPos.pendingFee.mulDivDown(sellerCreditDecrease, sellerPos.credit))",
+  "src/Midnight.sol"
+ ],
+ [
+  "M8 take: entra deuda despues del vencimiento",
+  "require(block.timestamp <= offer.market.maturity || sellerDebtIncrease == 0, CannotIncreaseDebtPostMaturity());",
+  "require(true, CannotIncreaseDebtPostMaturity());",
+  "src/Midnight.sol"
+ ],
+ [
+  "M9 take: totalUnits no descuenta el credito vendido",
+  "UtilsLib.toUint128(_marketState.totalUnits + buyerCreditIncrease - sellerCreditDecrease);",
+  "UtilsLib.toUint128(_marketState.totalUnits + buyerCreditIncrease);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M10 take: la comision de liquidacion suma una unidad de mas",
+  "claimableSettlementFee[offer.market.loanToken] += buyerAssets - sellerAssets;",
+  "claimableSettlementFee[offer.market.loanToken] += buyerAssets - sellerAssets + 1;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M11 take: el vendedor puede quedar insano",
+  "require(liquidationLocked(id, seller) || isHealthy(offer.market, id, seller), SellerIsLiquidatable());",
+  "require(true, SellerIsLiquidatable());",
+  "src/Midnight.sol"
+ ],
+ [
+  "M12 withdraw: no actualiza la posicion antes de retirar",
+  "_updatePosition(market, id, onBehalf);",
+  "market;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M13 withdraw: la comision pendiente baja redondeando hacia abajo",
+  "pendingFeeDecrease = UtilsLib.toUint128(_position.pendingFee.mulDivUp(units, _position.credit));",
+  "pendingFeeDecrease = UtilsLib.toUint128(_position.pendingFee.mulDivDown(units, _position.credit));",
+  "src/Midnight.sol"
+ ],
+ [
+  "M14 withdraw: withdrawable no baja",
+  "_marketState.withdrawable -= UtilsLib.toUint128(units);",
+  "_marketState.withdrawable -= 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M15 repay: withdrawable no sube",
+  "marketState[id].withdrawable += UtilsLib.toUint128(units);",
+  "marketState[id].withdrawable += 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M16 supplyCollateral: no activa el colateral",
+  "uint128 newCollateralBitmap = _position.collateralBitmap.setBit(collateralIndex);",
+  "uint128 newCollateralBitmap = _position.collateralBitmap;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M17 withdrawCollateral: sin el control de salud",
+  "require(isHealthy(market, id, onBehalf), UnhealthyBorrower());",
+  "require(true, UnhealthyBorrower());",
+  "src/Midnight.sol"
+ ],
+ [
+  "M18 liquidate: la deuda incobrable valua el colateral redondeando hacia abajo",
+  "_collateral.mulDivUp(price, ORACLE_PRICE_SCALE)",
+  "_collateral.mulDivDown(price, ORACLE_PRICE_SCALE)",
+  "src/Midnight.sol"
+ ],
+ [
+  "M19 liquidate: el factor de perdida redondea hacia abajo",
+  "type(uint128).max - (type(uint128).max - _lossFactor).mulDivDown(_totalUnits - badDebt, _totalUnits)",
+  "type(uint128).max - (type(uint128).max - _lossFactor).mulDivUp(_totalUnits - badDebt, _totalUnits)",
+  "src/Midnight.sol"
+ ],
+ [
+  "M20 liquidate: totalUnits no baja con la deuda incobrable",
+  "_marketState.totalUnits -= UtilsLib.toUint128(badDebt);",
+  "_marketState.totalUnits -= 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M21 liquidate: continuousFeeCredit no se escala con la perdida",
+  ".mulDivDown(type(uint128).max - _marketState.lossFactor, type(uint128).max - _lossFactor)",
+  ".mulDivDown(1, 1)",
+  "src/Midnight.sol"
+ ],
+ [
+  "M22 liquidate: el LIF post-vencimiento es el maximo desde el vencimiento",
+  "? UtilsLib.min(_maxLif, WAD + (_maxLif - WAD) * (block.timestamp - market.maturity) / TIME_TO_MAX_LIF)",
+  "? _maxLif",
+  "src/Midnight.sol"
+ ],
+ [
+  "M23 liquidate: el repago por embargo redondea hacia abajo",
+  "repaidUnits = seizedAssets.mulDivUp(liquidatedCollatPrice, ORACLE_PRICE_SCALE).mulDivUp(WAD, lif);",
+  "repaidUnits = seizedAssets.mulDivUp(liquidatedCollatPrice, ORACLE_PRICE_SCALE).mulDivDown(WAD, lif);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M24 liquidate: el embargo por repago redondea hacia arriba",
+  "seizedAssets = repaidUnits.mulDivDown(lif, WAD).mulDivDown(ORACLE_PRICE_SCALE, liquidatedCollatPrice);",
+  "seizedAssets = repaidUnits.mulDivDown(lif, WAD).mulDivUp(ORACLE_PRICE_SCALE, liquidatedCollatPrice);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M25 liquidate: sin el tope RCF",
+  "repaidUnits <= maxRepaid",
+  "true",
+  "src/Midnight.sol"
+ ],
+ [
+  "M26 liquidate: withdrawable no sube con el repago",
+  "_marketState.withdrawable += UtilsLib.toUint128(repaidUnits);",
+  "_marketState.withdrawable += 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M27 updatePositionView: el recorte redondea hacia arriba",
+  "? _credit.mulDivDown(type(uint128).max - marketState[id].lossFactor, type(uint128).max - _lastLossFactor)",
+  "? _credit.mulDivUp(type(uint128).max - marketState[id].lossFactor, type(uint128).max - _lastLossFactor)",
+  "src/Midnight.sol"
+ ],
+ [
+  "M28 updatePositionView: la comision pendiente del recorte redondea hacia abajo",
+  "_credit > 0 ? _pendingFee - _pendingFee.mulDivUp(_credit - postSlashCredit, _credit) : 0;",
+  "_credit > 0 ? _pendingFee - _pendingFee.mulDivDown(_credit - postSlashCredit, _credit) : 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M29 updatePositionView: el devengo no se corta en el vencimiento",
+  "uint256 accrualEnd = UtilsLib.min(block.timestamp, market.maturity);",
+  "uint256 accrualEnd = block.timestamp > market.maturity ? market.maturity - 1 : block.timestamp;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M30 updatePositionView: el devengo redondea hacia arriba",
+  "? uint128(postSlashPendingFee.mulDivDown(accrualEnd - _lastAccrual, market.maturity - _lastAccrual))",
+  "? uint128(postSlashPendingFee.mulDivUp(accrualEnd - _lastAccrual, market.maturity - _lastAccrual))",
+  "src/Midnight.sol"
+ ],
+ [
+  "M31 _updatePosition: no guarda el factor de perdida",
+  "_position.lastLossFactor = marketState[id].lossFactor;",
+  "_position.lastLossFactor = _position.lastLossFactor;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M32 _updatePosition: no guarda el ultimo devengo",
+  "_position.lastAccrual = uint128(block.timestamp);",
+  "_position.lastAccrual = _position.lastAccrual;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M33 _updatePosition: continuousFeeCredit no suma lo devengado",
+  "marketState[id].continuousFeeCredit += UtilsLib.toUint128(accruedFee);",
+  "marketState[id].continuousFeeCredit += 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M34 claimContinuousFee: withdrawable no baja",
+  "_marketState.withdrawable -= UtilsLib.toUint128(amount);",
+  "_marketState.withdrawable -= 0;",
+  "src/Midnight.sol"
+ ],
+ [
+  "M35 isHealthy: el LLTV redondea hacia arriba",
+  ".mulDivDown(collateralParam.lltv, WAD);",
+  ".mulDivUp(collateralParam.lltv, WAD);",
+  "src/Midnight.sol"
+ ],
+ [
+  "M36 settlementFee: el tramo de 7 a 30 dias parte del punto de 30",
+  "timeToMaturity < 30 days  ? (  7 days,  30 days, _marketState.settlementFeeCbp2 * CBP, _marketState.settlementFeeCbp3 * CBP) :",
+  "timeToMaturity < 30 days  ? (  7 days,  30 days, _marketState.settlementFeeCbp3 * CBP, _marketState.settlementFeeCbp3 * CBP) :",
+  "src/Midnight.sol"
+ ],
+ [
+  "M37 liquidate: el colateral embargado no sale del bitmap",
+  "            if (newCollateral == 0 && seizedAssets > 0) {",
+  "            if (false) {",
+  "src/Midnight.sol"
+ ]
+]

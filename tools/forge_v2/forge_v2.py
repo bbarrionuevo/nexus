@@ -130,6 +130,28 @@ optimize = "codesize"
 [lint]
 lint_on_build = false
 """
+# Perfil de Morpho Midnight (morpho-org/midnight @ la etiqueta 2026-08-24, el núcleo desplegado en 0x4716…045f): el
+# núcleo (Midnight.sol, sus librerías e interfaces) y forge-std, con los ajustes del repo (solc 0.8.34, osaka, via_ir,
+# 466 runs). La periferia queda afuera: compila aparte y con via_ir haría más lenta cada iteración.
+MN_FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness de Midnight: mismos ajustes que el foundry.toml del repo.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.34"
+evm_version = "osaka"
+via_ir = true
+optimizer = true
+optimizer_runs = 466
+bytecode_hash = "none"
+ffi = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+]
+
+[lint]
+lint_on_build = false
+"""
 PERFILES = {
     "vault-v2": {"harness": HARNESS, "sources": SOURCES, "trees": TREES, "toml": FOUNDRY_TOML,
                  "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol"},
@@ -151,11 +173,15 @@ PERFILES = {
                  "trees": ("lib/forge-std", "lib/openzeppelin-contracts/contracts"),
                  "toml": YV_FOUNDRY_TOML, "match": "^NexusVaultV3",
                  "mutaciones": HERE / "mutaciones_vault_v3.json", "archivo": "contracts/VaultV3.vy", "ref": "5b698f9"},
+    "midnight": {"harness": HARNESS.parent / "morpho-org__midnight", "sources": ("src/Midnight.sol",),
+                 "trees": ("src/libraries", "src/interfaces", "lib/forge-std"), "toml": MN_FOUNDRY_TOML,
+                 "match": "^NexusMidnight", "mutaciones": HERE / "mutaciones_midnight.json",
+                 "archivo": "src/Midnight.sol", "ref": "14e0b77"},
 }
 
 
 def _perfil():
-    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy o vault-v3."""
+    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy, vault-v3 o midnight."""
     nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
     if nombre not in PERFILES:
         raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")

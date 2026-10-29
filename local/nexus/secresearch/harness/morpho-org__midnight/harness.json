@@ -1,0 +1,13 @@
+{
+  "repo": "morpho-org/midnight",
+  "match_contract": "^NexusMidnight",
+  "aislado": true,
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "64",
+    "FOUNDRY_INVARIANT_DEPTH": "300",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "29-oct-2026 con forge 1.8.6 en la PC, morpho-org/midnight en la etiqueta 2026-08-24 (14e0b77843, el nucleo desplegado en 0x4716...045f, coincidencia completa en Sourcify): en el proyecto reducido de tools/forge_v2 (NEXUS_PERFIL=midnight), las 4 variantes (comisiones al 50 %, al maximo, 6 decimales y LLTV = 1) pasan 32x300 sin falsos positivos ni reversiones con 0x2a y 0x3; con validate sobre el repo entero (compilacion aislada, 64x300, semilla 0xf447dc803a8a69c4), 4 de 4 con 0 reversiones; las 37 mutaciones de mutaciones_midnight.json detectadas"
+}
