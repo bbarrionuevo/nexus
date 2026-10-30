@@ -188,16 +188,45 @@ def _perfil():
     return PERFILES[nombre]
 
 
+def _submodulos_fuera(status, rels):
+    """De la salida de `git submodule status`, los submódulos de los que se copia algo (`rels`) que no están en el
+    commit que fija el repo ('+'), que no están iniciados ('-') o que tienen conflictos ('U')."""
+    fuera = []
+    for ln in status.splitlines():
+        partes = ln.split()
+        if len(partes) < 2 or ln[:1] not in "+-U":
+            continue
+        sub = partes[1]
+        if any(rel == sub or rel.startswith(sub + "/") for rel in rels):
+            fuera.append(sub)
+    return fuera
+
+
+def _clon_fijado(clone, perfil):
+    """El clon tiene que estar en lo desplegado (`ref`), y sus submódulos en lo que ese commit fija: un proyecto
+    armado o una mutación sobre otro commit probaría otra cosa. El ciclo desatendido comparte los clones de
+    NEXUS_HOME/work y los mueve al último commit para sus líneas base (30-oct: Midnight, Vault V3, TokenizedStrategy
+    y EulerEarn con su EVC); volver a `ref` no mueve los submódulos."""
+    ref = perfil.get("ref")
+    if not ref:
+        return
+    head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True,
+                          check=False).stdout.strip()
+    if not head.startswith(ref):
+        raise SystemExit(f"el clon está en {head[:10] or '?'} y no en {ref} (lo desplegado): "
+                         f"git -C {clone} checkout {ref}")
+    status = subprocess.run(["git", "-C", str(clone), "submodule", "status"], capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", check=False).stdout
+    fuera = _submodulos_fuera(status, (*perfil["sources"], *perfil["trees"]))
+    if fuera:
+        raise SystemExit(f"submódulos que no están en lo que fija {ref}: {', '.join(fuera)}: "
+                         f"git -C {clone} submodule update --init {' '.join(fuera)}")
+
+
 def armar(clone, dest):
     clone, dest = Path(clone), Path(dest)
     perfil = _perfil()
-    ref = perfil.get("ref")
-    if ref:  # lo desplegado: un proyecto armado sobre otro commit probaría otra cosa
-        head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True,
-                              check=False).stdout.strip()
-        if not head.startswith(ref):
-            raise SystemExit(f"el clon está en {head[:10] or '?'} y no en {ref} (lo desplegado): "
-                             f"git -C {clone} checkout {ref}")
+    _clon_fijado(clone, perfil)
     if dest.exists():
         shutil.rmtree(dest)
     for rel in perfil["sources"]:
@@ -264,6 +293,7 @@ def mutar(dest, clone, only=()):
     dest = Path(dest)
     runs, depth, seed = os.environ.get("NEXUS_MUT_RUNS", "64 200 0x2a").split()
     perfil = _perfil()
+    _clon_fijado(clone, perfil)  # la copia limpia de cada mutación sale del clon
     match = os.environ.get("NEXUS_MUT_MATCH", perfil["match"])
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)

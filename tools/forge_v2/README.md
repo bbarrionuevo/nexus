@@ -77,8 +77,11 @@ $env:NEXUS_PERFIL = "tokenized-strategy"
 
 - `NEXUS_MATCH="^NexusTokenizedStrategyInvariantFeeTest$"` hace que `correr` corra una sola variante (sin eso, todas
   las del perfil).
-- Los perfiles de EulerEarn y TokenizedStrategy fijan el commit desplegado (`a8cc099`, `8c8929f`): `armar` se niega a
-  copiar un clon que esté en otro commit (lo puede haber movido `validate`).
+- Los perfiles con commit desplegado fijado (EulerEarn `a8cc099`, TokenizedStrategy `8c8929f`, Vault V3 `5b698f9`,
+  Midnight `14e0b77`): `armar` y `mutar` se niegan a usar un clon que esté en otro commit, o con un submódulo del que
+  copian algo en otro commit que el que fija ese. El ciclo desatendido comparte los clones y los mueve al último commit
+  para sus líneas base, y volver al commit fijado no mueve los submódulos (30-oct: el EVC de EulerEarn). El mensaje
+  dice el `git checkout` o el `git submodule update --init` que hace falta.
 - El panel local (`python -m nexus.secresearch.panel`, desde `local`) lanza `armar` + `correr` con estos mismos
   parámetros en un proyecto propio dentro de `NEXUS_HOME/work/panel/` y deja el log en `secresearch/campanas/`.
 
