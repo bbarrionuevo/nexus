@@ -1,0 +1,72 @@
+[
+ [
+  "B1 SupplyCollateralAndBorrow: la comision de referido redondea hacia arriba",
+  "        uint256 receivedAssets = borrowAssets - penaltyAssets;\n        uint256 referralFeeAssets = receivedAssets.mulDivDown(referralFeePct, WAD);",
+  "        uint256 receivedAssets = borrowAssets - penaltyAssets;\n        uint256 referralFeeAssets = receivedAssets.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "B2 SupplyCollateralAndBorrow: sin el control de maxLtv",
+  "        SafeTransferLib.safeTransfer(marketParams.loanToken, msg.sender, receivedAssets - referralFeeAssets);\n        requireMaxLtv(marketParams, msg.sender, maxLtv);",
+  "        SafeTransferLib.safeTransfer(marketParams.loanToken, msg.sender, receivedAssets - referralFeeAssets);"
+ ],
+ [
+  "B3 RepayAndWithdrawCollateral: la comision de referido es repaid*pct/WAD",
+  "uint256 referralFeeAssets = repayAssets.mulDivDown(referralFeePct, WAD - referralFeePct);",
+  "uint256 referralFeeAssets = repayAssets.mulDivDown(referralFeePct, WAD);"
+ ],
+ [
+  "B4 RepayAndWithdrawCollateral: el colateral retirado queda en el bundle",
+  "IMorpho(BLUE).withdrawCollateral(marketParams, collateralAssets, msg.sender, msg.sender);",
+  "IMorpho(BLUE).withdrawCollateral(marketParams, collateralAssets, msg.sender, address(this));"
+ ],
+ [
+  "B5 RepayAndWithdrawCollateral: repagar todo deja una accion de deuda",
+  "repayShares = IMorpho(BLUE).position(marketParams.id(), msg.sender).borrowShares;",
+  "repayShares = IMorpho(BLUE).position(marketParams.id(), msg.sender).borrowShares - 1;"
+ ],
+ [
+  "B6 RepayAndWithdrawCollateral: sin el control de maxLtv",
+  "        requireMaxLtv(marketParams, msg.sender, maxLtv);\n\n        uint256 remainder = maxRepayAssets - repayAssets - referralFeeAssets;",
+  "\n        uint256 remainder = maxRepayAssets - repayAssets - referralFeeAssets;"
+ ],
+ [
+  "B7 Supply: la comision de referido redondea hacia arriba",
+  "uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD);",
+  "uint256 referralFeeAssets = assets.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "B8 Supply: deposita a nombre del referido",
+  "IMorpho(BLUE).supply(marketParams, toSupply, 0, msg.sender, \"\");",
+  "IMorpho(BLUE).supply(marketParams, toSupply, 0, referralFeeRecipient, \"\");"
+ ],
+ [
+  "B9 Withdraw: la comision de referido redondea hacia arriba",
+  "        uint256 receivedAssets = withdrawnAssetsTransient - penaltyAssets;\n        uint256 referralFeeAssets = receivedAssets.mulDivDown(referralFeePct, WAD);",
+  "        uint256 receivedAssets = withdrawnAssetsTransient - penaltyAssets;\n        uint256 referralFeeAssets = receivedAssets.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "B10 Withdraw: sin el control de la comision de referido",
+  "        uint256 deadline\n    ) external {\n        require(block.timestamp <= deadline, DeadlinePassed());\n        require(referralFeePct < WAD, PctExceeded());\n\n        setAuthorizationWithSig(signedAuthorization);\n\n        uint256 penaltyAssets = totalPenaltyAssets(reallocations);\n        if (penaltyAssets == 0) {",
+  "        uint256 deadline\n    ) external {\n        require(block.timestamp <= deadline, DeadlinePassed());\n\n        setAuthorizationWithSig(signedAuthorization);\n\n        uint256 penaltyAssets = totalPenaltyAssets(reallocations);\n        if (penaltyAssets == 0) {"
+ ],
+ [
+  "B11 MigrateBorrowPosition: la comision de referido es assets*pct/WAD",
+  "uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD - referralFeePct);",
+  "uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD);"
+ ],
+ [
+  "B12 MigrateBorrowPosition: aporta en destino una unidad menos de colateral",
+  "IMorpho(BLUE).supplyCollateral(destMarketParams, collateral, sender, \"\");",
+  "IMorpho(BLUE).supplyCollateral(destMarketParams, collateral - 1, sender, \"\");"
+ ],
+ [
+  "B13 SupplyCollateralAndBorrow: sin el control del plazo",
+  "        uint256 deadline\n    ) external payable {\n        require(block.timestamp <= deadline, DeadlinePassed());\n        require(referralFeePct < WAD, PctExceeded());\n        require(borrowAssets > 0 || reallocations.length == 0, InconsistentBorrowInput());",
+  "        uint256 deadline\n    ) external payable {\n        require(referralFeePct < WAD, PctExceeded());\n        require(borrowAssets > 0 || reallocations.length == 0, InconsistentBorrowInput());"
+ ],
+ [
+  "B14 MigrateBorrowPosition: sin el control de maxLtv",
+  "        }\n        requireMaxLtv(destMarketParams, msg.sender, maxLtv);",
+  "        }"
+ ]
+]

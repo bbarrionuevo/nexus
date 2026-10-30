@@ -204,6 +204,7 @@ PERFILES = {
     # BlueBuyCallback; la fase 2 despliega Blue (0.8.19) con deployCode, de ahí "build". "once": en mutar alcanza con
     # compilar una vez, porque lo que se muta (el bundle, BlueBuyCallback, PriceRatifierV1) lo importan los tests.
     "midnight-bundles": {"harness": HARNESS.parent / "morpho-org__bundles",
+                         "files": ("NexusMidnightBundles*.sol", "NexusBlueImport.sol"),
                          "sources": ("src/midnight/MidnightBundlesV2.sol",
                                      "src/midnight/interfaces/IMidnightBundlesV2.sol", "src/libraries/TokenLib.sol",
                                      "src/libraries/interfaces/IERC20Permit.sol",
@@ -214,11 +215,23 @@ PERFILES = {
                          "toml": MB_FOUNDRY_TOML, "match": "^NexusMidnightBundles",
                          "mutaciones": HERE / "mutaciones_midnight_bundles.json",
                          "archivo": "src/midnight/MidnightBundlesV2.sol", "ref": "2ed954e", "build": "once"},
+    # BlueBundlesV1 desplegado (0x38B0…22e6AD) = la etiqueta 2026-08-25; hasta 2ed954e solo sumó dos comentarios de
+    # lint, así que comparte el clon fijado de midnight-bundles. Blue (0.8.19) por deployCode.
+    "blue-bundles": {"harness": HARNESS.parent / "morpho-org__bundles",
+                     "files": ("NexusBlueBundles*.sol", "NexusBlueImport.sol"),
+                     "sources": ("src/blue/BlueBundlesV1.sol", "src/blue/interfaces/IBlueBundlesV1.sol",
+                                 "src/blue/interfaces/IBluePublicAllocator.sol", "src/libraries/TokenLib.sol",
+                                 "src/libraries/interfaces/IERC20Permit.sol", "src/libraries/interfaces/IWNative.sol"),
+                     "trees": ("lib/midnight/src", "lib/morpho-blue/src", "lib/permit2/src/interfaces", "lib/forge-std"),
+                     "toml": MB_FOUNDRY_TOML, "match": "^NexusBlueBundles",
+                     "mutaciones": HERE / "mutaciones_blue_bundles.json",
+                     "archivo": "src/blue/BlueBundlesV1.sol", "ref": "2ed954e", "build": "once"},
 }
 
 
 def _perfil():
-    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy, vault-v3 o midnight."""
+    """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy, vault-v3, midnight,
+    midnight-bundles o blue-bundles."""
     nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
     if nombre not in PERFILES:
         raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")
@@ -293,8 +306,14 @@ def _env(runs, depth, seed, **extra):
             "FOUNDRY_INVARIANT_DEPTH": str(depth), "FOUNDRY_FUZZ_SEED": seed, **extra, "FOUNDRY_FFI": "false"}
 
 
+def _harness_files(perfil):
+    """Los .sol del harness de un perfil: todos, o los de sus patrones "files" (los perfiles de morpho-org/bundles
+    comparten carpeta)."""
+    return sorted({f for pat in perfil.get("files", ("*.sol",)) for f in perfil["harness"].glob(pat)})
+
+
 def _harness(dest):
-    for f in _perfil()["harness"].glob("*.sol"):
+    for f in _harness_files(_perfil()):
         shutil.copy2(f, Path(dest) / "test" / "nexus" / f.name)
 
 

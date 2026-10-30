@@ -231,7 +231,7 @@ def test_forge_v2_compila_el_proyecto_entero_solo_donde_hay_deploycode():
     hace falta donde el harness despliega artefactos por nombre (deployCode), y en el resto compilaba dos veces."""
     fv2 = _forge_v2()
     for nombre, perfil in fv2.PERFILES.items():
-        usa = any("deployCode" in f.read_text(encoding="utf-8") for f in perfil["harness"].glob("*.sol"))
+        usa = any("deployCode" in f.read_text(encoding="utf-8") for f in fv2._harness_files(perfil))
         assert bool(perfil.get("build")) == usa, nombre
 
 
@@ -257,3 +257,25 @@ def test_el_avance_de_una_campana_guiada_por_cobertura_sale_de_los_pulsos(tmp_pa
     texto = panel.resumen("c2", home)
     assert "(guiada por cobertura)" in texto
     assert "1.200 de 7.200 transacciones" in texto and "faltan ~1 min" in texto and "caminos 61" in texto
+
+
+def test_el_corpus_de_las_campanas_se_acumula_por_version_del_harness(tmp_path, monkeypatch):
+    """30-oct: cada campaña guiada por cobertura arranca del corpus que dejaron las anteriores del mismo harness; si
+    el harness cambia (otras direcciones o selectores), el corpus es otro. Sin corpus, forge_v2 lo apaga."""
+    harness = tmp_path / "harness" / "morpho-org__bundles"
+    harness.mkdir(parents=True)
+    (harness / "A.t.sol").write_text("contract A {}", encoding="utf-8")
+    monkeypatch.setattr(panel, "HARNESS_DIR", tmp_path / "harness")
+    home = tmp_path / "home"
+    d1 = panel.corpus_dir("midnight-bundles", home)
+    assert d1 == panel.corpus_dir("midnight-bundles", home)
+    assert d1.parent == home / "secresearch" / "corpus" / "midnight-bundles"
+    (harness / "A.t.sol").write_text("contract A { uint x; }", encoding="utf-8")
+    assert panel.corpus_dir("midnight-bundles", home) != d1
+    monkeypatch.setenv("FOUNDRY_INVARIANT_CORPUS_DIR", "cache/otro")
+    rec = {"perfil": "midnight-bundles", "corpus": True, "corpus_dir": str(d1)}
+    env = panel._campaign_env(rec)
+    assert env["NEXUS_CORPUS"] == "1" and env["FOUNDRY_INVARIANT_CORPUS_DIR"] == str(d1)
+    assert env["FOUNDRY_FFI"] == "false" and env["NEXUS_PERFIL"] == "midnight-bundles"
+    viejo = panel._campaign_env({"perfil": "midnight-bundles"})  # las campañas de antes no tienen el campo
+    assert viejo["NEXUS_CORPUS"] == "0" and "FOUNDRY_INVARIANT_CORPUS_DIR" not in viejo

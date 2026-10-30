@@ -219,13 +219,17 @@ abstract contract NexusMBBase is Test {
 
     /// @dev Pone el colateral `i` que necesita `h` para deber `units` más de lo que ya debe (con 25 % de margen).
     function _collateralize(uint256 h, uint256 i, uint256 units) internal {
+        _collateralizeIn(_market(), h, i, units);
+    }
+
+    function _collateralizeIn(Market memory mk, uint256 h, uint256 i, uint256 units) internal {
         uint256 p = oracle[i].price();
         if (p == 0 || units == 0) return;
         uint256 need = ((units * WAD) / lltv[i] + 1) * PSCALE / p + 1;
         need += need / 4;
         coll[i].mint(accts[h], need);
         vm.prank(accts[h]);
-        midnight.supplyCollateral(_market(), i, need, accts[h]);
+        midnight.supplyCollateral(mk, i, need, accts[h]);
     }
 }
 
@@ -595,6 +599,10 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
             f[k].units = (s >> 128) % 4 == 0 ? type(uint256).max : 1 + (s >> 136) % AMT;
             if (o.buy) loan.mint(accts[m], 2 * AMT); // el creador compra: paga él
             else _collateralize(m, (s >> 200) % NC, 2 * AMT); // el creador vende: puede quedar con deuda
+            // la oferta del mercado equivocado tiene que poder tomarse si el bundle no la rechaza: colateral en ese mercado
+            // para quien se endeuda (el que toma si la oferta es de compra, el creador si es de venta). Sin esto, la
+            // toma fallaba por salud, se salteaba, y BU-LIVE no veía que faltara el control del mercado (U16, 30-oct).
+            if (k == 0 && bad == 1) _collateralizeIn(_market2(), o.buy ? p.u : m, (s >> 208) % NC, 2 * AMT);
         }
     }
 

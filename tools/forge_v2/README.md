@@ -24,8 +24,10 @@ $RED  = "$env:LOCALAPPDATA\nexus\work\vault-v2-reducido"
 `correr` copia el harness de `local/nexus/secresearch/harness/morpho-org__vault-v2/`, hace `forge build` (con un
 filtro de tests, forge solo compila lo que esos tests importan, y Morpho Blue, que se despliega con `deployCode`, quedaría
 afuera) y muestra el log de `afterInvariant` (cobertura y métricas del cazador). El `forge build` previo solo lo hacen
-los perfiles con `"build"` (`vault-v2` y `vault-v3`, los que despliegan artefactos por nombre; una prueba lo ata al uso
-de `deployCode`): `forge test` no reusa su caché, y en los demás compilaba todo dos veces. `mutar` aplica cada entrada de
+los perfiles con `"build"` (`vault-v2`, `vault-v3` y `midnight-bundles`, los que despliegan artefactos por nombre; una
+prueba lo ata al uso de `deployCode`): `forge test` no reusa su caché, y en los demás compilaba todo dos veces. Con
+`"build": "once"` (`midnight-bundles`, donde lo desplegado por nombre es Blue y no se muta), `mutar` compila entero una
+sola vez. `mutar` aplica cada entrada de
 `mutaciones.json` (`[nombre, original, mutado]` sobre `src/VaultV2.sol`, o `[nombre, original, mutado, archivo]`, por
 ejemplo sobre el adapter real) a una copia limpia de ese archivo del clon, corre todas las variantes sin achicar la
 secuencia y lista, por variante, las leyes `V-...` que fallaron. El cazador informa todas las
@@ -84,6 +86,27 @@ falta. `mutar` borra `cache/invariant` entre mutaciones, así que cada una arran
 presupuesto (32×200, semillas `0x2a` y `0x3`), la suite con gates de Midnight detectó 4 de 6 mutaciones raras (M25,
 M35, B3) con corpus y 1 de 6 sin él. `NEXUS_CORPUS=0` lo apaga; en el panel, la casilla "guiada por cobertura".
 
+Las campañas del panel usan un corpus **acumulado**: `NEXUS_HOME/secresearch/corpus/<perfil>/<hash del harness>/`.
+Cada campaña arranca de las secuencias que abrieron caminos en las anteriores del mismo harness y las sigue mutando;
+si el harness cambia, el hash cambia y el corpus arranca de cero (las entradas llevan la dirección del handler y los
+selectores). forge guarda cada entrada con un UUID y por suite (`corpus/<suite>/worker<n>/`), así que dos campañas
+del mismo harness pueden compartirlo. `--resumen` dice cuántas secuencias tiene.
+
+## Modo simbólico de forge (evaluado el 30-oct)
+
+forge 1.8.6 trae ejecución simbólica (`forge test --symbolic`, compatible con Halmos) y puede intentar dar vuelta las
+"fronteras" de rama que deja el fuzzing (`--symbolic-use-fuzz-frontiers`, con `FOUNDRY_INVARIANT_FRONTIER_DIR`). El
+solver es z3: `z3-solver` 5.3.3 quedó instalado en el venv (`.venv\bin\z3.exe`, pasarlo con `--symbolic-solver`).
+
+- **Funciona en propiedades chicas** (funciones `check_` o `prove_`): una fórmula de comisión falsa a propósito dio su
+  contraejemplo en 81 ms. Una verdadera con multiplicación y división de 128×64 bits terminó en `unknown` por tiempo:
+  z3 no prueba aritmética no lineal de 256 bits, solo encuentra contraejemplos.
+- **No sirve con los cazadores de invariantes**: con la fase 1 de MidnightBundlesV2 y sus fronteras (una secuencia por
+  comparación sin dar vuelta, hasta 256) corrió 30 minutos sin terminar ni escribir nada. Los cazadores deciden con
+  hashes de las semillas, que un solver no puede invertir, y cada frontera agota el tiempo del solver.
+- **Uso:** chequeos puntuales de fórmulas (redondeos, comisiones, conversiones) que el fuzzing ve poco, como
+  complemento; no como reemplazo de las campañas.
+
 ## Filtro, versión fijada y panel
 
 - `NEXUS_MATCH="^NexusTokenizedStrategyInvariantFeeTest$"` hace que `correr` corra una sola variante (sin eso, todas
@@ -122,8 +145,13 @@ corre forge a mano, agregar `.venv\Scripts` al PATH).
 - **`armar`:** copia `MidnightBundlesV2` con sus interfaces y `TokenLib`, el núcleo de Midnight de su submódulo
   (`lib/midnight`, misma lógica que el desplegado), las interfaces de Blue y Permit2 que importa, y forge-std, con los
   ajustes del repo salvo `optimizer_runs` (200 en vez de 4294967295, para compilar rápido; no cambia la semántica).
-- **`mutar`:** toma `mutaciones_midnight_bundles.json`, 24 mutaciones sobre `src/midnight/MidnightBundlesV2.sol`
-  (comisiones de referido, garantías del usuario, exactitud del objetivo, validaciones, destinatarios y saldos que se
-  queda el bundle).
+- **`mutar`:** toma `mutaciones_midnight_bundles.json`: U1 a U24 sobre las entradas de toma de
+  `src/midnight/MidnightBundlesV2.sol` (comisiones de referido, garantías del usuario, exactitud del objetivo,
+  validaciones, destinatarios y saldos que se queda el bundle), K1 a K6 sobre `CancelAndMake`, C1 y C2 sobre
+  `BlueBuyCallback` y R1 y R2 sobre `PriceRatifierV1`. Las U las ven las suites de la fase 1
+  (`NEXUS_MUT_MATCH='^NexusMidnightBundles(Fees)?Test$'`); las K, C y R, las de la fase 2
+  (`NEXUS_MUT_MATCH='^NexusMidnightBundlesMake'`).
+- **Fase 2:** Blue (solc 0.8.19) se despliega con `deployCode` desde `NexusBlueImport.sol`, que solo lo importa para
+  que se compile; por eso el perfil lleva `"build": "once"`.
 - **El clon:** tiene que estar en la etiqueta `2026-10-06` (`2ed954e`, lo desplegado en `0x78ed…bDbA4`).
 - **El cazador:** [docs/CAZADOR_MIDNIGHT_BUNDLES.md](../../docs/CAZADOR_MIDNIGHT_BUNDLES.md).

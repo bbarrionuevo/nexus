@@ -15,6 +15,7 @@ corre solo con `forge test` y el FFI apagado (R-2, R-6). Cerrar el panel no fren
 """
 import ctypes
 import datetime as dt
+import hashlib
 import hmac
 import json
 import os
@@ -34,13 +35,15 @@ from nexus import paths
 
 REPO = Path(__file__).resolve().parents[3]
 FORGE_V2 = REPO / "tools" / "forge_v2" / "forge_v2.py"
+HARNESS_DIR = REPO / "local" / "nexus" / "secresearch" / "harness"
 # perfil de tools/forge_v2 -> clon en NEXUS_HOME/work y prefijo de los contratos del harness
 PERFILES = {"vault-v2": ("morpho-org__vault-v2", "NexusVaultV2"),
             "euler-earn": ("euler-xyz__euler-earn", "NexusEulerEarn"),
             "tokenized-strategy": ("yearn__tokenized-strategy", "NexusTokenizedStrategy"),
             "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3"),
             "midnight": ("morpho-org__midnight", "NexusMidnight"),
-            "midnight-bundles": ("morpho-org__bundles", "NexusMidnightBundles")}
+            "midnight-bundles": ("morpho-org__bundles", "NexusMidnightBundles"),
+            "blue-bundles": ("morpho-org__bundles", "NexusBlueBundles")}
 LAW = re.compile(r"\b(?:YV|MN|[HVEY])-[A-Z]+(?:-\d+)?")
 SEED = re.compile(r"^0x[0-9a-f]{1,16}$")
 MATCH = re.compile(r"^\^?[A-Za-z0-9]+\$?$")
@@ -110,6 +113,17 @@ def _load(cid, home=None):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def corpus_dir(perfil, home=None):
+    """El corpus de forge acumulado entre campañas, por perfil y por versión del harness (hash de sus .sol): cada
+    campaña guiada por cobertura arranca de las secuencias que abrieron caminos en las anteriores y las sigue mutando.
+    Un harness distinto (otras direcciones o selectores) arranca de cero. forge nombra cada entrada con un UUID y la
+    guarda por suite (corpus/<suite>/worker<n>/), así que dos campañas del mismo harness pueden compartirlo."""
+    h = hashlib.sha256()
+    for f in sorted((HARNESS_DIR / PERFILES[perfil][0]).glob("*.sol")):
+        h.update(f.name.encode("utf-8") + b"\0" + f.read_bytes())
+    return Path(home or paths.home()) / "secresearch" / "corpus" / perfil / h.hexdigest()[:12]
+
+
 def launch(params, home=None):
     """Registra la campaña y la arranca en un proceso aparte (sigue aunque se cierre el panel)."""
     p = validate_params(params)
@@ -118,6 +132,8 @@ def launch(params, home=None):
     cid = f"{now:%Y%m%d-%H%M%S}_{p['perfil']}_{p['runs']}x{p['depth']}_{p['seed']}"
     rec = {**p, "id": cid, "dest": str(home / "work" / "panel" / cid), "log": str(camp_dir(home) / f"{cid}.txt"),
            "started": now.isoformat(timespec="seconds")}
+    if p["corpus"]:
+        rec["corpus_dir"] = str(corpus_dir(p["perfil"], home))
     _save(rec, home)
     # prioridad por debajo de lo normal (la heredan forge_v2 y forge): la campaña usa todo el CPU libre y le cede el
     # paso a lo corto (una verificación, el uso de la PC)
@@ -137,18 +153,30 @@ def launch(params, home=None):
     return rec
 
 
-def run_campaign(cid, home=None):
-    """Lo que corre el proceso de la campaña: arma el proyecto reducido y corre forge_v2, todo al log."""
-    rec = _load(cid, home)
+def _campaign_env(rec):
+    """El entorno de forge_v2 para una campaña: perfil, filtro, fail_on_revert y el corpus."""
     env = {**os.environ, "NEXUS_PERFIL": rec["perfil"], "FOUNDRY_FFI": "false", "PYTHONUTF8": "1",
            "PATH": os.pathsep.join([str(Path.home() / ".foundry" / "bin"), str(Path(sys.executable).parent),
                                     os.environ.get("PATH", "")])}
+    env.pop("FOUNDRY_INVARIANT_CORPUS_DIR", None)
     if rec.get("match"):
         env["NEXUS_MATCH"] = rec["match"]
     if rec.get("fail_on_revert"):
         env["FOUNDRY_INVARIANT_FAIL_ON_REVERT"] = "true"
-    # fuzzing guiado por cobertura (tools/forge_v2: _corpus); las campañas anteriores al 30-oct no tienen el campo
+    # fuzzing guiado por cobertura (tools/forge_v2: _corpus); las campañas anteriores al 30-oct no tienen el campo.
+    # Desde el 30-oct a la tarde, con el corpus acumulado de corpus_dir (las de antes, con uno propio en su proyecto).
     env["NEXUS_CORPUS"] = "1" if rec.get("corpus", False) else "0"
+    if rec.get("corpus") and rec.get("corpus_dir"):
+        env["FOUNDRY_INVARIANT_CORPUS_DIR"] = rec["corpus_dir"]
+    return env
+
+
+def run_campaign(cid, home=None):
+    """Lo que corre el proceso de la campaña: arma el proyecto reducido y corre forge_v2, todo al log."""
+    rec = _load(cid, home)
+    env = _campaign_env(rec)
+    if rec.get("corpus_dir"):
+        Path(rec["corpus_dir"]).mkdir(parents=True, exist_ok=True)
     clone = Path(home or paths.home()) / "work" / PERFILES[rec["perfil"]][0]
     code = 0
     with open(rec["log"], "a", encoding="utf-8") as out:
@@ -352,6 +380,9 @@ def resumen(cid, home=None):
         falta = f" · faltan ~{_dur((tot - pr['txs']) / pr['tps'])}" if tot > pr["txs"] and pr["tps"] else ""
         out.append(f"  avance de {s_}: {pr['txs']:,} de {tot:,} transacciones · {pr['tps']:.0f} por segundo{falta}"
                    f" · caminos {pr['edges']:,} · corpus {pr['corpus']:,}".replace(",", "."))
+    if rec.get("corpus_dir") and Path(rec["corpus_dir"]).is_dir():
+        n = sum(1 for f in Path(rec["corpus_dir"]).rglob("*") if f.is_file() and f.parent.name == "corpus")
+        out.append(f"  corpus acumulado: {n} secuencias en {rec['corpus_dir']}")
     if st["laws"]:
         out.append("  leyes: " + " ".join(st["laws"]))
     out.extend("  " + f for f in st["fails"][:5])
