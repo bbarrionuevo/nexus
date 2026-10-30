@@ -222,7 +222,7 @@ def stop(cid, home=None):
 def parse_log(text):
     """Estado de una campaña desde su log: corridas, llamadas, reversiones, fallas, leyes y cobertura por variante."""
     st = {"suites_ok": 0, "suites_fail": 0, "tests": [], "fails": [], "laws": [], "metrics": {}, "exit": None,
-          "stopped": False, "started": None}
+          "stopped": False, "started": None, "reverts_by_action": {}}
     suite = None
     for line in text.splitlines():
         s = line.strip()
@@ -243,6 +243,10 @@ def parse_log(text):
         m = re.match(r"(cobertura|cazador|cota): (.+): (\d+)$", s)
         if m and suite:
             st["metrics"].setdefault(suite, {})[m.group(2)] = int(m.group(3))
+        # la tabla de métricas de forge: | contrato | acción | llamadas | reversiones | descartes |
+        m = re.match(r"\|\s*\w+\s*\|\s*(\w+)\s*\|\s*\d+\s*\|\s*(\d+)\s*\|\s*\d+\s*\|$", s)
+        if m and suite and int(m.group(2)):
+            st["reverts_by_action"].setdefault(suite, {})[m.group(1)] = int(m.group(2))
         m = re.match(r"FIN .* salida (-?\d+)", s)
         if m:
             st["exit"] = int(m.group(1))
@@ -253,6 +257,20 @@ def parse_log(text):
     return st
 
 
+def _estado(rec, st):
+    if rec.get("pid") and rec.get("started") and _ours(rec):
+        return "corriendo"
+    if st["stopped"]:
+        return "frenada"
+    if st["exit"] is None:
+        return "sin FIN (cortada o corriendo fuera del panel)"
+    if st["exit"] == 0 and not st["fails"] and not st["suites_fail"]:
+        # 30-oct: una reversión del handler es una secuencia que quedó sin verificar (así aparecieron los bordes de
+        # dominio de Midnight, el Vault V3 y TokenizedStrategy), aunque todas las leyes pasen
+        return "pasó con reversiones del handler (revisar)" if any(t["reverts"] for t in st["tests"]) else "pasó"
+    return "falló"
+
+
 def campaigns(home=None):
     """Todas las campañas de NEXUS_HOME/secresearch/campanas, con o sin registro del panel."""
     d = camp_dir(home)
@@ -261,20 +279,35 @@ def campaigns(home=None):
         rec_p = d / f"{log.stem}.json"
         rec = json.loads(rec_p.read_text(encoding="utf-8")) if rec_p.is_file() else {"id": log.stem}
         st = parse_log(log.read_text(encoding="utf-8", errors="replace"))
-        alive = _ours(rec) if rec.get("pid") and rec.get("started") else False
-        if alive:
-            estado = "corriendo"
-        elif st["stopped"]:
-            estado = "frenada"
-        elif st["exit"] is None:
-            estado = "sin FIN (cortada o corriendo fuera del panel)"
-        elif st["exit"] == 0 and not st["fails"] and not st["suites_fail"]:
-            estado = "pasó"
-        else:
-            estado = "falló"
-        out.append({**rec, **st, "estado": estado, "log_name": log.name, "size": log.stat().st_size,
+        out.append({**rec, **st, "estado": _estado(rec, st), "log_name": log.name, "size": log.stat().st_size,
                     "mtime": _local(log.stat().st_mtime).isoformat(timespec="seconds")})
     return out
+
+
+def resumen(cid, home=None):
+    """Una campaña en texto, para la terminal: el estado, cada variante, las reversiones del handler por acción, las
+    leyes y las fallas. Con reversiones, aunque todo pase, dice cómo investigarlas."""
+    rec_p = _rec_path(cid, home)
+    log = camp_dir(home) / f"{cid}.txt"
+    if not log.is_file():
+        raise ValueError("campaña desconocida")
+    rec = json.loads(rec_p.read_text(encoding="utf-8")) if rec_p.is_file() else {"id": cid}
+    st = parse_log(log.read_text(encoding="utf-8", errors="replace"))
+    out = [f"{cid}: {_estado(rec, st)}"]
+    for t in st["tests"]:
+        out.append(f"  {t['suite']}: {'pasa' if t['ok'] else 'FALLA'} · {t['runs']} corridas · {t['calls']} llamadas"
+                   f" · {t['reverts']} reversiones")
+        acc = st["reverts_by_action"].get(t["suite"])
+        if acc:
+            out.append("    reversiones por acción: "
+                       + ", ".join(f"{a} {n}" for a, n in sorted(acc.items(), key=lambda x: -x[1])))
+    if st["laws"]:
+        out.append("  leyes: " + " ".join(st["laws"]))
+    out.extend("  " + f for f in st["fails"][:5])
+    if any(t["reverts"] for t in st["tests"]):
+        out.append("  Hay reversiones del handler: son secuencias sin verificar. Reproducirlas con fail_on_revert y "
+                   "varias semillas, y repetir la secuencia guardada con -vvvv (docs/INVESTIGACION_SEGURIDAD.md).")
+    return "\n".join(out)
 
 
 # --- procesos forge y archivos ------------------------------------------------------------------------------------
@@ -471,7 +504,7 @@ let sel=null,from=0,files=[];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function get(u){const r=await fetch(u+(u.includes('?')?'&':'?')+'t='+encodeURIComponent(T));return r.json()}
 async function act(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json','X-Nexus-Token':T},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
-function cls(e){return e==='pasó'?'ok':e==='falló'?'bad':e==='corriendo'?'run':'mut'}
+function cls(e){return e==='pasó'?'ok':(e==='falló'||e.startsWith('pasó con'))?'bad':e==='corriendo'?'run':'mut'}
 function fmt(n){return Number(n).toLocaleString('es-AR')}
 async function refresh(){let s;try{s=await get('/api/state')}catch(e){$('now').textContent='sin conexión con el panel';return}
 $('now').textContent='actualizado '+s.now;
@@ -503,6 +536,9 @@ $('filt').oninput=drawFiles;refresh();setInterval(refresh,5000);setInterval(tail
 def main(argv):
     if argv[:1] == ["--run"] and len(argv) == 2:
         return run_campaign(argv[1])
+    if argv[:1] == ["--resumen"] and len(argv) == 2:  # una campaña en la terminal, sin abrir el panel
+        print(resumen(argv[1]))
+        return 0
     port = 8765
     if "--port" in argv:
         port = int(argv[argv.index("--port") + 1])

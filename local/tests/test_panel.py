@@ -13,6 +13,13 @@ Ran 4 tests for test/nexus/X.t.sol:NexusTokenizedStrategyEdgeTest
 Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 38ms
 Ran 1 test for test/nexus/X.t.sol:NexusTokenizedStrategyInvariantFeeTest
 [PASS] invariant_tokenizedStrategy() (runs: 512, calls: 768000, reverts: 11)
+| Contract                      | Selector     | Calls | Reverts | Discards |
++===========================================================================+
+| NexusTokenizedStrategyHandler | deposit      | 27000 | 0       | 0        |
+|-------------------------------+--------------+-------+---------+----------|
+| NexusTokenizedStrategyHandler | lockThenLose | 27449 | 6       | 0        |
+|-------------------------------+--------------+-------+---------+----------|
+| NexusTokenizedStrategyHandler | report       | 27502 | 5       | 0        |
   cazador: leyes evaluadas: 21601
   cobertura: reportes con ganancia: 26
 Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 32622.10s
@@ -36,6 +43,27 @@ def test_el_log_de_una_campana_da_su_estado():
     assert (fee["runs"], fee["calls"], fee["reverts"], fee["ok"]) == (512, 768000, 11, True)
     assert st["laws"] == ["Y-INF-2", "Y-VIEW-1"]
     assert st["metrics"]["NexusTokenizedStrategyInvariantFeeTest"]["reportes con ganancia"] == 26
+    # solo las acciones con reversiones, por variante
+    assert st["reverts_by_action"] == {"NexusTokenizedStrategyInvariantFeeTest": {"lockThenLose": 6, "report": 5}}
+
+
+def test_una_campana_que_pasa_con_reversiones_del_handler_no_queda_como_pasa(home):
+    """30-oct: los bordes de dominio de Midnight, el Vault V3 y TokenizedStrategy aparecieron como reversiones del
+    handler en campañas que pasaban: el estado tiene que decirlo, y el resumen, cómo investigarlas."""
+    sin_falla = LOG.replace(LOG[LOG.index("Ran 1 test for test/nexus/X.t.sol:NexusTokenizedStrategyInvariantTest"):],
+                            "FIN mie. 28/10/2026 21:35:10,61 salida 0\n")
+    st = panel.parse_log(sin_falla)
+    assert panel._estado({"id": "c"}, st) == "pasó con reversiones del handler (revisar)"
+    limpio = sin_falla.replace("reverts: 11", "reverts: 0").replace("| 6       |", "| 0       |")
+    limpio = limpio.replace("| 5       |", "| 0       |")
+    assert panel._estado({"id": "c"}, panel.parse_log(limpio)) == "pasó"
+    d = panel.camp_dir(home)
+    (d / "c1.txt").write_text(sin_falla, encoding="utf-8")
+    texto = panel.resumen("c1", home)
+    assert "pasó con reversiones" in texto and "lockThenLose 6, report 5" in texto
+    assert "fail_on_revert" in texto
+    with pytest.raises(ValueError):
+        panel.resumen("../c1", home)
 
 
 def test_lo_que_se_lanza_esta_validado():

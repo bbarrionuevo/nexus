@@ -61,7 +61,7 @@ Las reglas que más pesan al trabajar:
 | Expedientes | `%LOCALAPPDATA%\nexus\secresearch\expedientes\` |
 | Ciclo programado | tarea `nexus-ciclo`, registrada con `tools/windows/registrar_ciclo.ps1` |
 | GitHub CLI | `C:\Program Files\GitHub CLI\gh.exe`, autenticada como `bbarrionuevo` (28-oct): la sesión abre los PR, lee el CI y fusiona con el CI en verde (R-11) con `gh`; si la shell no la ve en el PATH, con la ruta completa |
-| Panel local | Desde `local`: `..\.venv\Scripts\python -m nexus.secresearch.panel` abre el navegador en `127.0.0.1` con un token: procesos forge en vivo, campañas (estado, leyes, cobertura, log en vivo), lanzar y frenar campañas de `tools/forge_v2`, y descargar todo lo de `NEXUS_HOME\secresearch`. Cerrarlo no frena las campañas |
+| Panel local | Desde `local`: `..\.venv\Scripts\python -m nexus.secresearch.panel` abre el navegador en `127.0.0.1` con un token: procesos forge en vivo, campañas (estado, leyes, cobertura, log en vivo), lanzar y frenar campañas de `tools/forge_v2`, y descargar todo lo de `NEXUS_HOME\secresearch`. Cerrarlo no frena las campañas. `--resumen <id>` muestra una campaña en la terminal: cada variante, las reversiones del handler por acción y, si las hay, cómo investigarlas. Una campaña que pasa con reversiones queda como "pasó con reversiones del handler (revisar)", en rojo en el panel |
 
 El Explorador oculta `AppData`: `explorer $env:LOCALAPPDATA\nexus\secresearch`.
 
@@ -181,6 +181,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Además, `tools/forge_v2` controla en `armar` y `mutar` el commit y los submódulos del clon. Sale de la rama del #91 |
 | #93 | Reglas y flujo, con la autorización del dueño del 30-oct: Claude fusiona sus PR con el CI en verde (R-11), trabaja solo en la PC (R-12) y elige los objetivos por valor esperado (R-13); dentro de un programa habilitado puede sumar repos en alcance (R-1); `nexus.devcheck` como chequeo único antes del PR; la primera tabla de objetivos por valor esperado |
 | #94 | Objetivos por valor esperado, con los programas releídos el 30-oct (Euler pasó a un presupuesto de 1,5M con tope del 10 % del impacto; Morpho publica los Bundles nuevos en su página de direcciones): los Bundles de Morpho, sumados al catálogo, son el objetivo siguiente |
+| #95 | El panel automatiza la lección del 30-oct: lee las reversiones del handler por acción, marca en rojo una campaña que pasa con reversiones ("pasó con reversiones del handler (revisar)") y `--resumen <id>` la muestra en la terminal con cómo investigarlas |
 
 ## 5. Próximos pasos
 
