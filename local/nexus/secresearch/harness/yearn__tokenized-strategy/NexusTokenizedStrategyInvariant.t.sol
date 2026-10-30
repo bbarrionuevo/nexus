@@ -26,6 +26,10 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         return hOrphan;
     }
 
+    function coverage5() external view returns (uint256 overflow, uint256 domain) {
+        return (hOverflow, hDomain);
+    }
+
     /// @dev Montos: un cuarto de las veces polvo (1 a 1e4 unidades), si no hasta MAX_ASSETS.
     function _amt(uint256 seed) internal view returns (uint256) {
         if (seed % 4 == 0) return 1 + (seed >> 2) % 1e4;
@@ -60,8 +64,11 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         Snap memory pre = _snap();
         _lawViews(pre, h);
         uint256 preview = _previewEnter(pre, h, amt, isMint);
-        Snap memory m = _copy(pre);
-        Op memory o = _simEnter(m, h, amt, isMint);
+        (Op memory o, Snap memory m) = _modelEnter(pre, h, amt, isMint);
+        if (o.ok && m.TS > S_CAP) {
+            ++hDomain;
+            return;
+        }
         source.resetSeen();
         vm.prank(actors[h]);
         (bool ok, bytes memory ret) = address(strategy).call(
@@ -140,8 +147,11 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         _lawViews(pre, h);
         (bool std, uint256 maxLoss) = _maxLoss(lossSeed, isRedeem);
         uint256 preview = _previewExit(pre, amt, isRedeem);
-        Snap memory m = _copy(pre);
-        Op memory o = _simExit(m, h, amt, isRedeem, maxLoss);
+        (Op memory o, Snap memory m) = _modelExit(pre, h, amt, isRedeem, maxLoss);
+        if (o.ok && m.TS > S_CAP) {
+            ++hDomain;
+            return;
+        }
         source.resetSeen();
         vm.prank(actors[h]);
         (bool ok, bytes memory ret) = address(strategy).call(_exitCall(h, amt, isRedeem, std, maxLoss));
@@ -264,8 +274,11 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
     function report() external {
         Snap memory pre = _snap();
         _lawViews(pre, 0);
-        Snap memory m = _copy(pre);
-        Rep memory r = _simReport(m);
+        (Rep memory r, Snap memory m) = _modelReport(pre);
+        if (r.ok && m.TS > S_CAP) {
+            ++hDomain;
+            return;
+        }
         source.resetSeen();
         vm.prank(KEEPER);
         (bool ok, bytes memory ret) = address(strategy).call(abi.encodeWithSignature("report()"));
@@ -300,8 +313,12 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         bool expect = f <= MAX_FEE;
         Acc memory a;
         if (expect) {
-            a = _accrue(m);
+            (expect, a, m) = _modelAccrue(pre);
             m.fee = f;
+        }
+        if (expect && m.TS > S_CAP) {
+            ++hDomain;
+            return;
         }
         vm.prank(MGMT);
         (bool ok,) = address(strategy).call(abi.encodeWithSignature("setPerformanceFee(uint16)", uint16(f)));
@@ -317,8 +334,12 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         Snap memory m = _copy(pre);
         Acc memory a;
         if (expect) {
-            a = _accrue(m);
+            (expect, a, m) = _modelAccrue(pre);
             m.feeIdx = idx;
+        }
+        if (expect && m.TS > S_CAP) {
+            ++hDomain;
+            return;
         }
         vm.prank(MGMT);
         (bool ok,) = address(strategy).call(abi.encodeWithSignature("setPerformanceFeeRecipient(address)", rec));
@@ -331,18 +352,21 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         uint256 k = v % 16;
         uint256 t = k == 0 ? 0 : (k == 1 ? uint256(type(uint32).max) + 1 + (v >> 4) % 1000 : (k < 6 ? 10 days : 1 + (v >> 4) % 30 days));
         Snap memory pre = _snap();
-        Snap memory m = _copy(pre);
-        Acc memory a = _accrue(m);
+        (bool expect, Acc memory a, Snap memory m) = _modelAccrue(pre);
         uint256 c = t > type(uint32).max ? type(uint32).max : t;
-        if (c == 0) {
+        if (expect && c == 0) {
             if (m.B != 0) _burnB(m, m.B);
             m.R = 0;
             m.D = 0;
         }
         m.T = c;
+        if (expect && m.TS > S_CAP) {
+            ++hDomain;
+            return;
+        }
         vm.prank(MGMT);
         (bool ok,) = address(strategy).call(abi.encodeWithSignature("setProfitMaxUnlockTime(uint256)", t));
-        _settle("setProfitMaxUnlockTime", ok, true, pre, m, true);
+        _settle("setProfitMaxUnlockTime", ok, expect, pre, m, true);
         if (ok) _countAcc(a);
     }
 
@@ -477,6 +501,52 @@ contract NexusTokenizedStrategyHandler is NexusTSHunter {
         ++hSandwich;
     }
 
+    /* EL MODELO A PRUEBA DE DESBORDES: si una cuenta del modelo revierte, la misma de TokenizedStrategy también (ver
+       simEnterExt) */
+
+    function _modelEnter(Snap memory pre, uint256 h, uint256 amt, bool isMint) internal returns (Op memory, Snap memory) {
+        try this.simEnterExt(pre, h, amt, isMint) returns (Op memory o, Snap memory m) {
+            return (o, m);
+        } catch {
+            ++hOverflow;
+            Op memory none;
+            return (none, _copy(pre));
+        }
+    }
+
+    function _modelExit(Snap memory pre, uint256 h, uint256 amt, bool isRedeem, uint256 maxLoss)
+        internal
+        returns (Op memory, Snap memory)
+    {
+        try this.simExitExt(pre, h, amt, isRedeem, maxLoss) returns (Op memory o, Snap memory m) {
+            return (o, m);
+        } catch {
+            ++hOverflow;
+            Op memory none;
+            return (none, _copy(pre));
+        }
+    }
+
+    function _modelReport(Snap memory pre) internal returns (Rep memory, Snap memory) {
+        try this.simReportExt(pre) returns (Rep memory r, Snap memory m) {
+            return (r, m);
+        } catch {
+            ++hOverflow;
+            Rep memory none;
+            return (none, _copy(pre));
+        }
+    }
+
+    function _modelAccrue(Snap memory pre) internal returns (bool, Acc memory, Snap memory) {
+        try this.accrueExt(pre) returns (Acc memory a, Snap memory m) {
+            return (true, a, m);
+        } catch {
+            ++hOverflow;
+            Acc memory none;
+            return (false, none, _copy(pre));
+        }
+    }
+
     /* COMÚN */
 
     /// @dev Después de una operación: si el modelo acertó si pasaba (Y-LIVE), el estado crudo es el del modelo (o el
@@ -577,6 +647,9 @@ contract NexusTokenizedStrategyInvariantTest is Test {
         emit log_named_uint("cobertura: callbacks con las vistas verificadas", probes);
         emit log_named_uint("cobertura: sandwiches del reporte en un bloque", handler.coverage3());
         emit log_named_uint("cobertura: entradas con suministro 0 y activos en la estrategia", handler.coverage4());
+        (uint256 ovf, uint256 dom) = handler.coverage5();
+        emit log_named_uint("cobertura: operaciones cuyo modelo desbordo, rechazadas como en TokenizedStrategy", ovf);
+        emit log_named_uint("cobertura: operaciones salteadas por el dominio (totalSupply > 2^128)", dom);
     }
 }
 
@@ -680,5 +753,24 @@ contract NexusTokenizedStrategyEdgeTest is Test {
         h.sandwichReport(1, _big(1e21));
         require(bytes(h.check()).length == 0, h.check());
         require(h.coverage3() == 1, "nexus: el sandwich no corrio");
+    }
+
+    /// @dev Regresión de la campaña del 28-oct (512×1500: 11 reversiones del handler en la variante con protocolo).
+    /// Pérdidas casi totales seguidas de depósitos inflaban las acciones (1e24, 1e48, 1e72) hasta que una vista o el
+    /// reporte desbordaba, en el modelo y en TokenizedStrategy, y el handler revertía. Ahora el cazador no deja pasar
+    /// totalSupply de 2^128: los depósitos y el reporte que lo pasarían se saltean, y las leyes siguen valiendo.
+    function test_inflacion_de_acciones_no_tumba_al_cazador() public {
+        NexusTokenizedStrategyHandler h = new NexusTokenizedStrategyHandler(true, 18, 2_000, 1_000);
+        for (uint256 k; k < 6; ++k) {
+            h.deposit(k % 4, _big(1e24));
+            h.warp(0, 2);
+            h.liveLoss(k == 0 ? 1e24 - 1 : 1e24); // deja 1 de activo en la fuente
+            h.warp(0, 2);
+        }
+        h.queueReward(_big(1e24));
+        h.report();
+        require(bytes(h.check()).length == 0, h.check());
+        (, uint256 dom) = h.coverage5();
+        require(dom > 0, "nexus: ninguna operacion salteada por el dominio");
     }
 }

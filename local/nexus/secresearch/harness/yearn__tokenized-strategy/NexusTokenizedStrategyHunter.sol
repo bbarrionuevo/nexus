@@ -361,6 +361,11 @@ abstract contract NexusTSHunter is NexusTSBase {
     uint256 internal constant H_FEE_B = 5;
     uint256 internal constant H_PROTO = 6;
     uint256 internal constant H_DEAD = 7;
+    /// @dev Dominio: totalSupply crudo hasta 2^128. Pérdidas casi totales seguidas de depósitos o ganancias inflan las
+    /// acciones (con 18 decimales, 1e24, 1e48, 1e72...) hasta que TokenizedStrategy y el modelo desbordan en la misma
+    /// cuenta (el buffer × MAX_BPS_EXTENDED del reporte, un mulDiv de las vistas), un régimen sin sentido económico.
+    /// Con este tope ninguna vista ni ley del cazador desborda; la operación que lo pasaría se saltea (hDomain).
+    uint256 internal constant S_CAP = 2 ** 128;
 
     /// @dev Foto del estado crudo: el almacenamiento de la estrategia (vm.load), la fuente, las perillas y los saldos.
     struct Snap {
@@ -446,6 +451,8 @@ abstract contract NexusTSHunter is NexusTSBase {
     uint256 internal hRejected; // operaciones que el modelo predijo que revertían, y revirtieron
     uint256 internal hProbes; // callbacks con las vistas verificadas
     uint256 internal hFeeShares;
+    uint256 internal hOverflow; // operaciones cuyo modelo desbordó: se esperan rechazadas, como en TokenizedStrategy
+    uint256 internal hDomain; // operaciones salteadas porque dejaban totalSupply por encima de S_CAP
 
     function _hunterInit() internal {
         hClock = new NexusTSClock();
@@ -837,6 +844,40 @@ abstract contract NexusTSHunter is NexusTSBase {
         m.R = (tl * EXT) / r.period;
         m.D = m.ts + r.period;
         return true;
+    }
+
+    /* EL MODELO POR LLAMADA EXTERNA
+       TokenizedStrategy hace las mismas cuentas que el modelo, con la aritmética chequeada de Solidity 0.8 y mulDiv
+       (donde TS usa unchecked, el modelo también). El handler llama así al modelo de cada operación: si una cuenta
+       desborda o divide por cero, el modelo revierte sin tumbar al handler, la operación se espera rechazada y Y-LIVE
+       controla que TokenizedStrategy también revierta. */
+
+    function simEnterExt(Snap memory m, uint256 h, uint256 amt, bool isMint)
+        external
+        view
+        returns (Op memory o, Snap memory)
+    {
+        o = _simEnter(m, h, amt, isMint);
+        return (o, m);
+    }
+
+    function simExitExt(Snap memory m, uint256 h, uint256 amt, bool isRedeem, uint256 maxLoss)
+        external
+        view
+        returns (Op memory o, Snap memory)
+    {
+        o = _simExit(m, h, amt, isRedeem, maxLoss);
+        return (o, m);
+    }
+
+    function simReportExt(Snap memory m) external view returns (Rep memory r, Snap memory) {
+        r = _simReport(m);
+        return (r, m);
+    }
+
+    function accrueExt(Snap memory m) external view returns (Acc memory a, Snap memory) {
+        a = _accrue(m);
+        return (a, m);
     }
 
     /// @dev ¿La simulación de `s` confisca ganancia al piso o revela una pérdida? (excepciones de Y-INF-2)

@@ -1,8 +1,10 @@
 # Cazador de TokenizedStrategy (Yearn V3)
 
-Estado: **escrito y verificado con forge en la PC** (28-oct). Pasa 256×500 sin falsos positivos ni reversiones en
-sus cuatro variantes (con las semillas `0x2a` y `0x3` y con `validate` sobre el repo entero), y las 39 mutaciones de
-referencia se detectan. **No hay hallazgos.**
+Estado: **escrito y verificado con forge en la PC** (28-oct; arreglado el 30-oct). Pasa 256×500 sin falsos positivos
+ni reversiones en sus cuatro variantes (con las semillas `0x2a` y `0x3` y con `validate` sobre el repo entero), y las
+39 mutaciones de referencia se detectan. La campaña profunda (512×1500) pasó sin leyes violadas. Sus 11 reversiones
+del handler venían de acciones infladas hasta desbordar, en el modelo y en TokenizedStrategy, y están arregladas
+(sección 6). **No hay hallazgos.**
 
 ## 1. Qué versión y qué alcance
 
@@ -129,7 +131,8 @@ reducido (TokenizedStrategy, BaseStrategy, interfaces, la librería, OpenZeppeli
 referencia es `validate` sobre el repo entero con `"aislado": true` (los tests del repo viven en `src/test` y se
 compilan con `src`; el aislado evita los scripts).
 
-**Verificación (28-oct, forge 1.8.6 en la PC).** En el proyecto reducido, las 4 variantes pasan 256×500 sin falsos
+**Verificación del harness original (28-oct, forge 1.8.6 en la PC; la del arreglado está en la sección 6).** En el
+proyecto reducido, las 4 variantes pasan 256×500 sin falsos
 positivos con las semillas `0x2a` y `0x3`, con 0 reversiones (128.000 llamadas por variante y semilla), y los 4
 escenarios pasan. La referencia, con `validate` sobre el repo entero (`v3.1.0`, compilación aislada, semilla
 `0xdf5a04a2c65ea82a`), da 8 de 8 con 0 reversiones (112 s de compilación y 2.280 s de tests). En la última corrida de
@@ -147,7 +150,8 @@ menos de una acción (§4). Segundo, el sándwich se medía desde lo depositado,
 con lo que haya en la estrategia (§4).
 
 **Mutaciones de referencia** ([tools/forge_v2/mutaciones_tokenized_strategy.json](../tools/forge_v2/mutaciones_tokenized_strategy.json);
-64×200, semilla `0x2a`, con `NEXUS_PERFIL=tokenized-strategy`): las 39 se detectan. T28 la detecta solo el escenario
+64×200, semilla `0x2a`, con `NEXUS_PERFIL=tokenized-strategy`; la tabla es la de la batería del 30-oct, con el
+harness arreglado de la sección 6): las 39 se detectan. T28 la detecta solo el escenario
 de la recuperación tras una pérdida total, que se sumó para eso: con suministro 0 la mutación da las mismas
 conversiones, y el fuzzer casi no llega a una pérdida total con suministro chico.
 
@@ -155,17 +159,17 @@ conversiones, y el fuzzer casi no llega a una pérdida total con suministro chic
 |---|---|---|
 | T1 `deposit` redondea las acciones hacia arriba | las 4 y los escenarios | Y-SUP-1, Y-INF-1, Y-INF-2, Y-VIEW-1 |
 | T2 `mint` redondea los activos hacia abajo | las 4 | Y-TA-1, Y-INF-1, Y-INF-2, Y-VIEW-1, Y-FUNDS |
-| T3 `withdraw` redondea las acciones hacia abajo | las 4 | Y-LIVE |
+| T3 `withdraw` redondea las acciones hacia abajo | las 4 | Y-SUP-1, Y-INF-1, Y-INF-2, Y-VIEW-1, Y-LIVE |
 | T4 `redeem` redondea los activos hacia arriba | las 4 | Y-TA-1, Y-INF-1, Y-INF-2, Y-VIEW-1, Y-FUNDS |
 | T5 la pérdida del retiro se socializa | las 4 | Y-TA-1 |
 | T6 el depósito suma un activo de más | las 4 y los escenarios | Y-TA-1 |
-| T7 las acciones muertas del piso redondean hacia abajo | en vivo, con protocolo, 6 decimales | Y-SUP-1, Y-REENT-1 |
-| T8 el piso de suministro en el devengamiento es 1 y no 1e3 | en vivo, con protocolo, 6 decimales y los escenarios | Y-LIVE, Y-SUP-1 |
+| T7 las acciones muertas del piso redondean hacia abajo | en vivo, con protocolo, 6 decimales | Y-SUP-1, Y-REENT-1, Y-TA-1, Y-INF-1, Y-VIEW-1, Y-FUNDS |
+| T8 el piso de suministro en el devengamiento es 1 y no 1e3 | en vivo, con protocolo, 6 decimales y los escenarios | Y-LIVE, Y-SUP-1, Y-INF-1, Y-VIEW-1, Y-REENT-1, Y-FEE-1 |
 | T9 la comisión en vivo se cobra al PPS viejo | en vivo, con protocolo, 6 decimales | Y-SUP-1, Y-LOCK-1, Y-FEE-1, Y-INF-2, Y-REENT-1 |
-| T10 la parte del protocolo suma una acción | las 4 | Y-FEE-1, Y-LIVE |
-| T11 las acciones de comisión redondean hacia arriba | las 4 | Y-SUP-1, Y-FEE-1 |
+| T10 la parte del protocolo suma una acción | las 4 | Y-FEE-1 |
+| T11 las acciones de comisión redondean hacia arriba | las 4 | Y-SUP-1, Y-FEE-1, Y-LOCK-1 |
 | T12 la pérdida en acciones redondea hacia arriba | las 4 y los escenarios | Y-SUP-1, Y-LOCK-1, Y-REENT-1, Y-VIEW-1 |
-| T13 la pérdida no quema lo ya desbloqueado | las 4 y los escenarios | Y-SUP-1, Y-LOCK-1, Y-INF-1, Y-INF-2, Y-VIEW-1, Y-REENT-1, Y-TA-1, Y-FUNDS |
+| T13 la pérdida no quema lo ya desbloqueado | las 4 y los escenarios | Y-SUP-1, Y-LOCK-1, Y-INF-1, Y-INF-2, Y-VIEW-1, Y-REENT-1 |
 | T14 la re-siembra tras una pérdida no mueve `lastReport` | en vivo, con protocolo, 6 decimales y los escenarios | Y-SUP-1, Y-LOCK-1, Y-INF-1, Y-VIEW-1, Y-REENT-1 |
 | T15 la re-siembra divide por un segundo de más | en vivo, con protocolo, 6 decimales y los escenarios | Y-LOCK-1 |
 | T16 el devengamiento con pérdida no re-siembra el cronograma | en vivo, con protocolo, 6 decimales y los escenarios | Y-SUP-1, Y-LOCK-1, Y-INF-1, Y-VIEW-1, Y-REENT-1 |
@@ -184,10 +188,10 @@ conversiones, y el fuzzer casi no llega a una pérdida total con suministro chic
 | T29 `maxWithdraw` ignora el límite de la estrategia | las 4 | Y-VIEW-1 |
 | T30 `maxDeposit` ignora la pausa | las 4 | Y-VIEW-1 |
 | T31 el desbloqueo en 0 no quema el buffer | las 4 | Y-SUP-1, Y-LOCK-1, Y-LEDGER |
-| T32 la comisión nueva es retroactiva | las 4 | Y-TA-1, Y-LOCK-1 |
-| T33 el depósito coloca solo lo depositado | las 4 | Y-REENT-1, Y-FUNDS |
+| T32 la comisión nueva es retroactiva | las 4 y los escenarios | Y-TA-1, Y-LOCK-1, Y-SUP-1 |
+| T33 el depósito coloca solo lo depositado | las 4 y los escenarios | Y-FUNDS, Y-REENT-1 |
 | T34 el reporte no mueve `lastReport` | las 4 y los escenarios | Y-LOCK-1, Y-INF-2 |
-| T35 el reporte con pérdida no la cubre con el buffer | las 4 | Y-SUP-1, Y-LOCK-1 |
+| T35 el reporte con pérdida no la cubre con el buffer | las 4 | Y-SUP-1, Y-LOCK-1, Y-LIVE |
 | T36 se puede transferir a la estrategia | las 4 | Y-LIVE |
 | T37 `balanceOf` de la estrategia no descuenta lo desbloqueado | las 4 y los escenarios | Y-VIEW-1 |
 | T38 el devengamiento no mueve `lastAccrual` | las 4 y los escenarios | Y-TA-1 |
@@ -196,7 +200,59 @@ conversiones, y el fuzzer casi no llega a una pérdida total con suministro chic
 "Las 4" son las variantes de invariantes; las mutaciones del devengamiento en vivo no aplican a la variante por
 reporte. Las leyes de más en algunas filas son el efecto en cadena de la mutación.
 
-## 6. Qué NO cubre
+## 6. La campaña profunda y el dominio del cazador (30-oct)
+
+**La campaña.** 512×1500 (768.000 llamadas por variante, semilla `0x4a9cb1e5a489dc29`, 28-oct): las cuatro variantes
+y los escenarios en verde, sin ninguna ley violada. Pero el handler revirtió 11 veces en la variante con protocolo
+(`lockThenLose` 6 y `report` 5), y esas secuencias quedaron sin verificar. Con `fail_on_revert` y la misma semilla
+no se reprodujeron.
+
+**La causa: acciones infladas, no TokenizedStrategy.** Se reprodujo el 30-oct con `fail_on_revert` y otras semillas,
+como las del Vault V3 ([CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md) §6): cuatro copias de la variante con protocolo a
+64×1500. La de la semilla `0x404` revirtió con `panic 0x11` en un `report()`, en la llamada 361 de una corrida. La
+secuencia, repetida con trazas, muestra:
+- la estrategia con 1,1e45 acciones contra 2.159 wei de activo (`convertToShares(1e18)` daba 5,2e59);
+- al reportar una ganancia grande, el modelo calcula la tasa de desbloqueo con el buffer × `MAX_BPS_EXTENDED`
+  (unas 1,5e65 × 1e12), que pasa de 2^256.
+
+TokenizedStrategy hace la misma cuenta (`totalLockedShares * MAX_BPS_EXTENDED`) con aritmética chequeada y también
+revierte: **no es un hallazgo**. El mecanismo es el del vault. Una pérdida casi total en vivo deja el precio por acción
+cerca de 0, y cada depósito siguiente multiplica el suministro.
+
+**El arreglo**, el mismo que en el Vault V3:
+- **El modelo a prueba de desbordes:** el handler llama con una llamada externa al modelo de las entradas, las
+  salidas, el reporte y el devengamiento de los setters (`setPerformanceFee`, `setPerformanceFeeRecipient` y
+  `setProfitMaxUnlockTime`). Si una cuenta desborda o divide por cero, la operación se espera rechazada y Y-LIVE
+  controla que TokenizedStrategy revierta.
+- **El dominio:** `totalSupply` crudo hasta 2^128; la operación que lo pasaría se saltea. Con la comisión de hasta
+  50 %, el suministro simulado de las vistas a lo sumo se duplica, así que ninguna vista ni ley del cazador desborda.
+- **Dos métricas nuevas:** las operaciones cuyo modelo desbordó y las salteadas por el dominio.
+
+**Prueba de regresión:** `test_inflacion_de_acciones_no_tumba_al_cazador`, en los escenarios. Son seis vueltas de
+depósito, una pérdida en vivo que deja 1 de activo en la fuente y otro bloque; después, una recompensa y el reporte.
+Con el harness viejo revierte (el `mulDiv` del modelo desborda); con el arreglado pasa.
+
+**Verificación del harness arreglado (30-oct, forge 1.8.6 en la PC).**
+
+- **Proyecto reducido:** las cuatro variantes pasan 256×500 con `0x2a` y `0x3`, sin falsos positivos ni reversiones
+  (128.000 llamadas por variante y semilla). Pasan también los cinco escenarios, el de la regresión incluido: 9 de 9
+  con cada semilla.
+- **Referencia:** `validate` sobre el repo entero (`v3.1.0`, compilación aislada, 256×500, semilla
+  `0x030681159d224858`) da 9 de 9 con 0 reversiones en 512.000 llamadas: 103 s de compilación y 2.565 s de tests.
+- **Mutaciones:** las 39 de referencia se detectan (64×200, `0x2a`), cada una en las mismas variantes que antes. T32
+  y T33 las ven además los escenarios, por la prueba nueva, y en algunas filas cambian las leyes de más (el efecto en
+  cadena). La tabla de la sección 5 es la de esta batería.
+- **Confirmación con `fail_on_revert`:** la variante con protocolo, cuatro copias a 64×1500 con semillas nuevas
+  (`0x501` a `0x504`), da 384.000 llamadas sin ninguna reversión ni ley violada. A la tasa de la campaña, con el
+  harness viejo se esperaban unas 5 o 6.
+- **Cobertura de la última corrida de cada variante:** parecida a la de la verificación original. Con `0x3` hubo de
+  21.000 a 22.600 leyes evaluadas en vivo y 17.100 por reporte, 25 a 26 reportes con ganancia, 124 a 194 callbacks
+  verificados y 5 a 12 sándwiches. Con `0x2a` y en `validate`, las últimas corridas fueron algo más pobres (de 13.600
+  a 19.800 leyes y hasta 4 sándwiches).
+- **El borde:** en la última corrida de estas suites no hubo operaciones desbordadas ni salteadas. Sí aparecieron en
+  una corrida corta de 8×300, donde una variante salteó 4 operaciones por el dominio.
+
+## 7. Qué NO cubre
 
 - El Vault V3 (Vyper 0.3.10) que usa las estrategias: su `process_report` lee `convertToAssets` de la estrategia, y con
   contabilidad en vivo ese valor incluye lo simulado. Es el paso siguiente natural, con `vyper` en el venv.
@@ -205,3 +261,4 @@ reporte. Las leyes de más en algunas filas son el efecto en cadena de la mutaci
 - Tokens con comisión por transferencia, con ganchos (ERC-777) o rebasables; `permit`; el cambio de management en dos
   pasos; varias estrategias sobre la misma implementación.
 - La 3.0.4 (también en alcance): su contabilidad es la del modo por reporte, sin el pestillo ni el piso.
+- `totalSupply` por encima de 2^128 (sección 6): ahí TokenizedStrategy y el modelo desbordan en las mismas cuentas.
