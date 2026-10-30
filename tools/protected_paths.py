@@ -1,4 +1,5 @@
-"""Rutas protegidas: un PR que las toque solo lo aprueba y fusiona el dueño (Claude nunca lo hace).
+"""Rutas protegidas: un PR que las toque lo fusiona el dueño, o Claude solo con la autorización expresa del dueño
+para ese cambio (docs/REGLAS.md, R-9 y R-11).
 
   python tools/protected_paths.py BASE HEAD     sale con 1 si el cambio toca algo protegido
   python tools/protected_paths.py --self-test   verifica la propia regla de coincidencia
@@ -43,7 +44,7 @@ if __name__ == "__main__":
         sys.exit(0)
     found = [p for p in changed(sys.argv[1], sys.argv[2]) if protected(p)]
     if found:
-        print("Cambios en RUTAS PROTEGIDAS (solo los aprueba y fusiona el dueño):")
+        print("Cambios en RUTAS PROTEGIDAS (los fusiona el dueño, o Claude con su autorización expresa):")
         print("\n".join(f"  - {x}" for x in found))
         sys.exit(1)
     print("Sin cambios en rutas protegidas.")

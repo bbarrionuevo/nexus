@@ -1,8 +1,9 @@
-"""Límites de seguridad de la investigación. ARCHIVO PROTEGIDO: solo lo cambia el dueño.
+"""Límites de seguridad de la investigación. ARCHIVO PROTEGIDO: lo cambia el dueño, o Claude con su autorización
+expresa para ese cambio.
 
 Un PR que toque este archivo (o su test, tests/test_limits.py) deja en rojo el control de rutas
-protegidas (tools/protected_paths.py): Claude nunca fusiona un PR así. Ningún agente puede ampliar el
-alcance, subir los topes ni habilitar envíos o transacciones por su cuenta.
+protegidas (tools/protected_paths.py): Claude no lo fusiona sin esa autorización (docs/REGLAS.md, R-11). Ningún
+agente puede ampliar el alcance, subir los topes ni habilitar envíos o transacciones por su cuenta.
 """
 from pathlib import Path
 

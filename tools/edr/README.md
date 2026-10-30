@@ -1,5 +1,8 @@
 # Verificación de harness sin forge (solc-js + EDR)
 
+**Histórico.** Desde el 30-oct-2026 Claude trabaja en nexus solo en la PC del dueño, con forge (docs/REGLAS.md, R-12):
+esta herramienta ya no se usa, y queda por si algún día no hay forge.
+
 En la nube de Claude no se puede instalar Foundry: los hosts de descarga de foundry y solc están bloqueados.
 npm sí funciona, y desde ahí se instalan:
 

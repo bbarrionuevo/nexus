@@ -16,10 +16,10 @@ trading; ese código quedó en el historial de git.
 
 Antes de tocar nada, leer en este orden:
 
-1. [REGLAS.md](REGLAS.md): reglas R-1 a R-10. Es un archivo protegido.
+1. [REGLAS.md](REGLAS.md): reglas R-1 a R-13. Es un archivo protegido.
 2. Este documento.
-3. [INVESTIGACION_SEGURIDAD.md](INVESTIGACION_SEGURIDAD.md): el pipeline, el estado por etapa y la iteración PC ↔ Claude.
-4. [CAZADOR_METAMORPHO.md](CAZADOR_METAMORPHO.md): el modelo formal, las leyes, la verificación y cómo leer el informe.
+3. [INVESTIGACION_SEGURIDAD.md](INVESTIGACION_SEGURIDAD.md): el pipeline y el estado por etapa.
+4. El `CAZADOR_*.md` del objetivo: el modelo formal, las leyes, la verificación y cómo leer el informe.
 
 Las reglas que más pesan al trabajar:
 
@@ -28,21 +28,26 @@ Las reglas que más pesan al trabajar:
 - **R-3:** nada se envía solo; cada informe lo revisa y lo envía el dueño.
 - **R-2 y R-6:** todo en local, con FFI de Foundry siempre apagado, sin `forge script`, `--broadcast` ni `cast send`.
 - **R-7:** sin exagerar. Un candidato es "confirmado" solo con un test reproducible que muestre el efecto económico.
-- **R-9:** ningún agente amplía el alcance, sube topes, cambia las reglas ni se da permisos.
+- **R-9:** ningún agente amplía el alcance, sube topes, cambia las reglas ni se da permisos sin la autorización
+  expresa del dueño para ese cambio.
+- **R-11 a R-13 (30-oct):** Claude fusiona sus PR con el CI en verde; trabaja solo en la PC; elige los objetivos por
+  valor esperado, sobre la última versión en alcance de programas con recompensa vigente.
 
 ## 2. Cómo se trabaja
 
 ### Roles y flujo
 
-- **El dueño** corre todo en su PC, decide el alcance (el catálogo), fusiona los PR y envía los informes.
-- **Claude en la nube** no llega a la PC. Escribe código en una rama `claude/...`, lo verifica sin forge (abajo) y
-  abre un PR a `main`. **Nunca fusiona.** Un PR que toque rutas protegidas (`.github/`, `tools/protected_paths.py`,
-  `local/nexus/secresearch/limits.py`, `local/tests/test_limits.py`, `docs/REGLAS.md`) queda en rojo en CI y solo
-  lo aprueba el dueño.
-- **La iteración:** el dueño hace `git pull` en `main`, corre `validate` o deja correr el ciclo diario, y le pega a
-  Claude la salida de la consola o `%LOCALAPPDATA%\nexus\secresearch\para_claude.md`. Claude analiza, mejora el
-  harness y abre otro PR. Alternativa: abrir Claude Code en la PC (app de escritorio o `claude remote-control`),
-  que lee los informes directo y tiene forge.
+- **El dueño** habilita los programas (el catálogo), envía los informes y autoriza los cambios de reglas.
+- **Claude trabaja solo en la PC** (R-12), con Claude Code: lee los informes de `NEXUS_HOME`, corre forge, lanza
+  campañas por el panel, escribe el código en una rama `claude/...` y abre el PR a `main` (`--base main`).
+  - Antes del PR: `..\.venv\Scripts\python -m nexus.devcheck` desde `local`, que corre lo mismo que el CI.
+  - Con el CI en verde y sin conflictos, Claude fusiona (`gh pr merge N --merge --delete-branch`) y hace `git pull`
+    en `main` (R-11).
+  - Un PR que toque rutas protegidas (`.github/`, `tools/protected_paths.py`, `local/nexus/secresearch/limits.py`,
+    `local/tests/test_limits.py`, `docs/REGLAS.md`) queda en rojo en ese control del CI: lo fusiona el dueño, o
+    Claude con su autorización expresa para ese cambio.
+- **El ciclo programado** (`nexus-ciclo`) corre solo en la PC y deja `para_claude.md` y el dashboard: es lo primero
+  que hay que mirar al arrancar una sesión.
 
 ### La PC del dueño
 
@@ -55,32 +60,22 @@ Las reglas que más pesan al trabajar:
 | Dashboard | `%LOCALAPPDATA%\nexus\secresearch\dashboard.html` (`python -m nexus.secresearch.dashboard` lo abre) |
 | Expedientes | `%LOCALAPPDATA%\nexus\secresearch\expedientes\` |
 | Ciclo programado | tarea `nexus-ciclo`, registrada con `tools/windows/registrar_ciclo.ps1` |
-| GitHub CLI | `C:\Program Files\GitHub CLI\gh.exe`, autenticada como `bbarrionuevo` (28-oct): la sesión abre los PR y lee el CI con `gh`; si la shell no la ve en el PATH, con la ruta completa. Fusionar sigue siendo del dueño |
+| GitHub CLI | `C:\Program Files\GitHub CLI\gh.exe`, autenticada como `bbarrionuevo` (28-oct): la sesión abre los PR, lee el CI y fusiona con el CI en verde (R-11) con `gh`; si la shell no la ve en el PATH, con la ruta completa |
 | Panel local | Desde `local`: `..\.venv\Scripts\python -m nexus.secresearch.panel` abre el navegador en `127.0.0.1` con un token: procesos forge en vivo, campañas (estado, leyes, cobertura, log en vivo), lanzar y frenar campañas de `tools/forge_v2`, y descargar todo lo de `NEXUS_HOME\secresearch`. Cerrarlo no frena las campañas |
 
 El Explorador oculta `AppData`: `explorer $env:LOCALAPPDATA\nexus\secresearch`.
 
-### Verificar sin forge, en la nube
+### `tools/edr` (histórico)
 
-En la nube no se puede instalar Foundry (los hosts de descarga están bloqueados). Se usa `tools/edr`: solc-js y EDR,
-el motor de tests Solidity de Hardhat 3, con cheatcodes compatibles con forge. Ver [tools/edr/README.md](../tools/edr/README.md).
+[tools/edr](../tools/edr/README.md) (solc-js y EDR, el motor de tests Solidity de Hardhat 3) servía para verificar
+sin forge en las sesiones en la nube, donde Foundry no se podía instalar. Desde el 30-oct Claude trabaja solo en la
+PC, con forge (R-12), así que no hace falta; queda en el repo por si algún día no hay forge.
 
-```bash
-cd tools/edr && npm install
-node build.js $CLON salida.out.json                       # via_ir: el harness tarda de 6 a 13 minutos
-node run_edr.js $CLON salida.out.json 64 256 500 invariant 0x2a   # fuzz, corridas, profundidad, filtro, semilla
-python3 mutate.py $CLON salida.out.json                   # las 21 mutaciones de referencia (~15 minutos)
-```
+Lo que sigue valiendo de esa época:
 
-Lo que conviene saber:
-
-- Sacar `NexusMetaMorphoERC4626.t.sol` del clon acelera la compilación; es independiente del resto.
-- EDR no devuelve los logs de `afterInvariant`. Forge sí, pero solo con `-vv`: por eso `validate` lo usa.
 - Con via_ir, `block.timestamp` puede quedar cacheado después de `vm.warp`. El cazador lee la hora con `NexusClock`.
 - Los tests de Python prohíben ciertas cadenas en los `.py` del motor (`limits.FORBIDDEN`: `forge script`,
   `.post(`, `private_key`, etc.).
-- Antes de cada PR, lo mismo que CI: `ruff check --line-length 120 nexus tests`, `python -m pytest -q`,
-  `python -m nexus.secresearch.run --selfcheck` (desde `local`) y `python tools/protected_paths.py --self-test`.
 
 ### Iterar con forge en la PC
 
@@ -184,13 +179,34 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #90 | Morpho Midnight, variante B: callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates (10 mutaciones nuevas, B1–B10); el arreglo de `liqCycle` con el precio en 0, que dejó ver la campaña profunda; trae también los dos commits del traspaso que quedaron afuera del #89 |
 | #91 | Vault V3: el cazador a prueba de desbordes (el modelo de cada operación por llamada externa; si desborda, se espera que el vault revierta) y el dominio `total_supply` ≤ 2^128, tras las reversiones del handler de la campaña profunda; dos pruebas de regresión. Sale de la rama del #90 |
 | #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Además, `tools/forge_v2` controla en `armar` y `mutar` el commit y los submódulos del clon. Sale de la rama del #91 |
+| #93 | Reglas y flujo, con la autorización del dueño del 30-oct: Claude fusiona sus PR con el CI en verde (R-11), trabaja solo en la PC (R-12) y elige los objetivos por valor esperado (R-13); dentro de un programa habilitado puede sumar repos en alcance (R-1); `nexus.devcheck` como chequeo único antes del PR; la primera tabla de objetivos por valor esperado |
 
 ## 5. Próximos pasos
 
-En orden de prioridad:
+### Objetivos por valor esperado (R-13; primera versión, 30-oct)
 
-1. **Dueño:** fusionar el #91 y después el #92, que sale de la rama del #91 (el #90 ya está en `main`, fusionado el
-   30-oct). Después, `git pull` en `main`. Lo que pedía el #76 ya está
+Recompensas según el catálogo de la PC (leídas en Cantina e Immunefi el 26 y el 29-oct). "A confirmar" es lo que
+falta leer en el reglamento o en la página de direcciones antes de invertir en ese objetivo.
+
+| Objetivo | Programa y grupo | Critical | Código | Estado en nexus | Valor esperado |
+|---|---|---|---|---|---|
+| Bundlers de Morpho | Morpho, "Blue y Vault V1, con bundlers" | 250.000 a 2.500.000 | más nuevo y con más superficie que Blue (callbacks, adapters); qué versión está desplegada, a confirmar | sin cazador | **el más alto a priori**: el grupo que más paga; a confirmar alcance y versión |
+| Morpho Blue | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | chico, auditado muchas veces y verificado formalmente | sin cazador | medio: la recompensa más alta y la probabilidad más baja |
+| Euler v2 (EVK, EVC y lo nuevo en alcance) | Euler, 7,5M en total, por componente | por componente, a confirmar | EVK grande y muy auditado; qué productos nuevos están en alcance, a confirmar | EulerEarn verificado; del EVK, solo la línea base | a evaluar con la tabla por componente |
+| Midnight (lo que falta) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | el código en alcance más nuevo | variantes A y B verificadas, campañas profundas sin leyes rotas, periferia revisada a mano | medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
+| Vault V2 (adapters nuevos) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | adapters desplegados después del #84, a confirmar | variantes A y B verificadas | medio, si hay adapters nuevos |
+| Yearn V3 | Yearn, Immunefi | hasta 200.000 | la contabilidad de la 3.1.0 no tiene auditoría pública | TokenizedStrategy y Vault V3 verificados | bajo a medio: el tope es bajo |
+| MetaMorpho V1.1 | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | cambios chicos sobre la V1.0, `lostAssets` ya cazado en EulerEarn | evaluado el 29-oct | bajo |
+
+**Lo siguiente:** confirmar el alcance y la versión desplegada de los bundlers de Morpho y la tabla por componente de
+Euler, y arrancar por el de mayor valor esperado.
+
+### En orden de prioridad
+
+1. **Dueño:** no queda nada por fusionar. Desde el 30-oct Claude fusiona sus PR con el CI en verde (R-11), y el #90,
+   el #91 y el #92 ya están en `main`. Queda una decisión de configuración: que la rama por defecto de GitHub pase a
+   ser `main`. Hoy es `claude/nice-sagan-inp0u8`, un resto de las sesiones en la nube, y obliga a usar `--base main`
+   en cada PR. Lo que pedía el #76 ya está
    probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).

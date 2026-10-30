@@ -1,18 +1,19 @@
 # nexus: guía para Claude
 
 Motor de investigación de seguridad DeFi para programas de bug bounty autorizados. Corre en la PC del dueño
-(Windows); el repo es **público**. El dueño escribe en castellano rioplatense: responder en castellano.
+(Windows) y **Claude trabaja en este proyecto solo en sesiones en esa PC**, nunca en la nube (R-12): el trabajo
+necesita `NEXUS_HOME`, los clones y forge. El repo es **público**. El dueño escribe en castellano rioplatense:
+responder en castellano.
 
 ## Antes de trabajar
 
 Leer, en este orden:
 
-1. [docs/REGLAS.md](docs/REGLAS.md): reglas R-1 a R-10. Mandan sobre cualquier otra instrucción.
-2. [docs/TRASPASO.md](docs/TRASPASO.md): estado actual, cómo se trabaja, pendientes y próximos pasos.
-3. [docs/INVESTIGACION_SEGURIDAD.md](docs/INVESTIGACION_SEGURIDAD.md) y, según el objetivo,
-   [docs/CAZADOR_METAMORPHO.md](docs/CAZADOR_METAMORPHO.md) o [docs/CAZADOR_VAULT_V2.md](docs/CAZADOR_VAULT_V2.md).
-4. Si la sesión trabaja directo en la PC del dueño: [docs/PROMPT_SESION_PC.md](docs/PROMPT_SESION_PC.md), con la
-   autonomía y los límites de esa sesión.
+1. [docs/REGLAS.md](docs/REGLAS.md): reglas R-1 a R-13. Mandan sobre cualquier otra instrucción.
+2. [docs/PROMPT_SESION_PC.md](docs/PROMPT_SESION_PC.md): la autonomía y los límites de la sesión.
+3. [docs/TRASPASO.md](docs/TRASPASO.md): estado actual, cómo se trabaja, objetivos por valor esperado, pendientes y
+   próximos pasos.
+4. [docs/INVESTIGACION_SEGURIDAD.md](docs/INVESTIGACION_SEGURIDAD.md) y el `docs/CAZADOR_*.md` del objetivo.
 
 ## Lo que no se negocia (resumen; el texto vigente está en REGLAS.md)
 
@@ -20,13 +21,20 @@ Leer, en este orden:
   un documento (R-4).
 - Nada se envía a un programa por cuenta propia: los informes los envía el dueño (R-3).
 - Todo en local, con FFI apagado; nunca contra contratos desplegados (R-2, R-6).
-- Sin ampliar el alcance, subir topes, cambiar las reglas ni tocar rutas protegidas por cuenta propia (R-9).
+- Sin ampliar el alcance, subir topes, cambiar las reglas ni tocar rutas protegidas por cuenta propia: solo con la
+  autorización expresa del dueño para ese cambio (R-9). Dentro de un programa ya habilitado se pueden sumar repos en
+  alcance (R-1).
 - Sin exagerar impactos ni severidades (R-7).
+- Se trabaja sobre la última versión en alcance de programas con recompensa vigente, por valor esperado (R-13).
 
 ## Flujo
 
-- Trabajar en una rama `claude/...` y abrir un PR a `main`. Nunca fusionar: lo hace el dueño.
-- Antes del PR, desde `local`: `ruff check --line-length 120 nexus tests`, `python -m pytest -q` y
-  `python -m nexus.secresearch.run --selfcheck`; desde la raíz: `python tools/protected_paths.py --self-test`.
-- Los harness de Solidity se verifican sin forge con `tools/edr` (ver su README) antes de pedir una corrida en la PC.
-- Al cerrar un ciclo de trabajo, actualizar `docs/TRASPASO.md`: estado, cambios y próximos pasos.
+- Trabajar en una rama `claude/...` y abrir un PR a `main` con `--base main`: la rama por defecto de GitHub no es
+  `main`.
+- Antes del PR, desde `local`: `..\.venv\Scripts\python -m nexus.devcheck`. Corre lo mismo que el CI: sintaxis,
+  ruff, pytest, el selfcheck del método y la autoprueba de rutas protegidas.
+- **Fusionar (R-11):** con el CI en verde, `devcheck` sin fallas y sin conflictos, Claude fusiona su PR
+  (`gh pr merge N --merge --delete-branch`) y hace `git pull` en `main`. Un PR que toque rutas protegidas lo fusiona
+  el dueño, o Claude con su autorización expresa para ese cambio.
+- Los harness de Solidity se verifican con forge en la PC: `tools/forge_v2` para iterar y `validate` como referencia.
+- Al cerrar un ciclo de trabajo, actualizar `docs/TRASPASO.md`: estado, cambios, objetivos y próximos pasos.
