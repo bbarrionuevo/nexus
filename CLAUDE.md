@@ -29,8 +29,8 @@ Leer, en este orden:
 
 ## Flujo
 
-- Trabajar en una rama `claude/...` y abrir un PR a `main` con `--base main`: la rama por defecto de GitHub no es
-  `main`.
+- Trabajar en una rama `claude/...` y abrir un PR a `main`, que desde el 30-oct es también la rama por defecto de
+  GitHub.
 - Antes del PR, desde `local`: `..\.venv\Scripts\python -m nexus.devcheck`. Corre lo mismo que el CI: sintaxis,
   ruff, pytest, el selfcheck del método y la autoprueba de rutas protegidas.
 - **Fusionar (R-11):** con el CI en verde, `devcheck` sin fallas y sin conflictos, Claude fusiona su PR
