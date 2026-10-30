@@ -226,6 +226,11 @@ abstract contract NexusV3Hunter is NexusV3Base {
     uint256 internal constant NH = 6; // actores 0..3, accountant, protocolo
     uint256 internal constant H_ACCT = 4;
     uint256 internal constant H_PROTO = 5;
+    /// @dev Dominio: total_supply crudo hasta 2^128. Pérdidas casi totales seguidas de depósitos o ganancias inflan las
+    /// acciones (con 18 decimales, 1e24, 1e48, 1e72...) hasta que el vault y el modelo desbordan en la misma cuenta, un
+    /// régimen sin sentido económico. Con este tope ninguna vista ni ley del cazador desborda; la operación que lo
+    /// pasaría se saltea (hDomain).
+    uint256 internal constant S_CAP = 2 ** 128;
 
     struct Snap {
         uint256 ts;
@@ -273,6 +278,8 @@ abstract contract NexusV3Hunter is NexusV3Base {
     uint256 internal hRejected;
     uint256 internal hExcess; // retiros con exceso por encima de la deuda (queda fuera de total_idle)
     uint256 internal hIdleFloor; // bajas de deuda en las que el mínimo ocioso hizo retirar más de lo pedido
+    uint256 internal hOverflow; // operaciones cuyo modelo desbordó: se esperan rechazadas, como en el vault
+    uint256 internal hDomain; // operaciones salteadas porque dejaban total_supply por encima de S_CAP
 
     function _holder(uint256 h) internal view returns (address) {
         if (h < 4) return actors[h];
@@ -639,6 +646,52 @@ abstract contract NexusV3Hunter is NexusV3Base {
         return (true, r);
     }
 
+    /* EL MODELO POR LLAMADA EXTERNA
+       El vault (Vyper) y las estrategias (mulDiv de OpenZeppelin) hacen las mismas cuentas que el modelo, con
+       aritmética chequeada. El handler llama así al modelo de cada operación: si una cuenta desborda o divide por cero,
+       el modelo revierte sin tumbar al handler, la operación se espera rechazada y YV-LIVE controla que el vault
+       también revierta. */
+
+    function simEnter(Snap memory pre, uint256 h, uint256 x, bool isMint)
+        external
+        pure
+        returns (bool expect, Snap memory m)
+    {
+        m = _copy(pre);
+        uint256 a = isMint ? _c2a(pre, x, true) : x;
+        uint256 sh = isMint ? x : _c2s(pre, x, false);
+        expect = a <= _maxDep(pre) && a > 0 && sh > 0 && a <= pre.cash[h];
+        if (expect) {
+            m.cash[h] -= a;
+            m.vaultCash += a;
+            m.idle += a;
+            _issue(m, h, sh);
+        }
+    }
+
+    function simRedeem(Snap memory pre, uint256 h, uint256 assets, uint256 shares, uint256 maxLoss)
+        external
+        pure
+        returns (bool expect, W memory w, Snap memory m)
+    {
+        m = _copy(pre);
+        (expect, w) = _simRedeem(m, h, assets, shares, maxLoss);
+    }
+
+    function simUpdateDebt(Snap memory pre, uint256 i, uint256 target, uint256 maxLoss)
+        external
+        pure
+        returns (bool expect, bool lossy, Snap memory m)
+    {
+        m = _copy(pre);
+        (expect, lossy) = _simUpdateDebt(m, i, target, maxLoss);
+    }
+
+    function simReport(Snap memory pre, uint256 i) external pure returns (bool expect, Rep memory r, Snap memory m) {
+        m = _copy(pre);
+        (expect, r) = _simReport(m, i);
+    }
+
     /* LEYES */
 
     function _lawState(Snap memory e, Snap memory p) internal {
@@ -758,7 +811,7 @@ abstract contract NexusV3Hunter is NexusV3Base {
         return (hWithdrawLoss, hFromStrat, hDebtUp, hDebtDown, hRejected, hExcess);
     }
 
-    function coverage3() external view returns (uint256 idleFloor) {
-        return hIdleFloor;
+    function coverage3() external view returns (uint256 idleFloor, uint256 overflow, uint256 domain) {
+        return (hIdleFloor, hOverflow, hDomain);
     }
 }
