@@ -1,8 +1,10 @@
 # Cazador del Vault V3 (Yearn)
 
-Estado: **variante A escrita y verificada con forge en la PC** (29-oct). Pasa sin falsos positivos ni reversiones
-en sus cuatro variantes (24×500 con las semillas `0x2a` y `0x3`, y `validate` sobre el repo entero a 64×500), y
-las 28 mutaciones de referencia se detectan. **No hay hallazgos.**
+Estado: **variante A escrita y verificada con forge en la PC** (29-oct; arreglada el 30-oct). Pasa sin falsos
+positivos ni reversiones en sus cuatro variantes (24×500 con las semillas `0x2a` y `0x3`, y `validate` sobre el repo
+entero a 64×500), y las 28 mutaciones de referencia se detectan. La campaña profunda (768×1000) pasó sin leyes
+violadas. Sus reversiones del handler venían de acciones infladas hasta desbordar, en el modelo y en el vault, y están
+arregladas (sección 6). **No hay hallazgos.**
 
 ## 1. Qué versión y qué alcance
 
@@ -92,9 +94,9 @@ desde el 29-oct `validate` marca como error una corrida del harness sin tests. E
 256×500: con el vault de Vyper y unas 35 leyes por llamada, 256×500 no entra en la hora que `limits.py` le da a los
 tests. Las campañas largas van por el panel o por `tools/forge_v2`, que no tienen ese tope.
 
-**Verificación (29-oct, forge 1.8.6 en la PC).**
+**Verificación del harness original (29-oct, forge 1.8.6 en la PC).** La del harness arreglado está en la sección 6.
 
-- **Proyecto reducido:** con el harness final, las 4 variantes pasan 24×500 sin falsos positivos y con 0
+- **Proyecto reducido:** las 4 variantes pasan 24×500 sin falsos positivos y con 0
   reversiones, con las semillas `0x2a` y `0x3` (12.000 llamadas por variante y semilla).
 - **Referencia:** `validate` sobre el repo entero (`v3.1.0`, compilación aislada, 64×500, semilla
   `0x68a90a1321ee064a`) da 4 de 4 con 0 reversiones: 74 s de compilación y 1.687 s de tests.
@@ -149,9 +151,71 @@ nunca bajaba deuda con el mínimo por encima de lo ocioso.
 
 Las leyes de más en algunas filas son el efecto en cadena de la mutación.
 
-## 6. Qué NO cubre
+## 6. La campaña profunda y el dominio del cazador (30-oct)
+
+**La campaña.** 768×1000 (768.000 llamadas por variante, semilla `0xe782c4dd280d82a0`, del 29-oct a las 18:17 al
+30-oct a las 02:49): las cuatro variantes en verde, sin ninguna ley violada. Pero el handler revirtió en dos, y esas
+secuencias quedaron sin verificar:
+- en la de comisiones, 43 veces: `stressExit` 14, `idleFloor` 11, `updateDebt` 6, `cycle` 5, `redeem` 4, `deposit` 2
+  y `withdraw` 1;
+- en la base, 31: `cycle` 15, `report` 8, `stressExit` 6, `idleFloor` 1 y `updateDebt` 1;
+- en la de 6 decimales y en la sin bloqueo, ninguna.
+
+**La causa: acciones infladas, no el vault.** Se reprodujo con `fail_on_revert` (variante base, semilla `0x204`). En
+la llamada 78 de una corrida, un `stressExit` deposita y el modelo revierte con `panic 0x11`. Antes de ese depósito el
+vault tenía unas 1,2e56 acciones contra 7,3e23 de activo, unos 6e-33 de activo por acción. La conversión del
+depósito (`a·s`, hasta 1e24 × 1,2e56) pasa de 2^256. Así se llega:
+- una pérdida casi total de una estrategia, reportada, deja el precio por acción cerca de 0;
+- el depósito siguiente emite `a·s/A` acciones, y con `A` de unas pocas unidades eso multiplica `s` (con 18
+  decimales: 1e24, 1e48, 1e72...);
+- dos o tres vueltas después, desborda cualquier cuenta con `s`: la conversión del depósito, las vistas
+  (`convertToShares(10^dec)`), la tasa de desbloqueo o las acciones de comisión de un reporte.
+
+El vault hace las mismas cuentas con la aritmética chequeada de Vyper (`_convert_to_shares` calcula
+`assets · total_supply`), así que en ese estado también revierte. Un vault con 1e56 acciones respaldadas por una
+fracción de token deja de aceptar depósitos, y es un régimen sin sentido económico: **no es un hallazgo**. Con 6
+decimales los montos son un millón de veces más chicos, y sin bloqueo no están la tasa ni el buffer: por eso esas dos
+variantes no revirtieron.
+
+**El arreglo.**
+- **El modelo a prueba de desbordes:** el handler llama al modelo de cada operación (depósito, retiro, `update_debt` y
+  `process_report`) con una llamada externa. Si una cuenta del modelo desborda o divide por cero, la operación se
+  espera rechazada, porque el vault (o el `mulDiv` de la estrategia) hace la misma cuenta. YV-LIVE controla que el
+  vault revierta.
+- **El dominio:** `total_supply` crudo hasta 2^128. Un depósito o un reporte que lo pasaría se saltea. El activo total
+  del handler no pasa de unos 2^92, así que con ese tope ninguna vista ni ley del cazador desborda.
+- **Dos métricas nuevas:** las operaciones cuyo modelo desbordó y las salteadas por el dominio.
+
+**Pruebas de regresión**, en las cuatro variantes:
+- `test_inflacionDeAcciones`: ocho vueltas de depósito, toda la deuda a una estrategia, una pérdida que deja 1 de
+  activo y el reporte; después una ganancia y su reporte.
+- `test_desbordeEnElReporte`: con `total_supply` en 1e38 y 1 de activo, la comisión de un reporte (acciones a quemar
+  × comisión) desborda en el modelo y en el vault, que revierte como predice el modelo.
+
+Con el harness viejo, las dos revierten por desborde, salvo la segunda en 6 decimales, que no tiene comisión y no
+prueba nada. Con el arreglado pasan.
+
+**Verificación del harness arreglado (30-oct, forge 1.8.6 en la PC).**
+
+- **Proyecto reducido:** las cuatro variantes pasan 24×500 con `0x2a` y `0x3`, sin falsos positivos ni reversiones, y
+  las dos pruebas de regresión pasan en las cuatro: 12 de 12 pruebas con cada semilla.
+- **Referencia:** `validate` sobre el repo entero (`v3.1.0`, compilación aislada, 64×500, semilla
+  `0x689e3107429f5a13`) da 12 de 12 con 0 reversiones en 128.000 llamadas: 46 s de compilación y 891 s de tests.
+- **Mutaciones:** las 28 de referencia se detectan, cada una en las cuatro variantes y con las mismas leyes que en la
+  tabla de la sección 5.
+- **Confirmación con `fail_on_revert`:** las dos variantes que revertían (comisiones y base), dos copias cada una a
+  64×1000 con semillas nuevas (`0x301` a `0x304`), dan 256.000 llamadas sin ninguna reversión ni ley violada. A la
+  tasa de la campaña, con el harness viejo se esperaban unas 12.
+- **Cobertura de la última corrida:** con `0x3`, en los rangos de la verificación original (5 a 15 reportes con
+  ganancia, 3 a 11 con pérdida, 6 a 45 subas y 7 a 22 bajas de deuda, 77 a 192 rechazos). Con `0x2a` fue pobre en las
+  cuatro variantes, que corren la misma secuencia: 0 o 1 reporte, una suba de deuda y 222 a 224 rechazos.
+- **El borde es raro:** en ninguna corrida de la verificación hubo operaciones desbordadas ni salteadas por el
+  dominio. En la campaña aparecía una vez cada 18.000 a 25.000 llamadas; las pruebas de regresión lo fuerzan.
+
+## 7. Qué NO cubre
 
 - La variante B: estrategias reales de TokenizedStrategy v3.1.0 (en vivo), donde `convertToAssets` incluye lo
   simulado. Es el paso siguiente.
 - Los hooks de depósito y retiro (los pone un rol privilegiado), `buy_debt`, `force_revoke_strategy`, la cola elegida
   por el usuario, el auto-asignado de deuda al depositar, `process_report` del propio vault (donaciones al vault).
+- `total_supply` por encima de 2^128 (sección 6): ahí el vault y el modelo desbordan en las mismas cuentas.

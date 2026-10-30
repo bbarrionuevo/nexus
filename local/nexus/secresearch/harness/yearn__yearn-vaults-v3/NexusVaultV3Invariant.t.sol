@@ -36,15 +36,10 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     function _enter(uint256 h, uint256 x, bool isMint) internal {
         Snap memory pre = _snap();
-        Snap memory m = _copy(pre);
-        uint256 a = isMint ? _c2a(pre, x, true) : x;
-        uint256 sh = isMint ? x : _c2s(pre, x, false);
-        bool expect = a <= _maxDep(pre) && a > 0 && sh > 0 && a <= pre.cash[h];
-        if (expect) {
-            m.cash[h] -= a;
-            m.vaultCash += a;
-            m.idle += a;
-            _issue(m, h, sh);
+        (bool expect, Snap memory m) = _modelEnter(pre, h, x, isMint);
+        if (expect && m.S > S_CAP) {
+            ++hDomain;
+            return;
         }
         vm.prank(actors[h]);
         (bool ok,) = address(vault).call(
@@ -79,8 +74,7 @@ contract NexusVaultV3Handler is NexusV3Hunter {
     }
 
     function _exit(uint256 h, uint256 a, uint256 sh, uint256 ml, bool isRedeem, Snap memory pre) internal {
-        Snap memory m = _copy(pre);
-        (bool expect, W memory w) = _simRedeem(m, h, a, sh, ml);
+        (bool expect, W memory w, Snap memory m) = _modelRedeem(pre, h, a, sh, ml);
         address who = actors[h];
         vm.prank(who);
         (bool ok,) = address(vault).call(
@@ -122,8 +116,7 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     function _updateDebt(uint256 i, uint256 target, uint256 ml) internal {
         Snap memory pre = _snap();
-        Snap memory m = _copy(pre);
-        (bool expect, bool lossy) = _simUpdateDebt(m, i, target, ml);
+        (bool expect, bool lossy, Snap memory m) = _modelUpdateDebt(pre, i, target, ml);
         vm.prank(GOV);
         (bool ok,) = address(vault).call(
             abi.encodeWithSignature("update_debt(address,uint256,uint256)", address(strat[i]), target, ml)
@@ -144,8 +137,11 @@ contract NexusVaultV3Handler is NexusV3Hunter {
     function report(uint256 which) external {
         uint256 i = which % NS;
         Snap memory pre = _snap();
-        Snap memory m = _copy(pre);
-        (bool expect, Rep memory r) = _simReport(m, i);
+        (bool expect, Rep memory r, Snap memory m) = _modelReport(pre, i);
+        if (expect && m.S > S_CAP) {
+            ++hDomain;
+            return;
+        }
         vm.prank(GOV);
         (bool ok, bytes memory ret) = address(vault).call(abi.encodeWithSignature("process_report(address)", address(strat[i])));
         _settle("process_report", ok, expect, pre, m, !r.capped);
@@ -340,6 +336,52 @@ contract NexusVaultV3Handler is NexusV3Hunter {
 
     /* COMÚN */
 
+    /* EL MODELO A PRUEBA DE DESBORDES: si una cuenta del modelo revierte, la misma del vault también (ver simEnter) */
+
+    function _modelEnter(Snap memory pre, uint256 h, uint256 x, bool isMint) internal returns (bool, Snap memory) {
+        try this.simEnter(pre, h, x, isMint) returns (bool e, Snap memory m) {
+            return (e, m);
+        } catch {
+            ++hOverflow;
+            return (false, _copy(pre));
+        }
+    }
+
+    function _modelRedeem(Snap memory pre, uint256 h, uint256 a, uint256 sh, uint256 ml)
+        internal
+        returns (bool, W memory, Snap memory)
+    {
+        try this.simRedeem(pre, h, a, sh, ml) returns (bool e, W memory w, Snap memory m) {
+            return (e, w, m);
+        } catch {
+            ++hOverflow;
+            W memory none;
+            return (false, none, _copy(pre));
+        }
+    }
+
+    function _modelUpdateDebt(Snap memory pre, uint256 i, uint256 target, uint256 ml)
+        internal
+        returns (bool, bool, Snap memory)
+    {
+        try this.simUpdateDebt(pre, i, target, ml) returns (bool e, bool lossy, Snap memory m) {
+            return (e, lossy, m);
+        } catch {
+            ++hOverflow;
+            return (false, false, _copy(pre));
+        }
+    }
+
+    function _modelReport(Snap memory pre, uint256 i) internal returns (bool, Rep memory, Snap memory) {
+        try this.simReport(pre, i) returns (bool e, Rep memory r, Snap memory m) {
+            return (e, r, m);
+        } catch {
+            ++hOverflow;
+            Rep memory none;
+            return (false, none, _copy(pre));
+        }
+    }
+
     function _settle(string memory op, bool ok, bool expect, Snap memory pre, Snap memory m, bool strict) internal {
         Snap memory post = _snap();
         if (ok != expect) {
@@ -426,7 +468,57 @@ contract NexusVaultV3InvariantTest is Test {
         emit log_named_uint("cobertura: bajas de deuda", down);
         emit log_named_uint("cobertura: operaciones rechazadas como predijo el modelo", rej);
         emit log_named_uint("cobertura: retiros con exceso sobre la deuda", ex);
-        emit log_named_uint("cobertura: bajas de deuda que retiraron de mas por el minimo ocioso", handler.coverage3());
+        (uint256 floor, uint256 ovf, uint256 dom) = handler.coverage3();
+        emit log_named_uint("cobertura: bajas de deuda que retiraron de mas por el minimo ocioso", floor);
+        emit log_named_uint("cobertura: operaciones cuyo modelo desbordo, rechazadas como en el vault", ovf);
+        emit log_named_uint("cobertura: operaciones salteadas por el dominio (total_supply > 2^128)", dom);
+    }
+
+    /// @dev _amt(_seed(a)) = a, para 1 <= a <= MAX_ASSETS.
+    function _seed(uint256 a) internal pure returns (uint256) {
+        return ((a - 1) << 2) | 1;
+    }
+
+    /// @dev Regresión de la campaña del 29-oct (768×1000: 43 y 31 reversiones del handler en dos variantes). Pérdidas
+    /// casi totales seguidas de depósitos inflaban las acciones (con 18 decimales, 1e24, 1e48, 1e72) hasta que la
+    /// conversión desbordaba, en el modelo y en el vault, y el handler revertía. Ahora el cazador no deja pasar
+    /// total_supply de 2^128, y las leyes siguen valiendo.
+    function test_inflacionDeAcciones() public {
+        uint256 max = 10 ** (uint256(_dec()) + 6);
+        for (uint256 k; k < 8; ++k) {
+            handler.deposit(0, _seed(max));
+            handler.updateDebt(0, 1, 0);
+            handler.loss(0, k == 0 ? max - 1 : max); // deja 1 de activo en la estrategia
+            handler.report(0);
+        }
+        handler.gain(0, _seed(max));
+        handler.report(0);
+        string memory err = handler.check();
+        require(bytes(err).length == 0, err);
+        (,, uint256 dom) = handler.coverage3();
+        require(dom > 0, "ninguna operacion salteada por el dominio");
+    }
+
+    /// @dev Dentro del dominio también hay cuentas que desbordan. Con total_supply en 1e38 y 1 de activo, la comisión de
+    /// un reporte (acciones a quemar × comisión) desborda en el modelo y en el vault, que revierte como predice el
+    /// modelo. Sin comisión (la variante de 6 decimales) no hay nada que probar.
+    function test_desbordeEnElReporte() public {
+        if (_fee() == 0 || _dec() != 18) return;
+        uint256 max = 10 ** (uint256(_dec()) + 6);
+        handler.deposit(0, _seed(max));
+        handler.updateDebt(0, 1, 0);
+        handler.loss(0, max - 1);
+        handler.report(0); // total_supply 1e24 con 1 de activo
+        handler.deposit(0, _seed(1e14));
+        handler.updateDebt(0, 1, 0);
+        handler.loss(0, 1e14);
+        handler.report(0); // total_supply 1e38 con 1 de activo
+        handler.gain(0, _seed(max));
+        handler.report(0);
+        string memory err = handler.check();
+        require(bytes(err).length == 0, err);
+        (, uint256 ovf,) = handler.coverage3();
+        require(ovf > 0, "el modelo no desbordo");
     }
 }
 

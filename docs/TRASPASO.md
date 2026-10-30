@@ -182,12 +182,14 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #88 | Yearn V3: el cazador del Vault V3 3.1.0 (leyes YV-...), el perfil `vault-v3` de `tools/forge_v2` con 28 mutaciones, el `vyper` del venv en el PATH de forge y `validate`, leyes `YV-` en el expediente y el panel, el perfil `vault-v3` en el panel, y `validate` ya no da por buena una corrida del harness en la que no corrió ningún test (el manifiesto puede fijar `match_path`) |
 | #89 | Morpho Midnight: el cazador del núcleo desplegado (leyes MN-...), el perfil `midnight` de `tools/forge_v2` y del panel, el alcance de Midnight y MetaMorpho V1.1 resuelto con el reglamento vigente, y las campañas del panel separadas del job de quien las lanza |
 | #90 | Morpho Midnight, variante B: callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates (10 mutaciones nuevas, B1–B10); el arreglo de `liqCycle` con el precio en 0, que dejó ver la campaña profunda; trae también los dos commits del traspaso que quedaron afuera del #89 |
+| #91 | Vault V3: el cazador a prueba de desbordes (el modelo de cada operación por llamada externa; si desborda, se espera que el vault revierta) y el dominio `total_supply` ≤ 2^128, tras las reversiones del handler de la campaña profunda; dos pruebas de regresión. Sale de la rama del #90 |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #90 (el #89 ya está en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
+1. **Dueño:** fusionar el #90 y después el #91, que sale de la rama del #90 (el #89 ya está en `main`), y hacer
+   `git pull` en `main`. Lo que pedía el #76 ya está
    probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
@@ -356,8 +358,21 @@ En orden de prioridad:
      - en la base, 31: `cycle` 15, `report` 8, `stressExit` 6, `idleFloor` 1 y `updateDebt` 1;
      - en la de sin bloqueo y en la de 6 decimales, 0.
 
-     Lo siguiente es reproducirlas con `fail_on_revert` y ver si son bordes del cazador, como las de Midnight
-     (punto 10), o algo del vault.
+     **Eran del cazador, no del vault.** Está arreglado en el #91, y el detalle está en
+     [CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md) §6:
+     - pérdidas casi totales seguidas de depósitos inflaban las acciones (en la reproducción, 1,2e56 contra 7,3e23 de
+       activo) hasta que una cuenta del modelo desbordaba;
+     - el vault hace la misma cuenta y también revierte, así que no es un hallazgo;
+     - ahora el modelo de cada operación se llama a prueba de desbordes: si desborda, se espera que el vault revierta,
+       y YV-LIVE lo controla;
+     - el cazador no deja pasar `total_supply` de 2^128;
+     - pruebas de regresión: `test_inflacionDeAcciones` y `test_desbordeEnElReporte`.
+
+     Reverificado el 30-oct, todo en verde:
+     - 24×500 con `0x2a` y `0x3` y `validate` (64×500, semilla `0x689e3107429f5a13`): 12 de 12 con las pruebas de
+       regresión y 0 reversiones;
+     - las 28 mutaciones detectadas en las cuatro variantes;
+     - con `fail_on_revert`, 256.000 llamadas en las dos variantes que revertían, sin reversiones.
    - **Campaña profunda (28-oct):** 512×1500 (768.000 llamadas por variante, ~9 h), semilla `0x4a9cb1e5a489dc29`:
      las 4 variantes y los 4 escenarios en verde, **ninguna ley violada**, pero con 11 reversiones del handler en
      la variante con protocolo (en `report` y en `lockThenLose`, que lo llama): no es una falla de ley, y puede
@@ -382,7 +397,11 @@ En orden de prioridad:
    - que el fuzzer no llame `failed()`: los handlers de TokenizedStrategy y del Vault V3 heredan `Test` de forge-std,
      que la expone, y se lleva cerca del 4 % de las llamadas (27.474 de 768.000 en la campaña de TokenizedStrategy).
      Se arregla con `targetSelector` en el `setUp` o con un handler que no herede `Test`. Hay que volver a verificar
-     cada harness que se toque (la distribución de llamadas cambia). Revisar también los demás harness.
+     cada harness que se toque (la distribución de llamadas cambia). Revisar también los demás harness;
+   - TokenizedStrategy: las 11 reversiones del handler de su campaña (en `report` y en `lockThenLose`, punto 8) pueden
+     ser la misma inflación de acciones que la del Vault V3. Con `fail_on_revert` y la misma semilla no se
+     reprodujeron; hay que probar con otras semillas, como se hizo con el vault, y aplicar el mismo arreglo si
+     corresponde.
 10. **Morpho Midnight: la variante A está en `main` desde el #89, y la B va en el #90** (rama
     `claude/midnight-variante-b`). Ver [CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md).
    - **Variante B:**
