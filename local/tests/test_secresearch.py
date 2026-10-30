@@ -125,12 +125,12 @@ def test_harness_aislado_compila_solo_src_y_el_harness(tmp_path, monkeypatch):
     kw = {"out": tmp_path / "out", "programs": progs, "forge": [sys.executable, str(fake)], "url": f"file://{src}",
           "work": tmp_path / "work", "harness_base": hb}
     rec = validate.validate("o/v", harness="h", seed="0x2a", **kw)
-    build, test = (json.loads(x) for x in log.read_text().splitlines())
+    build, test = (json.loads(x) for x in log.read_text(encoding="utf-8").splitlines())
     assert build["argv"] == ["build"] and build["dirs"] == ["test/nexus", "test/nexus"]
     assert test["dirs"] == ["test/nexus", "test/nexus"] and test["ffi"] == "false" and rec["aislado"] is True
     log.write_text("")
     validate.validate("o/v", harness="comun", seed="0x2a", **kw)
-    assert all(json.loads(x)["dirs"] == [None, None] for x in log.read_text().splitlines())
+    assert all(json.loads(x)["dirs"] == [None, None] for x in log.read_text(encoding="utf-8").splitlines())
     with pytest.raises(ValueError, match="aislado"):
         validate.validate("o/v", harness="raro", **kw)
 
@@ -157,7 +157,7 @@ def test_harness_sin_tests_no_queda_en_verde(tmp_path, monkeypatch):
     rec = validate.validate("o/v", harness="h", seed="0x2a", out=tmp_path / "out", programs=progs,
                             forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work",
                             harness_base=hb)
-    test = json.loads(log.read_text().splitlines()[-1])
+    test = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
     assert test["argv"] == ["test", "--json", "-vv", "--match-path", "test/nexus/*", "--match-contract", "^Nexus"]
     assert not rec["ok"] and "ningún test" in rec["error"]
     assert "No se pudo validar" in validate.report(rec)
@@ -196,12 +196,12 @@ def test_orquestador_informa_y_se_reanuda_sin_repetir(tmp_path):
     get, _ = _fake_github({"a1": [("src/Vault.sol", PATCH_4626)], "c3": [("src/Lib.sol", PATCH_DOCS)]})
     s, ranked = run.scan([("Prog", "o/r", ["src/"])], tmp_path, get=get, source="api")
     assert s["new_commits"] == 2 and ranked[0]["sha"] == "a1" and ranked[0]["tier"] == "alta"
-    md = (tmp_path / "secresearch.md").read_text()
+    md = (tmp_path / "secresearch.md").read_text(encoding="utf-8")
     assert "NO es una vulnerabilidad" in md and "a1"[:7] in md
-    assert json.loads((tmp_path / "secresearch.json").read_text())["summary"]["network_ops"] == 3
+    assert json.loads((tmp_path / "secresearch.json").read_text(encoding="utf-8"))["summary"]["network_ops"] == 3
     s2, ranked2 = run.scan([("Prog", "o/r", ["src/"])], tmp_path, get=get, source="api")  # tras reiniciar
     assert s2["new_commits"] == 0 and ranked2 == [] and s2["network_ops"] == 1
-    assert "a1" in (tmp_path / "secresearch.md").read_text() and s2["pending"] == 2     # lo pendiente no se pierde
+    assert "a1" in (tmp_path / "secresearch.md").read_text(encoding="utf-8") and s2["pending"] == 2     # lo pendiente no se pierde
     bad = run.scan([("Prog", "o/x", [])], tmp_path / "e", get=lambda u, p=None: 1 / 0, source="api")[0]
     assert bad["notes"] and "ZeroDivisionError" in bad["notes"][0]                      # un error no lo tumba
     demo = run.report(s, ranked, [("DEMO (no es objetivo)", "o/r", [])])
@@ -294,7 +294,7 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
     from nexus.secresearch import validate
     src = _foundry_repo(tmp_path)
     fake = tmp_path / "forge.py"
-    fake.write_text(FAKE_FORGE)
+    fake.write_text(FAKE_FORGE, encoding="utf-8")
     log = tmp_path / "forge.log"
     monkeypatch.setenv("FAKE_LOG", str(log))
     monkeypatch.setenv("FOUNDRY_FFI", "true")                                         # aunque el entorno diga true
@@ -302,21 +302,21 @@ def test_validador_compila_testea_e_informa(tmp_path, monkeypatch):
               "repos": [{"repo": "o/v"}]}]
     rec = validate.validate("o/v", match="test/V.t.sol", out=tmp_path / "out", programs=progs,
                             forge=[sys.executable, str(fake)], url=f"file://{src}", work=tmp_path / "work")
-    calls = [json.loads(x) for x in log.read_text().splitlines()]
+    calls = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
     assert [c["argv"][0] for c in calls] == ["build", "test"] and all(c["ffi"] == "false" for c in calls)
     assert calls[1]["argv"] == ["test", "--json", "-vv", "--match-path", "test/V.t.sol"]
     assert not rec["ok"] and rec["test"]["counts"] == {"Success": 2, "Failure": 1, "Skipped": 1}
     assert rec["test"]["failures"][0]["counterexample"]["args"] == "2" and len(rec["sha"]) == 40
-    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text()
+    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}.md").read_text(encoding="utf-8")
     assert "2 pasan · 1 fallan" in md and "testNoDilution" in md and "NO es una vulnerabilidad" in md
-    hist = [json.loads(x) for x in (tmp_path / "out" / "history.jsonl").read_text().splitlines()]
+    hist = [json.loads(x) for x in (tmp_path / "out" / "history.jsonl").read_text(encoding="utf-8").splitlines()]
     assert hist[-1]["counts"]["Failure"] == 1 and hist[-1]["sha"] == rec["sha"]
     monkeypatch.setenv("FAKE_BUILD_EXIT", "1")                                         # no compila: no testea
     log.write_text("")
     rec = validate.validate("o/v", out=tmp_path / "out", programs=progs, forge=[sys.executable, str(fake)],
                             url=f"file://{src}", work=tmp_path / "work")
     assert not rec["ok"] and rec["build"]["exit"] == 1 and "test" not in rec
-    assert [json.loads(x)["argv"][0] for x in log.read_text().splitlines()] == ["build"]
+    assert [json.loads(x)["argv"][0] for x in log.read_text(encoding="utf-8").splitlines()] == ["build"]
     assert "Compilación: FALLÓ" in validate.report(rec)
 
 
@@ -328,7 +328,7 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     from nexus.secresearch import validate
     src = _foundry_repo(tmp_path)
     fake = tmp_path / "forge.py"
-    fake.write_text(FAKE_FORGE)
+    fake.write_text(FAKE_FORGE, encoding="utf-8")
     log = tmp_path / "forge.log"
     monkeypatch.setenv("FAKE_LOG", str(log))
     hb = tmp_path / "harness"
@@ -343,20 +343,20 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
           "work": tmp_path / "work", "harness_base": hb}
 
     rec = validate.validate("o/v", harness="h", seed="0x2a", fuzz={"FOUNDRY_INVARIANT_DEPTH": "9"}, **kw)
-    build, test = (json.loads(x) for x in log.read_text().splitlines())
+    build, test = (json.loads(x) for x in log.read_text(encoding="utf-8").splitlines())
     assert build["harness"] == ["P.t.sol"]                                   # copiado antes de compilar
     assert test["argv"] == ["test", "--json", "-vv", "--match-contract", "^Nexus"] and test["ffi"] == "false"
     assert test["fuzz"] == {"FOUNDRY_FUZZ_RUNS": "7", "FOUNDRY_INVARIANT_DEPTH": "9", "FOUNDRY_FUZZ_SEED": "0x2a"}
     assert rec["harness_files"] == ["P.t.sol"] and rec["test"]["activity"][0]["reverts"] == 30
     assert rec["test"]["activity"][0]["logs"][0] == "cazador: leyes evaluadas: 99"  # el log aunque la prueba pase
-    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}+h@0x2a.md").read_text()
+    md = (tmp_path / "out" / f"o__v@{rec['sha'][:10]}+h@0x2a.md").read_text(encoding="utf-8")
     assert "--harness h --seed 0x2a" in md and "en vacío" in md                # 30 de 40 llamadas revirtieron
     assert "cazador: leyes evaluadas: 99 · cazador: depositos con 0 acciones: 3" in md
     assert "por acción: deposit 25/1 · huntInflation 15/29" in md            # métricas por acción de forge
 
     log.write_text("")                                                       # línea base: sin código de nexus
     validate.validate("o/v", **kw)
-    assert all(json.loads(x)["harness"] is None and not json.loads(x)["fuzz"] for x in log.read_text().splitlines())
+    assert all(json.loads(x)["harness"] is None and not json.loads(x)["fuzz"] for x in log.read_text(encoding="utf-8").splitlines())
     seeds = {validate.validate("o/v", harness="h", **kw)["fuzz"]["FOUNDRY_FUZZ_SEED"] for _ in range(2)}
     assert len(seeds) == 2                                                   # semilla nueva en cada corrida
 
@@ -366,7 +366,7 @@ def test_validador_con_harness_copia_antes_de_compilar_y_fija_la_semilla(tmp_pat
     with pytest.raises(ValueError, match="FOUNDRY_FS_PERMISSIONS"):
         validate.validate("o/v", harness="h", fuzz={"FOUNDRY_FS_PERMISSIONS": "[]"}, **kw)
     assert "es para o/otro" in validate.validate("o/v", harness="otro", **kw)["error"]
-    assert log.read_text() == ""                                             # ninguno llegó a forge
+    assert log.read_text(encoding="utf-8") == ""                                             # ninguno llegó a forge
 
 
 def test_metricas_por_accion_con_la_misma_funcion_en_dos_contratos():
@@ -447,6 +447,19 @@ def test_harness_de_midnight_es_coherente_y_no_sale_de_la_evm_local():
         assert not [b for b in banned if b in text], f.name
 
 
+def test_harness_de_midnight_bundles_es_coherente_y_no_sale_de_la_evm_local():
+    from nexus.secresearch import limits, validate
+    man, files = validate.load_harness("morpho-org__bundles")
+    assert man["repo"] == "morpho-org/bundles" and man["match_contract"] == "^NexusMidnightBundles"
+    assert man["aislado"] is True
+    assert {f.name for f in files} == {"NexusMidnightBundles.t.sol"}
+    banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
+              "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        assert not [b for b in banned if b in text], f.name
+
+
 def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     from nexus.secresearch import cycle
     home = tmp_path / "home"
@@ -491,8 +504,8 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     assert steps["harness ajeno"]["ok"] is None and "no está en un programa verificado" in steps["harness ajeno"]["detail"]
     assert steps["línea base o/z"]["detail"] == "tope de tiempo del ciclo" and not rep["ok"]
     out = home / "secresearch"
-    assert "CON FALLAS" in (out / "ciclo.md").read_text() and not (out / "ciclo.lock").exists()
-    digest = (out / "para_claude.md").read_text()
+    assert "CON FALLAS" in (out / "ciclo.md").read_text(encoding="utf-8") and not (out / "ciclo.lock").exists()
+    digest = (out / "para_claude.md").read_text(encoding="utf-8")
     assert "Fallas distintas: 1" in digest and "semilla 0x2a" in digest and '"args": "7"' in digest
     assert "Cobertura de la última corrida" in digest and "40 llamadas · 1 reversiones" in digest
     assert "cazador: leyes evaluadas: 99" in digest                          # métricas del cazador para Claude

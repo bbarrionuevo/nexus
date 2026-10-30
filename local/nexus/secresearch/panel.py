@@ -39,7 +39,8 @@ PERFILES = {"vault-v2": ("morpho-org__vault-v2", "NexusVaultV2"),
             "euler-earn": ("euler-xyz__euler-earn", "NexusEulerEarn"),
             "tokenized-strategy": ("yearn__tokenized-strategy", "NexusTokenizedStrategy"),
             "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3"),
-            "midnight": ("morpho-org__midnight", "NexusMidnight")}
+            "midnight": ("morpho-org__midnight", "NexusMidnight"),
+            "midnight-bundles": ("morpho-org__bundles", "NexusMidnightBundles")}
 LAW = re.compile(r"\b(?:YV|MN|[HVEY])-[A-Z]+(?:-\d+)?")
 SEED = re.compile(r"^0x[0-9a-f]{1,16}$")
 MATCH = re.compile(r"^\^?[A-Za-z0-9]+\$?$")
@@ -89,7 +90,7 @@ def validate_params(p):
     if match and not (MATCH.match(match) and match.strip("^$").startswith(PERFILES[perfil][1])):
         raise ValueError(f"el filtro tiene que ser un contrato del harness ({PERFILES[perfil][1]}...)")
     return {"perfil": perfil, "runs": runs, "depth": depth, "seed": seed, "match": match,
-            "fail_on_revert": bool(p.get("fail_on_revert"))}
+            "fail_on_revert": bool(p.get("fail_on_revert")), "corpus": bool(p.get("corpus", True))}
 
 
 def _rec_path(cid, home=None):
@@ -146,6 +147,8 @@ def run_campaign(cid, home=None):
         env["NEXUS_MATCH"] = rec["match"]
     if rec.get("fail_on_revert"):
         env["FOUNDRY_INVARIANT_FAIL_ON_REVERT"] = "true"
+    # fuzzing guiado por cobertura (tools/forge_v2: _corpus); las campañas anteriores al 30-oct no tienen el campo
+    env["NEXUS_CORPUS"] = "1" if rec.get("corpus", False) else "0"
     clone = Path(home or paths.home()) / "work" / PERFILES[rec["perfil"]][0]
     code = 0
     with open(rec["log"], "a", encoding="utf-8") as out:
@@ -219,13 +222,36 @@ def stop(cid, home=None):
     return rec
 
 
+PULSE = re.compile(r'^\{"timestamp":\d+,"event":"pulse"')
+
+
+def _pulse(s):
+    """Un evento "pulse" de forge con el corpus (cada pocos segundos, por suite): transacciones hechas, velocidad,
+    caminos vistos y tamaño del corpus. (suite, avance) o None."""
+    try:
+        ev = json.loads(s)
+    except ValueError:
+        return None
+    mt, wk = ev.get("metrics") or {}, ev.get("worker") or {}
+    return str(ev.get("contract", "")).split(":")[-1], {
+        "txs": int(ev.get("total_txs") or 0), "tps": float(ev.get("tps") or 0),
+        "edges": int(mt.get("cumulative_edges_seen") or 0), "corpus": int(mt.get("corpus_count") or 0),
+        "since_new_edge": float(wk.get("secs_since_new_edge") or 0)}
+
+
 def parse_log(text):
-    """Estado de una campaña desde su log: corridas, llamadas, reversiones, fallas, leyes y cobertura por variante."""
+    """Estado de una campaña desde su log: corridas, llamadas, reversiones, fallas, leyes, cobertura por variante y,
+    con el corpus, el último avance de cada suite."""
     st = {"suites_ok": 0, "suites_fail": 0, "tests": [], "fails": [], "laws": [], "metrics": {}, "exit": None,
-          "stopped": False, "started": None, "reverts_by_action": {}}
+          "stopped": False, "started": None, "reverts_by_action": {}, "progress": {}}
     suite = None
     for line in text.splitlines():
         s = line.strip()
+        if PULSE.match(s):
+            ev = _pulse(s)
+            if ev:
+                st["progress"][ev[0]] = ev[1]
+            continue
         m = re.search(r"Ran \d+ tests? for \S+:(\w+)", s)
         if m:
             suite = m.group(1)
@@ -271,6 +297,21 @@ def _estado(rec, st):
     return "falló"
 
 
+_parse_cache = {}
+
+
+def _parsed(log):
+    """parse_log de un log, cacheado por (ruta, mtime, tamaño): el panel refresca cada 5 s y los logs terminados no
+    cambian (con el corpus, una campaña larga deja miles de eventos de avance)."""
+    stt = log.stat()
+    key = (str(log), stt.st_mtime_ns, stt.st_size)
+    if key not in _parse_cache:
+        if len(_parse_cache) > 200:
+            _parse_cache.clear()
+        _parse_cache[key] = parse_log(log.read_text(encoding="utf-8", errors="replace"))
+    return _parse_cache[key]
+
+
 def campaigns(home=None):
     """Todas las campañas de NEXUS_HOME/secresearch/campanas, con o sin registro del panel."""
     d = camp_dir(home)
@@ -278,10 +319,15 @@ def campaigns(home=None):
     for log in sorted(d.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)[:60]:
         rec_p = d / f"{log.stem}.json"
         rec = json.loads(rec_p.read_text(encoding="utf-8")) if rec_p.is_file() else {"id": log.stem}
-        st = parse_log(log.read_text(encoding="utf-8", errors="replace"))
+        st = _parsed(log)
         out.append({**rec, **st, "estado": _estado(rec, st), "log_name": log.name, "size": log.stat().st_size,
                     "mtime": _local(log.stat().st_mtime).isoformat(timespec="seconds")})
     return out
+
+
+def _dur(secs):
+    m = int(secs // 60)
+    return f"{m // 60} h {m % 60} min" if m >= 60 else f"{m} min"
 
 
 def resumen(cid, home=None):
@@ -293,7 +339,7 @@ def resumen(cid, home=None):
         raise ValueError("campaña desconocida")
     rec = json.loads(rec_p.read_text(encoding="utf-8")) if rec_p.is_file() else {"id": cid}
     st = parse_log(log.read_text(encoding="utf-8", errors="replace"))
-    out = [f"{cid}: {_estado(rec, st)}"]
+    out = [f"{cid}: {_estado(rec, st)}" + (" (guiada por cobertura)" if rec.get("corpus") else "")]
     for t in st["tests"]:
         out.append(f"  {t['suite']}: {'pasa' if t['ok'] else 'FALLA'} · {t['runs']} corridas · {t['calls']} llamadas"
                    f" · {t['reverts']} reversiones")
@@ -301,6 +347,11 @@ def resumen(cid, home=None):
         if acc:
             out.append("    reversiones por acción: "
                        + ", ".join(f"{a} {n}" for a, n in sorted(acc.items(), key=lambda x: -x[1])))
+    tot = int(rec.get("runs") or 0) * int(rec.get("depth") or 0)
+    for s_, pr in st["progress"].items():
+        falta = f" · faltan ~{_dur((tot - pr['txs']) / pr['tps'])}" if tot > pr["txs"] and pr["tps"] else ""
+        out.append(f"  avance de {s_}: {pr['txs']:,} de {tot:,} transacciones · {pr['tps']:.0f} por segundo{falta}"
+                   f" · caminos {pr['edges']:,} · corpus {pr['corpus']:,}".replace(",", "."))
     if st["laws"]:
         out.append("  leyes: " + " ".join(st["laws"]))
     out.extend("  " + f for f in st["fails"][:5])
@@ -495,6 +546,7 @@ button{cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;max-height:
 <label>Semilla <input id="seed" placeholder="al azar" style="width:170px"></label>
 <label>Contrato <input id="match" placeholder="todos" style="width:230px"></label>
 <label><input id="for" type="checkbox"> frenar en la primera reversión</label>
+<label title="forge guarda las secuencias que abren caminos nuevos y las muta"><input id="cor" type="checkbox" checked> guiada por cobertura</label>
 <button id="go">Lanzar</button></div><div id="msg" class="small mut" style="margin-top:6px"></div></div>
 <h2>Log en vivo <span id="logname" class="mut small"></span></h2><pre id="log" class="mut">Elegí una campaña.</pre>
 <h2>Informes y archivos</h2><div class="row small"><input id="filt" placeholder="filtrar" style="width:240px"></div><div id="files"></div>
@@ -506,6 +558,7 @@ async function get(u){const r=await fetch(u+(u.includes('?')?'&':'?')+'t='+encod
 async function act(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json','X-Nexus-Token':T},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 function cls(e){return e==='pasó'?'ok':(e==='falló'||e.startsWith('pasó con'))?'bad':e==='corriendo'?'run':'mut'}
 function fmt(n){return Number(n).toLocaleString('es-AR')}
+function dur(s){const m=Math.floor(s/60);return m>=60?Math.floor(m/60)+' h '+(m%60)+' min':m+' min'}
 async function refresh(){let s;try{s=await get('/api/state')}catch(e){$('now').textContent='sin conexión con el panel';return}
 $('now').textContent='actualizado '+s.now;
 if(!$('perfil').options.length)$('perfil').innerHTML=s.perfiles.map(p=>`<option>${esc(p)}</option>`).join('');
@@ -513,12 +566,15 @@ $('forge').innerHTML=s.forge.length?'<table><tr><th>PID</th><th>desde</th><th>CP
 s.forge.map(f=>`<tr><td>${f.pid}</td><td>${esc(f.desde)}</td><td>${esc(f.cpu_h)}</td><td>${fmt(f.mem_mb)}</td><td class="small">${esc(f.cmd)}</td></tr>`).join('')+'</table>':'No hay procesos forge corriendo.';
 $('camps').innerHTML=s.campaigns.map(c=>{const tests=c.tests.map(t=>`<div class="small"><b>${esc(t.suite||t.test)}</b>: <span class="${t.ok?'ok':'bad'}">${t.ok?'pasa':'falla'}</span> · ${fmt(t.runs)} corridas · ${fmt(t.calls)} llamadas · ${fmt(t.reverts)} reversiones</div>`).join('');
 const mets=Object.entries(c.metrics||{}).map(([s,m])=>`<details class="small"><summary>cobertura de ${esc(s)}</summary><table>${Object.entries(m).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${fmt(v)}</td></tr>`).join('')}</table></details>`).join('');
+const tot=(c.runs||0)*(c.depth||0);
+const prog=Object.entries(c.progress||{}).map(([s,p])=>{const pct=tot?Math.min(100,100*p.txs/tot):0;const eta=(tot>p.txs&&p.tps)?(tot-p.txs)/p.tps:null;
+return `<div class="small mut">avance de ${esc(s)}: ${fmt(p.txs)}${tot?' de '+fmt(tot):''} transacciones${tot?' ('+pct.toFixed(1)+' %)':''} · ${fmt(Math.round(p.tps))} por segundo${eta!==null&&c.estado==='corriendo'?' · faltan ~'+dur(eta):''} · caminos ${fmt(p.edges)} · corpus ${fmt(p.corpus)}</div>`}).join('');
 const fails=c.fails.length?`<div class="bad small">${c.fails.slice(0,4).map(esc).join('<br>')}</div>`:'';
 const laws=c.laws.length?` · leyes: <b class="bad">${esc(c.laws.join(' '))}</b>`:'';
 const stopb=c.estado==='corriendo'?`<button data-stop="${esc(c.id)}">Frenar</button>`:'';
 return `<div class="card"><div class="row"><b>${esc(c.id)}</b><span class="${cls(c.estado)}">${esc(c.estado)}</span>${laws}
 <span class="mut small">suites ok ${c.suites_ok} · con falla ${c.suites_fail} · log ${fmt(c.size)} B · ${esc(c.mtime)}</span>
-<button data-log="${esc(c.id)}">Ver log</button><a href="/api/file?path=${encodeURIComponent('campanas/'+c.log_name)}&t=${encodeURIComponent(T)}">descargar</a>${stopb}</div>${tests}${fails}${mets}</div>`}).join('')||'<div class="mut">Todavía no hay campañas.</div>';
+<button data-log="${esc(c.id)}">Ver log</button><a href="/api/file?path=${encodeURIComponent('campanas/'+c.log_name)}&t=${encodeURIComponent(T)}">descargar</a>${stopb}</div>${tests}${prog}${fails}${mets}</div>`}).join('')||'<div class="mut">Todavía no hay campañas.</div>';
 files=s.files;drawFiles()}
 function drawFiles(){const f=$('filt').value.toLowerCase();$('files').innerHTML='<table><tr><th>archivo</th><th>tamaño</th><th>modificado</th></tr>'+
 files.filter(x=>x.path.toLowerCase().includes(f)).map(x=>`<tr><td><a href="/api/file?path=${encodeURIComponent(x.path)}&t=${encodeURIComponent(T)}">${esc(x.path)}</a></td><td>${fmt(x.size)}</td><td>${esc(x.mtime)}</td></tr>`).join('')+'</table>'}
@@ -527,7 +583,7 @@ if(j.text){const pre=$('log');const atEnd=pre.scrollTop+pre.clientHeight>=pre.sc
 document.addEventListener('click',async e=>{const l=e.target.dataset.log,s=e.target.dataset.stop;
 if(l){sel=l;from=0;$('log').textContent='';$('log').classList.remove('mut');$('logname').textContent=l;tail()}
 if(s&&confirm('¿Frenar '+s+'?')){try{await act('/api/stop',{id:s});refresh()}catch(err){alert(err.message)}}});
-$('go').onclick=async()=>{$('msg').textContent='lanzando…';try{const r=await act('/api/launch',{perfil:$('perfil').value,runs:+$('runs').value,depth:+$('depth').value,seed:$('seed').value,match:$('match').value,fail_on_revert:$('for').checked});
+$('go').onclick=async()=>{$('msg').textContent='lanzando…';try{const r=await act('/api/launch',{perfil:$('perfil').value,runs:+$('runs').value,depth:+$('depth').value,seed:$('seed').value,match:$('match').value,fail_on_revert:$('for').checked,corpus:$('cor').checked});
 $('msg').textContent='lanzada: '+r.id;sel=r.id;from=0;$('logname').textContent=r.id;refresh()}catch(err){$('msg').textContent='no se lanzó: '+err.message}};
 $('filt').oninput=drawFiles;refresh();setInterval(refresh,5000);setInterval(tail,2000);
 </script></body></html>"""

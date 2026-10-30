@@ -23,7 +23,9 @@ $RED  = "$env:LOCALAPPDATA\nexus\work\vault-v2-reducido"
 
 `correr` copia el harness de `local/nexus/secresearch/harness/morpho-org__vault-v2/`, hace `forge build` (con un
 filtro de tests, forge solo compila lo que esos tests importan, y Morpho Blue, que se despliega con `deployCode`, quedaría
-afuera) y muestra el log de `afterInvariant` (cobertura y métricas del cazador). `mutar` aplica cada entrada de
+afuera) y muestra el log de `afterInvariant` (cobertura y métricas del cazador). El `forge build` previo solo lo hacen
+los perfiles con `"build"` (`vault-v2` y `vault-v3`, los que despliegan artefactos por nombre; una prueba lo ata al uso
+de `deployCode`): `forge test` no reusa su caché, y en los demás compilaba todo dos veces. `mutar` aplica cada entrada de
 `mutaciones.json` (`[nombre, original, mutado]` sobre `src/VaultV2.sol`, o `[nombre, original, mutado, archivo]`, por
 ejemplo sobre el adapter real) a una copia limpia de ese archivo del clon, corre todas las variantes sin achicar la
 secuencia y lista, por variante, las leyes `V-...` que fallaron. El cazador informa todas las
@@ -73,6 +75,15 @@ $env:NEXUS_PERFIL = "tokenized-strategy"
 .venv\Scripts\python tools\forge_v2\forge_v2.py mutar  $RED $CLON
 ```
 
+## Fuzzing guiado por cobertura (corpus)
+
+`correr` y `mutar` activan por defecto el corpus de forge (`FOUNDRY_INVARIANT_CORPUS_DIR=cache/invariant/corpus`):
+forge guarda las secuencias que abren caminos nuevos y las muta, y cada pocos segundos escribe un evento `pulse` por
+suite (transacciones, velocidad, caminos vistos, tamaño del corpus) que el panel usa para mostrar el avance y cuánto
+falta. `mutar` borra `cache/invariant` entre mutaciones, así que cada una arranca de cero. El 30-oct, con el mismo
+presupuesto (32×200, semillas `0x2a` y `0x3`), la suite con gates de Midnight detectó 4 de 6 mutaciones raras (M25,
+M35, B3) con corpus y 1 de 6 sin él. `NEXUS_CORPUS=0` lo apaga; en el panel, la casilla "guiada por cobertura".
+
 ## Filtro, versión fijada y panel
 
 - `NEXUS_MATCH="^NexusTokenizedStrategyInvariantFeeTest$"` hace que `correr` corra una sola variante (sin eso, todas
@@ -104,3 +115,15 @@ corre forge a mano, agregar `.venv\Scripts` al PATH).
   gates, y las ve la variante B (`NexusMidnightCallbacks…`).
 - **El clon:** tiene que estar en la etiqueta `2026-08-24` (`14e0b77`), la última idéntica al núcleo desplegado.
 - **La batería:** cada mutación recompila con via_ir. Conviene `NEXUS_MUT_RUNS="32 200 0x2a"`.
+
+## Perfil de MidnightBundlesV2 (Morpho Bundles)
+
+`NEXUS_PERFIL=midnight-bundles` hace lo mismo con `morpho-org/bundles` (programa Morpho):
+- **`armar`:** copia `MidnightBundlesV2` con sus interfaces y `TokenLib`, el núcleo de Midnight de su submódulo
+  (`lib/midnight`, misma lógica que el desplegado), las interfaces de Blue y Permit2 que importa, y forge-std, con los
+  ajustes del repo salvo `optimizer_runs` (200 en vez de 4294967295, para compilar rápido; no cambia la semántica).
+- **`mutar`:** toma `mutaciones_midnight_bundles.json`, 24 mutaciones sobre `src/midnight/MidnightBundlesV2.sol`
+  (comisiones de referido, garantías del usuario, exactitud del objetivo, validaciones, destinatarios y saldos que se
+  queda el bundle).
+- **El clon:** tiene que estar en la etiqueta `2026-10-06` (`2ed954e`, lo desplegado en `0x78ed…bDbA4`).
+- **El cazador:** [docs/CAZADOR_MIDNIGHT_BUNDLES.md](../../docs/CAZADOR_MIDNIGHT_BUNDLES.md).
