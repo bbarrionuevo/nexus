@@ -193,7 +193,7 @@ ese objetivo.
 | Objetivo | Programa y grupo | Critical | Código | Estado en nexus | Valor esperado |
 |---|---|---|---|---|---|
 | **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Sin cazador; al catálogo el 30-oct (R-1). MidnightBundlesV2 usa los callbacks de Midnight que el cazador ya modela | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
-| Midnight: `Mempool` | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Nuevo en la página de direcciones (`0xde2d…A8F7`), y no está en la rama principal del repo: a confirmar dónde está su código | Sin revisar | A evaluar: código nuevo |
+| Midnight: `Mempool` | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Nuevo en la página de direcciones (`0xde2d…A8F7`). Según Sourcify es `periphery/Log.sol`: 443 bytes, un `fallback` que solo emite la calldata como evento, sin estado ni fondos | Revisado el 30-oct | Prácticamente nulo |
 | Euler v2, núcleo (EVC, EVK sin Synths y Price Oracle) | Euler, "Core Components" | Hasta 1.500.000, pero como máximo el 10 % de la pérdida demostrable en producción | Grande y muy auditado | Del EVK, solo la línea base | Medio-bajo. El programa cambió: ya no son 7,5M sino un presupuesto total de 1,5M, por orden de llegada, con KYC |
 | Midnight (lo que falta del núcleo) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | — | Variantes A y B verificadas y campañas profundas sin leyes rotas | Medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
 | Morpho Blue | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | Chico, auditado muchas veces y verificado formalmente | Sin cazador; fuera del catálogo | Medio-bajo: la recompensa más alta, con la probabilidad más baja |
@@ -207,8 +207,6 @@ ese objetivo.
 - la etapa E: las diez auditorías y las specs de Certora, en `NEXUS_HOME` (privado);
 - la versión desplegada de cada contrato, contra las etiquetas del repo;
 - el diseño del cazador.
-
-Además, confirmar dónde está el código de `Mempool`.
 
 ### En orden de prioridad
 
