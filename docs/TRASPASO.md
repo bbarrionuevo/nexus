@@ -180,26 +180,33 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #91 | Vault V3: el cazador a prueba de desbordes (el modelo de cada operación por llamada externa; si desborda, se espera que el vault revierta) y el dominio `total_supply` ≤ 2^128, tras las reversiones del handler de la campaña profunda; dos pruebas de regresión. Sale de la rama del #90 |
 | #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Además, `tools/forge_v2` controla en `armar` y `mutar` el commit y los submódulos del clon. Sale de la rama del #91 |
 | #93 | Reglas y flujo, con la autorización del dueño del 30-oct: Claude fusiona sus PR con el CI en verde (R-11), trabaja solo en la PC (R-12) y elige los objetivos por valor esperado (R-13); dentro de un programa habilitado puede sumar repos en alcance (R-1); `nexus.devcheck` como chequeo único antes del PR; la primera tabla de objetivos por valor esperado |
+| #94 | Objetivos por valor esperado, con los programas releídos el 30-oct (Euler pasó a un presupuesto de 1,5M con tope del 10 % del impacto; Morpho publica los Bundles nuevos en su página de direcciones): los Bundles de Morpho, sumados al catálogo, son el objetivo siguiente |
 
 ## 5. Próximos pasos
 
-### Objetivos por valor esperado (R-13; primera versión, 30-oct)
+### Objetivos por valor esperado (R-13; 30-oct)
 
-Recompensas según el catálogo de la PC (leídas en Cantina e Immunefi el 26 y el 29-oct). "A confirmar" es lo que
-falta leer en el reglamento o en la página de direcciones antes de invertir en ese objetivo.
+Leído el 30-oct en Cantina (Morpho y Euler) y en la página de direcciones de Morpho, que el reglamento declara fuente
+de verdad del alcance. Los montos de Yearn son del 26-oct. "A confirmar" es lo que falta leer antes de invertir en
+ese objetivo.
 
 | Objetivo | Programa y grupo | Critical | Código | Estado en nexus | Valor esperado |
 |---|---|---|---|---|---|
-| Bundlers de Morpho | Morpho, "Blue y Vault V1, con bundlers" | 250.000 a 2.500.000 | más nuevo y con más superficie que Blue (callbacks, adapters); qué versión está desplegada, a confirmar | sin cazador | **el más alto a priori**: el grupo que más paga; a confirmar alcance y versión |
-| Morpho Blue | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | chico, auditado muchas veces y verificado formalmente | sin cazador | medio: la recompensa más alta y la probabilidad más baja |
-| Euler v2 (EVK, EVC y lo nuevo en alcance) | Euler, 7,5M en total, por componente | por componente, a confirmar | EVK grande y muy auditado; qué productos nuevos están en alcance, a confirmar | EulerEarn verificado; del EVK, solo la línea base | a evaluar con la tabla por componente |
-| Midnight (lo que falta) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | el código en alcance más nuevo | variantes A y B verificadas, campañas profundas sin leyes rotas, periferia revisada a mano | medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
-| Vault V2 (adapters nuevos) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | adapters desplegados después del #84, a confirmar | variantes A y B verificadas | medio, si hay adapters nuevos |
-| Yearn V3 | Yearn, Immunefi | hasta 200.000 | la contabilidad de la 3.1.0 no tiene auditoría pública | TokenizedStrategy y Vault V3 verificados | bajo a medio: el tope es bajo |
-| MetaMorpho V1.1 | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | cambios chicos sobre la V1.0, `lostAssets` ya cazado en EulerEarn | evaluado el 29-oct | bajo |
+| **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Sin cazador; al catálogo el 30-oct (R-1). MidnightBundlesV2 usa los callbacks de Midnight que el cazador ya modela | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
+| Midnight: `Mempool` | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Nuevo en la página de direcciones (`0xde2d…A8F7`). Según Sourcify es `periphery/Log.sol`: 443 bytes, un `fallback` que solo emite la calldata como evento, sin estado ni fondos | Revisado el 30-oct | Prácticamente nulo |
+| Euler v2, núcleo (EVC, EVK sin Synths y Price Oracle) | Euler, "Core Components" | Hasta 1.500.000, pero como máximo el 10 % de la pérdida demostrable en producción | Grande y muy auditado | Del EVK, solo la línea base | Medio-bajo. El programa cambió: ya no son 7,5M sino un presupuesto total de 1,5M, por orden de llegada, con KYC |
+| Midnight (lo que falta del núcleo) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | — | Variantes A y B verificadas y campañas profundas sin leyes rotas | Medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
+| Morpho Blue | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | Chico, auditado muchas veces y verificado formalmente | Sin cazador; fuera del catálogo | Medio-bajo: la recompensa más alta, con la probabilidad más baja |
+| Vault V2 (registros de la periferia) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Registros chicos, de 1 a 2 KB | Variantes A y B verificadas | Bajo |
+| Euler Earn | Euler | Hasta 500.000 (10 % del impacto) | — | Verificado | Bajo |
+| Yearn V3 | Yearn, Immunefi | Hasta 200.000 | La contabilidad de la 3.1.0 no tiene auditoría pública | TokenizedStrategy y Vault V3 verificados | Bajo: el tope es bajo |
+| MetaMorpho V1.1 | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | Cambios chicos sobre la V1.0; `lostAssets` ya cazado en EulerEarn | Evaluado el 29-oct | Bajo |
 
-**Lo siguiente:** confirmar el alcance y la versión desplegada de los bundlers de Morpho y la tabla por componente de
-Euler, y arrancar por el de mayor valor esperado.
+**Lo siguiente: el cazador de los Bundles de Morpho**, empezando por MidnightBundlesV2. Es el más nuevo (auditado el
+6-oct) y opera sobre Midnight, que nexus ya modela con callbacks. Los pasos:
+- la etapa E: las diez auditorías y las specs de Certora, en `NEXUS_HOME` (privado);
+- la versión desplegada de cada contrato, contra las etiquetas del repo;
+- el diseño del cazador.
 
 ### En orden de prioridad
 
