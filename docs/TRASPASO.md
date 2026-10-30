@@ -1,7 +1,7 @@
 # Traspaso: estado de nexus y cómo continuar
 
 Documento de entrega para retomar el proyecto desde cualquier conversación nueva con Claude. Actualizado el
-29-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
+30-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
 las reglas.
 
 Para arrancar una sesión que trabaje directo en la PC del dueño, con acceso a GitHub, el prompt de arranque está en
@@ -122,7 +122,7 @@ Lo que conviene saber de forge en un handler:
 | D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
 | D''''. Harness de TokenizedStrategy | Nuevo (28-oct): Yearn V3, `v3.1.0` (lo desplegado en `0x310f…1e76` y en alcance), la contabilidad nueva ("constant accrual", pestillo por bloque, piso de 1e3 acciones, quema de bloqueadas por pérdida en vivo) y la de reporte, 11 leyes `Y-...` exactas contra el almacenamiento crudo ([CAZADOR_TOKENIZED_STRATEGY.md](CAZADOR_TOKENIZED_STRATEGY.md)). Verificado con forge en la PC: 4 de 4 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada, 8 de 8 con los escenarios) y las 39 mutaciones de referencia detectadas. Sin hallazgos |
 | D'''''. Harness del Vault V3 | Nuevo (29-oct): Yearn V3, `v3.1.0` (lo desplegado en `0xdD3F…7824`), el vault real por su fábrica compilado con el `vyper` del venv (sin FFI), tres estrategias ERC-4626 de prueba y un accountant; 10 leyes `YV-...` exactas contra el almacenamiento crudo ([CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md)). Verificado con forge en la PC: las 4 variantes sin falsos positivos ni reversiones (24×500 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×500, semilla `0x68a90a1321ee064a`, 4 de 4) y las 28 mutaciones de referencia detectadas. **Sin hallazgos** |
-| D''''''. Harness de Midnight | Nuevo (29-oct): Morpho Midnight, el núcleo desplegado (etiqueta `2026-08-24`, coincidencia completa en Sourcify), un mercado de dos colaterales con ofertas entre cuatro actores, liquidaciones normales y post-vencimiento y deuda incobrable; 8 leyes `MN-...` exactas contra los getters ([CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md)). Verificado con forge en la PC: las 4 variantes sin falsos positivos ni reversiones (32×300 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×300, semilla `0xf447dc803a8a69c4`, 4 de 4) y las 37 mutaciones de referencia detectadas. **Sin hallazgos** |
+| D''''''. Harness de Midnight | Nuevo (29-oct; variante B el 30-oct): Morpho Midnight, el núcleo desplegado (etiqueta `2026-08-24`, coincidencia completa en Sourcify), un mercado de dos colaterales con ofertas entre cuatro actores, liquidaciones normales y post-vencimiento y deuda incobrable; 8 leyes `MN-...` exactas contra los getters. La variante B suma callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates ([CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md)). Verificado con forge en la PC: las 6 suites (4 de la A y 2 de la B) sin falsos positivos ni reversiones (32×300 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×300, semilla `0x7dea4e2c53b47e39`, 10 de 10 con las pruebas de regresión) y las 47 mutaciones de referencia detectadas; la campaña profunda de la A (1536×500) sin leyes violadas. **Sin hallazgos** |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
@@ -181,12 +181,13 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #87 | El panel local (`nexus.secresearch.panel`): forge en vivo, lanzar y frenar campañas y descargar informes sin pasar por Claude; `NEXUS_MATCH` y el commit desplegado fijado en `tools/forge_v2` |
 | #88 | Yearn V3: el cazador del Vault V3 3.1.0 (leyes YV-...), el perfil `vault-v3` de `tools/forge_v2` con 28 mutaciones, el `vyper` del venv en el PATH de forge y `validate`, leyes `YV-` en el expediente y el panel, el perfil `vault-v3` en el panel, y `validate` ya no da por buena una corrida del harness en la que no corrió ningún test (el manifiesto puede fijar `match_path`) |
 | #89 | Morpho Midnight: el cazador del núcleo desplegado (leyes MN-...), el perfil `midnight` de `tools/forge_v2` y del panel, el alcance de Midnight y MetaMorpho V1.1 resuelto con el reglamento vigente, y las campañas del panel separadas del job de quien las lanza |
+| #90 | Morpho Midnight, variante B: callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates (10 mutaciones nuevas, B1–B10); el arreglo de `liqCycle` con el precio en 0, que dejó ver la campaña profunda; trae también los dos commits del traspaso que quedaron afuera del #89 |
 
 ## 5. Próximos pasos
 
 En orden de prioridad:
 
-1. **Dueño:** fusionar el #89 (el #88 ya está en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
+1. **Dueño:** fusionar el #90 (el #89 ya está en `main`) y hacer `git pull` en `main`. Lo que pedía el #76 ya está
    probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
@@ -211,10 +212,11 @@ En orden de prioridad:
      - **Morpho Midnight** (`morpho-org/midnight`): el núcleo `0x4716…045f` y su periferia en Ethereum.
      - **MetaMorpho Factory V1.1** (`0x1897…5c24`, `morpho-org/metamorpho-v1.1`), además de la fábrica vieja.
    - Los dos quedan en alcance. El catálogo de la PC lo registra, con las recompensas y exclusiones vigentes.
-   - El cazador de Midnight va en el #89 (punto 10). MetaMorpho V1.1 sigue sin cazador propio: nexus prueba
-     `morpho-org/metamorpho`, que corresponde a la fábrica vieja (commit `c5e758d`). Su `MetaMorpho.sol` difiere de
-     `ded84e5` solo en formato y comentarios, así que lo probado vale para esos vaults; la V1.1 agrega la
-     contabilidad de `lostAssets`, que el cazador de EulerEarn ya modela.
+   - El cazador de Midnight está en `main` desde el #89, y su variante B va en el #90 (punto 10).
+   - MetaMorpho V1.1 sigue sin cazador propio: nexus prueba `morpho-org/metamorpho`, que corresponde a la fábrica
+     vieja (commit `c5e758d`). Su `MetaMorpho.sol` difiere de `ded84e5` solo en formato y comentarios, así que lo
+     probado vale para esos vaults; la V1.1 agrega la contabilidad de `lostAssets`, que el cazador de EulerEarn ya
+     modela.
 5. **Vault V2** (`morpho-org/vault-v2`, ya en el catálogo). Los nueve objetivos del plan quedaron cubiertos con el #84
    (la campaña profunda del 28-oct, al final de este punto). Alcance contrastado el 27-oct:
    - En Ethereum están desplegados `VaultV2Factory`, `MorphoVaultV1AdapterFactory`, `MorphoMarketV1AdapterV2Factory`,
@@ -345,9 +347,17 @@ En orden de prioridad:
    - **Campañas cortadas el 29-oct:** la profunda del vault (768×1000, semilla `0xe782c4dd280d82a0`, lanzada a las
      16:22) y las de 128×6000 de TokenizedStrategy y EulerEarn murieron sin resultados cuando se reinició la sesión de
      Claude Code que las había lanzado (entre las 17:35 y las 18:10). Quedaban dentro del job de esa sesión, y forge
-     escribe la salida recién al terminar cada variante. La del vault se relanzó a las 18:17
-     (`20261029-181742_vault-v3_768x1000_0xe782c4dd280d82a0`). Las de 128×6000 quedan pendientes: Midnight tiene
-     prioridad de CPU.
+     escribe la salida recién al terminar cada variante. Las de 128×6000 siguen pendientes.
+   - **Campaña profunda del vault** (`20261029-181742_vault-v3_768x1000_0xe782c4dd280d82a0`, relanzada a las 18:17 y
+     terminada el 30-oct a las 02:49): las 4 variantes en verde y **ninguna ley violada**. Pero hubo reversiones del
+     handler en dos variantes, y esas secuencias no quedaron verificadas:
+     - en la de comisiones, 43: `stressExit` 14, `idleFloor` 11, `updateDebt` 6, `cycle` 5, `redeem` 4, `deposit` 2
+       y `withdraw` 1;
+     - en la base, 31: `cycle` 15, `report` 8, `stressExit` 6, `idleFloor` 1 y `updateDebt` 1;
+     - en la de sin bloqueo y en la de 6 decimales, 0.
+
+     Lo siguiente es reproducirlas con `fail_on_revert` y ver si son bordes del cazador, como las de Midnight
+     (punto 10), o algo del vault.
    - **Campaña profunda (28-oct):** 512×1500 (768.000 llamadas por variante, ~9 h), semilla `0x4a9cb1e5a489dc29`:
      las 4 variantes y los 4 escenarios en verde, **ninguna ley violada**, pero con 11 reversiones del handler en
      la variante con protocolo (en `report` y en `lockThenLose`, que lo llama): no es una falla de ley, y puede
@@ -373,14 +383,38 @@ En orden de prioridad:
      que la expone, y se lleva cerca del 4 % de las llamadas (27.474 de 768.000 en la campaña de TokenizedStrategy).
      Se arregla con `targetSelector` en el `setUp` o con un handler que no herede `Test`. Hay que volver a verificar
      cada harness que se toque (la distribución de llamadas cambia). Revisar también los demás harness.
-10. **Morpho Midnight, en el #89** (rama `claude/midnight-cazador`).
-   - El cazador del núcleo desplegado está escrito y verificado; ver [CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md).
-     32×300 con `0x2a` y `0x3` y `validate` 4 de 4, sin falsos positivos ni reversiones; las 37 mutaciones
-     detectadas. **Sin hallazgos.**
-   - **Campaña profunda:** 1536×500 (768.000 llamadas por variante), semilla `0xd965aa70462df72e`, lanzada el 29-oct a
-     las 20:29 desde el código del panel (`20261029-202954_midnight_1536x500_0xd965aa70462df72e`). Corre en paralelo con
-     la del vault (768×1000, desde las 18:17); las dos van por debajo de la prioridad normal. Al terminar, leer
-     `FIN ... salida N` en `NEXUS_HOME\secresearch\campanas\` (o en el panel) y anotar el resultado acá.
+10. **Morpho Midnight: la variante A está en `main` desde el #89, y la B va en el #90** (rama
+    `claude/midnight-variante-b`). Ver [CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md).
+   - **Variante B:**
+     - los callbacks del comprador, del vendedor, del repago y de la liquidación operan sobre Midnight en medio de la
+       operación: colateral, repago, retiro, `updatePosition`, liquidaciones y un `take` anidado;
+     - el bloqueo de liquidación del vendedor, el pagador de cada operación, el préstamo flash, `multicall` y los
+       gates de entrada y de liquidadores;
+     - el modelo predice cada operación anidada sobre el estado intermedio (MN-LIVE) y lleva los saldos de siete
+       tenedores;
+     - dos suites: sin gates y con gates.
+   - **Verificación del harness final (30-oct):**
+     - las seis suites (cuatro de la A y dos de la B) pasan 32×300 con `0x2a` y `0x3`, sin falsos positivos ni
+       reversiones;
+     - `validate` sobre el repo entero a 64×300 (semilla `0x7dea4e2c53b47e39`) da 10 de 10, con las pruebas de
+       regresión, y 0 reversiones;
+     - las 47 mutaciones de referencia se detectan: M1–M37 del núcleo y B1–B10 de bloqueo, pagadores, préstamo flash y
+       gates.
+
+     **Sin hallazgos.**
+   - **Campaña profunda de la A** (29-oct, 1536×500, 768.000 llamadas por variante, semilla `0xd965aa70462df72e`): las
+     cuatro variantes en verde y ninguna ley violada. La de 6 decimales tuvo 14 reversiones del handler en `liqCycle`:
+     - era una división por cero del cazador, no de Midnight;
+     - los desplomes de `badDebtCycle` llevan el precio de un colateral a 1, y `liqCycle` lo baja a 0;
+     - está arreglado en el #90, con la prueba `test_liqCycleConPrecioCero`;
+     - después del arreglo, la variante de 6 decimales pasó seis corridas de 128×500 con `fail_on_revert` (384.000
+       llamadas) sin reversiones.
+
+     Lección: en cada campaña hay que mirar la columna de reversiones por acción, no solo el PASS.
+   - **Campaña profunda de la B:** 1536×500 sobre las dos suites de callbacks, semilla `0xc14689c092fb170f`, lanzada
+     el 30-oct a las 03:33 desde el código del panel
+     (`20261030-033259_midnight_1536x500_0xc14689c092fb170f`). Al terminar, leer `FIN ... salida N` y las
+     reversiones por acción en `NEXUS_HOME\secresearch\campanas\` (o en el panel), y anotar el resultado acá.
    - La etapa E está en `NEXUS_HOME/secresearch/etapa_e/morpho-org__midnight/` (privado): el índice, las 15
      auditorías en texto, la versión desplegada de cada contrato y el diseño del cazador.
    - Contexto de verificación previa:
@@ -395,9 +429,8 @@ En orden de prioridad:
      firmas en el harness, que el test de coherencia no permite. El detalle está en
      `etapa_e/morpho-org__midnight/revision_periferia.md` (privado).
    - **Falta:**
-     - **la variante B** (lo siguiente): callbacks (`onBuy`, `onSell`, `onRepay`, `onLiquidate`) que operan sobre
-       Midnight en medio de la operación, `multicall`, el préstamo flash y los gates. Es el código más nuevo y con la
-       recompensa más alta, y Certora asume que no hay reentrada salvo en las reglas de callbacks;
+     - extender la B a lo que todavía no cubre (CAZADOR_MIDNIGHT.md §8): un `take` anidado con sus propios callbacks,
+       `multicall` dentro de un callback y gates que distingan cuentas;
      - un cazador de MetaMorpho V1.1, evaluado el 29-oct con valor esperado bajo. Lo desplegado son los commits
        `8b578d3` a `b60364d`. Los cuatro cambios frente a la V1.0 son chicos, `lostAssets` tiene specs de Certora y ya
        se cazó en EulerEarn (fork), y las auditorías de la V1.1 no tienen Medium abiertos. Detalle en

@@ -11,7 +11,9 @@ import {NexusMNHunter, NexusMNBase} from "./NexusMidnightHunter.sol";
 import {Market, Offer} from "../../src/interfaces/IMidnight.sol";
 
 contract NexusMidnightHandler is NexusMNHunter {
-    constructor(uint8 dec, uint256 sfPct, uint256 cfPct, uint256 lltvHigh) NexusMNBase(dec, sfPct, cfPct, lltvHigh) {}
+    constructor(uint8 dec, uint256 sfPct, uint256 cfPct, uint256 lltvHigh, bool gated)
+        NexusMNBase(dec, sfPct, cfPct, lltvHigh, gated)
+    {}
 
     /// @dev Un cuarto de las veces polvo (1 a 1e4); si no, hasta un millón de unidades del activo prestado.
     function _amt(uint256 seed) internal view returns (uint256) {
@@ -39,7 +41,7 @@ contract NexusMidnightHandler is NexusMNHunter {
         coll[i].mint(actors[h], a);
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
-        bool expect = _simSupply(m, h, i, a);
+        bool expect = _simSupply(m, h, h, i, a);
         vm.prank(actors[h]);
         (bool ok,) = address(midnight).call(abi.encodeCall(midnight.supplyCollateral, (_market(), i, a, actors[h])));
         _settle("supplyCollateral", ok, expect, pre, m);
@@ -53,7 +55,7 @@ contract NexusMidnightHandler is NexusMNHunter {
         uint256 c = pre.pos[h].coll[i];
         uint256 a = amount % 8 == 0 ? c + 1 : _clamp(amount >> 3, 0, c);
         Snap memory m = _copy(pre);
-        bool expect = _simWithdrawColl(m, h, i, a);
+        bool expect = _simWithdrawColl(m, h, i, a, h);
         vm.prank(actors[h]);
         (bool ok,) = address(midnight).call(
             abi.encodeCall(midnight.withdrawCollateral, (_market(), i, a, actors[h], actors[h]))
@@ -63,10 +65,16 @@ contract NexusMidnightHandler is NexusMNHunter {
 
     /// @dev Colateral suficiente para que `h` tenga `debtTarget` de deuda al precio actual (con 25 % de margen).
     function _collateralize(uint256 h, uint256 i, uint256 debtTarget) internal {
+        _collateralizeBy(h, i, debtTarget, 4);
+    }
+
+    /// @dev Lo mismo con un margen de 1/`div`. Con el precio en 0 (los desplomes lo pueden llevar ahí) no hay colateral
+    /// que alcance y no pone nada.
+    function _collateralizeBy(uint256 h, uint256 i, uint256 debtTarget, uint256 div) internal {
         uint256 p = oracle[i].price();
         if (p == 0 || debtTarget == 0) return;
         uint256 need = ((debtTarget * WAD) / lltv[i] + 1) * PSCALE / p + 1;
-        _supply(h, i, need + need / 4);
+        _supply(h, i, need + need / div);
     }
 
     /* OFERTAS */
@@ -93,6 +101,8 @@ contract NexusMidnightHandler is NexusMNHunter {
 
     function _take(TakeIn memory t) internal {
         uint256 b = t.buy ? t.maker : t.taker;
+        t.payer = b; // sin callbacks paga el comprador
+        t.rcv = t.buy ? t.taker : t.maker; // y lo del vendedor va al vendedor
         loan.mint(actors[b], 2 * t.units + 1); // alcanza para lo que paga el comprador (precio ≤ 1 + comisión)
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
@@ -156,7 +166,7 @@ contract NexusMidnightHandler is NexusMNHunter {
         loan.mint(actors[h], units);
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
-        bool expect = _simRepay(m, h, units);
+        bool expect = _simRepay(m, h, h, units);
         vm.prank(actors[h]);
         (bool ok,) = address(midnight).call(abi.encodeCall(midnight.repay, (_market(), units, actors[h], address(0), "")));
         _settle("repay", ok, expect, pre, m);
@@ -173,7 +183,7 @@ contract NexusMidnightHandler is NexusMNHunter {
 
     function _withdraw(uint256 h, uint256 units, Snap memory pre) internal {
         Snap memory m = _copy(pre);
-        bool expect = _simWithdraw(m, h, units);
+        bool expect = _simWithdraw(m, h, units, h);
         vm.prank(actors[h]);
         (bool ok,) = address(midnight).call(abi.encodeCall(midnight.withdraw, (_market(), units, actors[h], actors[h])));
         _settle("withdraw", ok, expect, pre, m);
@@ -213,6 +223,8 @@ contract NexusMidnightHandler is NexusMNHunter {
     }
 
     function _liquidate(LiqIn memory l) internal {
+        l.payer = H_LIQ;
+        l.rcv = H_LIQ;
         loan.mint(LIQ, midnight.debt(id, actors[l.borrower]) + 1);
         Snap memory pre = _snap();
         Snap memory m = _copy(pre);
@@ -282,10 +294,7 @@ contract NexusMidnightHandler is NexusMNHunter {
         t.units = _amt(amtSeed);
         t.cap = M128;
         t.feeCap = type(uint256).max;
-        uint256 p = oracle[i].price();
-        uint256 debtTarget = midnight.debt(id, actors[b]) + t.units;
-        uint256 need = ((debtTarget * WAD) / lltv[i] + 1) * PSCALE / p + 1;
-        _supply(b, i, need + need / 50);
+        _collateralizeBy(b, i, midnight.debt(id, actors[b]) + t.units, 50);
         _take(t);
         Snap memory pre = _snap();
         oracle[i].setPrice(pre.price[i] * (85 + drop % 13) / 100);
@@ -493,7 +502,7 @@ contract NexusMidnightInvariantTest is Test {
     NexusMidnightHandler internal handler;
 
     function setUp() public virtual {
-        handler = new NexusMidnightHandler(_dec(), _sfPct(), _cfPct(), _lltvHigh());
+        handler = new NexusMidnightHandler(_dec(), _sfPct(), _cfPct(), _lltvHigh(), false);
         targetContract(address(handler));
     }
 
@@ -514,6 +523,19 @@ contract NexusMidnightInvariantTest is Test {
     }
 
     function invariant_midnight() public view {
+        string memory err = handler.check();
+        require(bytes(err).length == 0, err);
+    }
+
+    /// @dev Regresión de la campaña del 29-oct (6 decimales): los desplomes de badDebtCycle dejan los precios en 1,
+    /// liqCycle baja el del colateral 0 a 0, y el siguiente liqCycle sobre ese colateral dividía por cero al calcular el
+    /// colateral necesario. Con el precio en 0 las leyes tienen que seguir valiendo.
+    function test_liqCycleConPrecioCero() public {
+        for (uint256 k; k < 20; ++k) {
+            handler.badDebtCycle(0, 0, 0, 0);
+        }
+        handler.liqCycle(0, 0, 0, 0);
+        handler.liqCycle(0, 0, 0, 0);
         string memory err = handler.check();
         require(bytes(err).length == 0, err);
     }

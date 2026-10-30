@@ -220,5 +220,65 @@
   "            if (newCollateral == 0 && seizedAssets > 0) {",
   "            if (false) {",
   "src/Midnight.sol"
+ ],
+ [
+  "B1 take: el vendedor no queda bloqueado durante los callbacks",
+  "bool wasLocked = UtilsLib.tExchange(LIQUIDATION_LOCK_SLOT, id, seller, true);",
+  "bool wasLocked = UtilsLib.tExchange(LIQUIDATION_LOCK_SLOT, id, seller, false);",
+  "src/Midnight.sol"
+ ],
+ [
+  "B2 take: paga el comprador aunque tenga callback",
+  "address payer = buyerCallback != address(0) ? buyerCallback : (offer.buy ? buyer : msg.sender);",
+  "address payer = offer.buy ? buyer : msg.sender;",
+  "src/Midnight.sol"
+ ],
+ [
+  "B3 take: desbloquea al vendedor aunque lo haya bloqueado un take de afuera",
+  "if (!wasLocked) UtilsLib.tExchange(LIQUIDATION_LOCK_SLOT, id, seller, false);",
+  "UtilsLib.tExchange(LIQUIDATION_LOCK_SLOT, id, seller, false);",
+  "src/Midnight.sol"
+ ],
+ [
+  "B4 repay: paga quien llama aunque haya callback",
+  "address payer = callback != address(0) ? callback : msg.sender;\n        emit EventsLib.Repay(",
+  "address payer = msg.sender;\n        emit EventsLib.Repay(",
+  "src/Midnight.sol"
+ ],
+ [
+  "B5 liquidate: paga quien llama aunque haya callback",
+  "address payer = callback != address(0) ? callback : msg.sender;\n\n        emit EventsLib.Liquidate(",
+  "address payer = msg.sender;\n\n        emit EventsLib.Liquidate(",
+  "src/Midnight.sol"
+ ],
+ [
+  "B6 flashLoan: no cobra de vuelta lo prestado",
+  "SafeTransferLib.safeTransferFrom(tokens[i], callback, address(this), assets[i]);",
+  "tokens[i];",
+  "src/Midnight.sol"
+ ],
+ [
+  "B7 take: el gate de entrada no controla el credito",
+  "|| IEnterGate(offer.market.enterGate).canIncreaseCredit(buyer),",
+  "|| true,",
+  "src/Midnight.sol"
+ ],
+ [
+  "B8 take: el gate de entrada no controla la deuda",
+  "|| IEnterGate(offer.market.enterGate).canIncreaseDebt(seller),",
+  "|| true,",
+  "src/Midnight.sol"
+ ],
+ [
+  "B9 liquidate: el gate de liquidadores no controla",
+  "market.liquidatorGate == address(0) || ILiquidatorGate(market.liquidatorGate).canLiquidate(msg.sender),",
+  "true,",
+  "src/Midnight.sol"
+ ],
+ [
+  "B10 liquidate: ignora el bloqueo del vendedor",
+  "!liquidationLocked(id, borrower)",
+  "true",
+  "src/Midnight.sol"
  ]
 ]

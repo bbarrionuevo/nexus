@@ -438,7 +438,8 @@ def test_harness_de_midnight_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__midnight")
     assert man["repo"] == "morpho-org/midnight" and man["match_contract"] == "^NexusMidnight" and man["aislado"] is True
-    assert {f.name for f in files} == {"NexusMidnightHunter.sol", "NexusMidnightInvariant.t.sol"}
+    assert {f.name for f in files} == {"NexusMidnightHunter.sol", "NexusMidnightInvariant.t.sol",
+                                       "NexusMidnightCallbacks.t.sol"}
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

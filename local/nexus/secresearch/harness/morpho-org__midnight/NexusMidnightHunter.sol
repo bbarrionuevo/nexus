@@ -5,7 +5,8 @@ pragma solidity 0.8.34;
 // desplegado en 0x4716…045f tiene coincidencia completa en Sourcify con esa etiqueta). Un mercado con dos colaterales,
 // cuatro actores que hacen de maker y de taker con un ratifier de prueba, oráculos ajustables, un liquidador y los
 // roles de comisiones. El fantasma lee los getters y predice cada operación de forma exacta, con los redondeos del
-// código. Leyes MN-... (docs/CAZADOR_MIDNIGHT.md).
+// código. Leyes MN-... (docs/CAZADOR_MIDNIGHT.md). La variante B suma un contrato de callbacks que opera sobre
+// Midnight en medio de take, repay, liquidate y flashLoan, multicall y gates.
 //
 // Compila con los ajustes del repo (solc 0.8.34, osaka, via_ir).
 
@@ -13,6 +14,10 @@ import {Test} from "forge-std/Test.sol";
 import {Midnight} from "../../src/Midnight.sol";
 import {Market, Offer, CollateralParams} from "../../src/interfaces/IMidnight.sol";
 import {IRatifier} from "../../src/interfaces/IRatifier.sol";
+import {
+    IBuyCallback, ISellCallback, IRepayCallback, ILiquidateCallback, IFlashLoanCallback
+} from "../../src/interfaces/ICallbacks.sol";
+import {IEnterGate, ILiquidatorGate} from "../../src/interfaces/IGate.sol";
 import {TickLib} from "../../src/libraries/TickLib.sol";
 import {CALLBACK_SUCCESS} from "../../src/libraries/ConstantsLib.sol";
 
@@ -79,6 +84,114 @@ contract NexusMNClock {
     }
 }
 
+/// @notice Callbacks de prueba (variante B). En cada gancho ejecuta la lista de llamadas a Midnight que le cargó el
+/// handler; una llamada que revierte queda registrada y no corta las demás. Devuelve la respuesta cargada
+/// (CALLBACK_SUCCESS u otra, para probar que el núcleo la rechaza). Aprueba a Midnight para pagar.
+contract NexusMNCallback is IBuyCallback, ISellCallback, IRepayCallback, ILiquidateCallback, IFlashLoanCallback {
+    uint256 internal constant HOOK_BUY = 0;
+    uint256 internal constant HOOK_SELL = 1;
+    uint256 internal constant HOOK_OTHER = 2;
+
+    address public immutable midnight;
+    mapping(uint256 hook => bytes[]) internal steps;
+    mapping(uint256 hook => bytes32) internal answers;
+    bool[] internal results;
+
+    constructor(address m, address[] memory tokens) {
+        midnight = m;
+        for (uint256 i; i < tokens.length; ++i) {
+            NexusMNToken(tokens[i]).approve(m, type(uint256).max);
+        }
+    }
+
+    function reset() external {
+        for (uint256 k; k < 3; ++k) {
+            delete steps[k];
+            answers[k] = CALLBACK_SUCCESS;
+        }
+        delete results;
+    }
+
+    function load(uint256 hook, bytes[] memory s, bytes32 answer) external {
+        delete steps[hook];
+        for (uint256 i; i < s.length; ++i) {
+            steps[hook].push(s[i]);
+        }
+        answers[hook] = answer;
+    }
+
+    function resultsLength() external view returns (uint256) {
+        return results.length;
+    }
+
+    function resultAt(uint256 i) external view returns (bool) {
+        return results[i];
+    }
+
+    function _run(uint256 hook) internal returns (bytes32) {
+        bytes[] storage s = steps[hook];
+        for (uint256 i; i < s.length; ++i) {
+            (bool ok,) = midnight.call(s[i]);
+            results.push(ok);
+        }
+        return answers[hook];
+    }
+
+    function onBuy(bytes32, Market memory, uint256, uint256, uint256, address, bytes memory)
+        external
+        returns (bytes32)
+    {
+        return _run(HOOK_BUY);
+    }
+
+    function onSell(bytes32, Market memory, uint256, uint256, uint256, address, address, bytes memory)
+        external
+        returns (bytes32)
+    {
+        return _run(HOOK_SELL);
+    }
+
+    function onRepay(bytes32, Market memory, uint256, address, bytes memory) external returns (bytes32) {
+        return _run(HOOK_OTHER);
+    }
+
+    function onLiquidate(address, bytes32, Market memory, uint256, uint256, uint256, address, address, bytes memory, uint256)
+        external
+        returns (bytes32)
+    {
+        return _run(HOOK_OTHER);
+    }
+
+    function onFlashLoan(address, address[] memory, uint256[] memory, bytes memory) external returns (bytes32) {
+        return _run(HOOK_OTHER);
+    }
+}
+
+/// @notice Gate de prueba (variante B con gates): tres interruptores globales que mueve el handler.
+contract NexusMNGate is IEnterGate, ILiquidatorGate {
+    bool public credit = true;
+    bool public debt = true;
+    bool public liq = true;
+
+    function set(bool c, bool d, bool l) external {
+        credit = c;
+        debt = d;
+        liq = l;
+    }
+
+    function canIncreaseCredit(address) external view returns (bool) {
+        return credit;
+    }
+
+    function canIncreaseDebt(address) external view returns (bool) {
+        return debt;
+    }
+
+    function canLiquidate(address) external view returns (bool) {
+        return liq;
+    }
+}
+
 /// @notice Base: el núcleo, los roles, los tokens, los oráculos, el mercado y los actores.
 abstract contract NexusMNBase is Test {
     uint256 internal constant WAD = 1e18;
@@ -103,6 +216,9 @@ abstract contract NexusMNBase is Test {
     NexusMNOracle[2] internal oracle;
     NexusMNRatifier internal ratifier;
     NexusMNClock internal clock;
+    NexusMNCallback internal cb;
+    NexusMNGate internal gate;
+    bool internal immutable GATED;
     bytes32 internal id;
     address[4] internal actors;
     uint256[2] internal lltv;
@@ -118,8 +234,9 @@ abstract contract NexusMNBase is Test {
 
     /// @param dec decimales del activo prestado; @param sfPct comisión de liquidación por defecto, en % del máximo de
     /// cada punto; @param cfPct comisión continua por defecto, en % del máximo; @param lltvHigh el LLTV del segundo
-    /// colateral (0,945 o 1).
-    constructor(uint8 dec, uint256 sfPct, uint256 cfPct, uint256 lltvHigh) {
+    /// colateral (0,945 o 1); @param gated el mercado tiene gate de entrada y de liquidadores.
+    constructor(uint8 dec, uint256 sfPct, uint256 cfPct, uint256 lltvHigh, bool gated) {
+        GATED = gated;
         LDEC = dec;
         MAX_AMT = 10 ** (uint256(dec) + 6);
         CURSOR = 0.3e18;
@@ -157,6 +274,14 @@ abstract contract NexusMNBase is Test {
         midnight.setDefaultContinuousFee(address(loan), MAX_CF * cfPct / 100);
         vm.stopPrank();
 
+        address[] memory toks = new address[](3);
+        toks[0] = address(loan);
+        toks[1] = address(coll[0]);
+        toks[2] = address(coll[1]);
+        cb = new NexusMNCallback(address(midnight), toks);
+        cb.reset();
+        gate = new NexusMNGate();
+
         id = midnight.touchMarket(_market());
 
         for (uint256 h; h < NH; ++h) {
@@ -164,6 +289,7 @@ abstract contract NexusMNBase is Test {
             actors[h] = u;
             vm.startPrank(u);
             midnight.setIsAuthorized(address(ratifier), true, u);
+            midnight.setIsAuthorized(address(cb), true, u); // el callback opera en nombre de los actores (variante B)
             loan.approve(address(midnight), type(uint256).max);
             coll[0].approve(address(midnight), type(uint256).max);
             coll[1].approve(address(midnight), type(uint256).max);
@@ -184,6 +310,10 @@ abstract contract NexusMNBase is Test {
         }
         mk.maturity = MATURITY;
         mk.rcfThreshold = RCF_THRESHOLD;
+        if (GATED) {
+            mk.enterGate = address(gate);
+            mk.liquidatorGate = address(gate);
+        }
     }
 
     /// @dev maxSettlementFee(index), escrito de nuevo (no se usa el de ConstantsLib).
@@ -231,6 +361,12 @@ abstract contract NexusMNHunter is NexusMNBase {
     uint8 internal constant L_LIVE = 7; // MN-LIVE: pasa si y solo si el modelo dice que pasa
     uint8 internal constant N_LAWS = 8;
 
+    // tenedores de tokens: 0..3 actores, el callback, el liquidador y el receptor de comisiones
+    uint256 internal constant NHOLD = 7;
+    uint256 internal constant H_CB = 4;
+    uint256 internal constant H_LIQ = 5;
+    uint256 internal constant H_CLAIM = 6;
+
     struct Pos {
         uint256 credit;
         uint256 pf; // pendingFee
@@ -254,14 +390,15 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 claimable; // claimableSettlementFee[loan]
         Pos[4] pos;
         uint256[4] consumed; // consumed[actor][grupo vigente del actor]
-        uint256[4] cash; // activo prestado de cada actor
-        uint256[2][4] ccash; // colateral de cada actor: ccash[h][i]
+        uint256[7] cash; // activo prestado de cada tenedor
+        uint256[2][7] ccash; // colateral de cada tenedor: ccash[k][i]
         uint256 mLoan; // activo prestado en Midnight
         uint256[2] mColl; // colateral en Midnight
         uint256[2] price;
-        uint256 liqCash; // activo prestado del liquidador
-        uint256[2] liqColl; // colateral embargado que recibió el liquidador
-        uint256 claimTo; // comisiones cobradas
+        bool gCredit; // gate: puede aumentar crédito
+        bool gDebt; // gate: puede aumentar deuda
+        bool gLiq; // gate: puede liquidar
+        uint256 locked; // solo del modelo: vendedor bloqueado + 1 durante los callbacks de un take (0 si ninguno)
     }
 
     uint256[4] internal groupNonce;
@@ -293,6 +430,13 @@ abstract contract NexusMNHunter is NexusMNBase {
 
     /* FOTO */
 
+    function _holderAddr(uint256 k) internal view returns (address) {
+        if (k < NH) return actors[k];
+        if (k == H_CB) return address(cb);
+        if (k == H_LIQ) return LIQ;
+        return CLAIM_TO;
+    }
+
     function _snap() internal view returns (Snap memory s) {
         s.ts = clock.time();
         _snapMarket(s);
@@ -300,18 +444,21 @@ abstract contract NexusMNHunter is NexusMNBase {
         for (uint256 h; h < NH; ++h) {
             _snapPos(s, h);
             s.consumed[h] = midnight.consumed(actors[h], _group(h));
-            s.cash[h] = loan.balanceOf(actors[h]);
-            s.ccash[h][0] = coll[0].balanceOf(actors[h]);
-            s.ccash[h][1] = coll[1].balanceOf(actors[h]);
+        }
+        for (uint256 k; k < NHOLD; ++k) {
+            address a = _holderAddr(k);
+            s.cash[k] = loan.balanceOf(a);
+            s.ccash[k][0] = coll[0].balanceOf(a);
+            s.ccash[k][1] = coll[1].balanceOf(a);
         }
         s.mLoan = loan.balanceOf(address(midnight));
-        s.liqCash = loan.balanceOf(LIQ);
-        s.claimTo = loan.balanceOf(CLAIM_TO);
         for (uint256 i; i < NC; ++i) {
             s.mColl[i] = coll[i].balanceOf(address(midnight));
             s.price[i] = oracle[i].price();
-            s.liqColl[i] = coll[i].balanceOf(LIQ);
         }
+        s.gCredit = !GATED || gate.credit();
+        s.gDebt = !GATED || gate.debt();
+        s.gLiq = !GATED || gate.liq();
     }
 
     function _snapMarket(Snap memory s) internal view {
@@ -424,6 +571,8 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 cap;
         bool reduceOnly;
         uint256 feeCap;
+        uint256 payer; // tenedor que paga lo del comprador (el comprador, o el callback si es el del comprador)
+        uint256 rcv; // tenedor que recibe lo del vendedor
     }
 
     struct TakeOut {
@@ -433,10 +582,12 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 bci; // buyerCreditIncrease
         uint256 scd; // sellerCreditDecrease
         uint256 sdi; // sellerDebtIncrease
+        uint256 seller;
     }
 
-    /// @dev take() con una oferta del maker `t.maker` tomada por `t.taker`, sin callbacks; quien paga es el comprador.
-    function _simTake(Snap memory m, TakeIn memory t) internal view returns (TakeOut memory o) {
+    /// @dev Primera fase de take(): controles y cambios de estado (posiciones, totalUnits, comisión, consumed), antes
+    /// de cualquier llamada externa. ok = estas fases pasan; los pagos y la salud del vendedor van aparte.
+    function _takeEffects(Snap memory m, TakeIn memory t) internal view returns (TakeOut memory o) {
         if (m.LF >= M128) return o;
         if (m.cf > t.feeCap) return o;
         if (t.tick % m.spacing != 0 || t.tick > MAX_TICK) return o;
@@ -452,6 +603,7 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 nc = m.consumed[t.maker] + (t.assetsCap ? (t.buy ? o.buyerAssets : o.sellerAssets) : t.units);
         if (nc > t.cap) return o;
         (uint256 b, uint256 sl) = t.buy ? (t.maker, t.taker) : (t.taker, t.maker);
+        o.seller = sl;
         Pos memory bp = m.pos[b];
         Pos memory sp = m.pos[sl];
         if (bp.credit > 0 || t.units > bp.debt) {
@@ -468,6 +620,8 @@ abstract contract NexusMNHunter is NexusMNBase {
         if (bpfi > M128 || spfd > M128) return o;
         if (m.ts > MATURITY && o.sdi != 0) return o;
         if (t.reduceOnly && (t.buy ? o.bci != 0 : o.sdi != 0)) return o;
+        if (o.bci != 0 && !m.gCredit) return o;
+        if (o.sdi != 0 && !m.gDebt) return o;
         bp.debt -= t.units - o.bci;
         bp.pf += bpfi;
         bp.credit += o.bci;
@@ -482,17 +636,33 @@ abstract contract NexusMNHunter is NexusMNBase {
         m.T = t2;
         m.claimable += o.buyerAssets - o.sellerAssets;
         m.consumed[t.maker] = nc;
-        // el comprador paga la comisión a Midnight y lo del vendedor directo al vendedor
-        if (m.cash[b] < o.buyerAssets) return o;
-        m.cash[b] -= o.buyerAssets;
-        m.mLoan += o.buyerAssets - o.sellerAssets;
-        m.cash[sl] += o.sellerAssets;
-        if (sp.debt > 0 && (!_mulOk(m, sl) || !_healthy(m, sl))) return o;
         o.ok = true;
     }
 
-    /// @dev withdraw(units) de `h` para sí.
-    function _simWithdraw(Snap memory m, uint256 h, uint256 units) internal view returns (bool) {
+    /// @dev Pagos de take(): el pagador le paga la comisión a Midnight y lo del vendedor al receptor.
+    function _takePay(Snap memory m, TakeIn memory t, TakeOut memory o) internal pure returns (bool) {
+        if (m.cash[t.payer] < o.buyerAssets) return false;
+        m.cash[t.payer] -= o.buyerAssets;
+        m.mLoan += o.buyerAssets - o.sellerAssets;
+        m.cash[t.rcv] += o.sellerAssets;
+        return true;
+    }
+
+    /// @dev Control final de take(): el vendedor sano, salvo que un take de afuera lo tenga bloqueado.
+    function _takeHealth(Snap memory m, uint256 sl) internal view returns (bool) {
+        if (m.locked == sl + 1) return true;
+        return m.pos[sl].debt == 0 || (_mulOk(m, sl) && _healthy(m, sl));
+    }
+
+    /// @dev take() sin callbacks: efectos, pagos y salud.
+    function _simTake(Snap memory m, TakeIn memory t) internal view returns (TakeOut memory o) {
+        o = _takeEffects(m, t);
+        if (!o.ok) return o;
+        o.ok = _takePay(m, t, o) && _takeHealth(m, o.seller);
+    }
+
+    /// @dev withdraw(units) del crédito de `h`, con lo retirado para el tenedor `rcv`.
+    function _simWithdraw(Snap memory m, uint256 h, uint256 units, uint256 rcv) internal view returns (bool) {
         if (!_update(m, h)) return false;
         Pos memory p = m.pos[h];
         if (p.credit > 0) {
@@ -506,40 +676,53 @@ abstract contract NexusMNHunter is NexusMNBase {
         m.T -= units;
         if (m.mLoan < units) return false;
         m.mLoan -= units;
-        m.cash[h] += units;
+        m.cash[rcv] += units;
         return true;
     }
 
-    /// @dev repay(units) de `h` para sí, pagando él.
-    function _simRepay(Snap memory m, uint256 h, uint256 units) internal pure returns (bool) {
+    /// @dev Efectos de repay(units) sobre la deuda de `h` (antes del callback y del cobro).
+    function _repayEffects(Snap memory m, uint256 h, uint256 units) internal pure returns (bool) {
         Pos memory p = m.pos[h];
         if (units > p.debt) return false;
         p.debt -= units;
         m.W += units;
-        if (m.W > M128 || m.cash[h] < units) return false;
-        m.cash[h] -= units;
-        m.mLoan += units;
+        return m.W <= M128;
+    }
+
+    /// @dev Midnight cobra `amount` del activo prestado al tenedor `payer`.
+    function _payIn(Snap memory m, uint256 payer, uint256 amount) internal pure returns (bool) {
+        if (m.cash[payer] < amount) return false;
+        m.cash[payer] -= amount;
+        m.mLoan += amount;
         return true;
     }
 
-    function _simSupply(Snap memory m, uint256 h, uint256 i, uint256 a) internal pure returns (bool) {
+    /// @dev repay(units) de la deuda de `h`, pagado por `payer` (sin callback).
+    function _simRepay(Snap memory m, uint256 payer, uint256 h, uint256 units) internal pure returns (bool) {
+        return _repayEffects(m, h, units) && _payIn(m, payer, units);
+    }
+
+    /// @dev supplyCollateral(i, a) a la posición de `h`, pagado por `payer`.
+    function _simSupply(Snap memory m, uint256 payer, uint256 h, uint256 i, uint256 a) internal pure returns (bool) {
         Pos memory p = m.pos[h];
         if (p.coll[i] == 0 && a > 0) p.bitmap |= 1 << i;
         p.coll[i] += a;
-        if (p.coll[i] > M128 || m.ccash[h][i] < a) return false;
-        m.ccash[h][i] -= a;
+        if (p.coll[i] > M128 || m.ccash[payer][i] < a) return false;
+        m.ccash[payer][i] -= a;
         m.mColl[i] += a;
         return true;
     }
 
-    function _simWithdrawColl(Snap memory m, uint256 h, uint256 i, uint256 a) internal view returns (bool) {
+    /// @dev withdrawCollateral(i, a) de la posición de `h`, para el tenedor `rcv`.
+    function _simWithdrawColl(Snap memory m, uint256 h, uint256 i, uint256 a, uint256 rcv) internal view returns (bool) {
         Pos memory p = m.pos[h];
         if (a > p.coll[i]) return false;
         p.coll[i] -= a;
         if (p.coll[i] == 0 && a > 0) p.bitmap &= ~(uint256(1) << i);
         if (p.debt > 0 && (!_mulOk(m, h) || !_healthy(m, h))) return false;
+        if (m.mColl[i] < a) return false;
         m.mColl[i] -= a;
-        m.ccash[h][i] += a;
+        m.ccash[rcv][i] += a;
         return true;
     }
 
@@ -549,6 +732,8 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 seized;
         uint256 repaid;
         bool pmm;
+        uint256 payer; // tenedor que paga el repago (el liquidador, o el callback)
+        uint256 rcv; // tenedor que recibe el colateral embargado
     }
 
     struct LiqOut {
@@ -558,12 +743,13 @@ abstract contract NexusMNHunter is NexusMNBase {
         uint256 repaid;
     }
 
-    /// @dev liquidate(): deuda incobrable con maxLif, factor de pérdida, CFC escalado, embargo o repago con su LIF y la
-    /// condición RCF en modo normal. El liquidador recibe el colateral y paga el repago.
-    function _simLiq(Snap memory m, LiqIn memory l) internal view returns (LiqOut memory o) {
+    /// @dev Efectos de liquidate() hasta el envío del colateral embargado (antes del callback y del cobro): deuda
+    /// incobrable con maxLif, factor de pérdida, CFC escalado, embargo o repago con su LIF y la condición RCF.
+    function _liqEffects(Snap memory m, LiqIn memory l) internal view returns (LiqOut memory o) {
         Pos memory p = m.pos[l.borrower];
         if (l.repaid != 0 && l.seized != 0) return o;
         if (p.debt == 0) return o;
+        if (!m.gLiq) return o;
         if (!_mulOk(m, l.borrower)) return o;
         uint256 maxDebt;
         uint256 liqPrice;
@@ -575,6 +761,7 @@ abstract contract NexusMNHunter is NexusMNBase {
             uint256 v = _up(p.coll[i], m.price[i], PSCALE);
             bad = _zfs(bad, _up(v, WAD, _maxLif(lltv[i])));
         }
+        if (m.locked == l.borrower + 1) return o;
         if (l.pmm ? m.ts <= MATURITY : p.debt <= maxDebt) return o;
         if (bad > 0) {
             p.debt -= bad;
@@ -609,14 +796,19 @@ abstract contract NexusMNHunter is NexusMNBase {
             if (m.W > M128 || repaid > p.debt) return o;
             p.debt -= repaid;
         }
-        if (m.mColl[l.idx] < seized || m.liqCash < repaid) return o;
+        if (m.mColl[l.idx] < seized) return o;
         m.mColl[l.idx] -= seized;
-        m.liqColl[l.idx] += seized;
-        m.liqCash -= repaid;
-        m.mLoan += repaid;
+        m.ccash[l.rcv][l.idx] += seized;
         o.seized = seized;
         o.repaid = repaid;
         o.ok = true;
+    }
+
+    /// @dev liquidate() sin callback: efectos y cobro del repago.
+    function _simLiq(Snap memory m, LiqIn memory l) internal view returns (LiqOut memory o) {
+        o = _liqEffects(m, l);
+        if (!o.ok) return o;
+        o.ok = _payIn(m, l.payer, o.repaid);
     }
 
     /// @dev claimContinuousFee(amount): baja CFC, totalUnits y withdrawable.
@@ -626,7 +818,7 @@ abstract contract NexusMNHunter is NexusMNBase {
         m.T -= a;
         m.W -= a;
         m.mLoan -= a;
-        m.claimTo += a;
+        m.cash[H_CLAIM] += a;
         return true;
     }
 
@@ -634,7 +826,35 @@ abstract contract NexusMNHunter is NexusMNBase {
         if (a > m.claimable || a > m.mLoan) return false;
         m.claimable -= a;
         m.mLoan -= a;
-        m.claimTo += a;
+        m.cash[H_CLAIM] += a;
+        return true;
+    }
+
+    /// @dev flashLoan: Midnight le presta `a` del token `tok` (0 = activo prestado, 1 y 2 = colaterales) al callback.
+    function _flashOut(Snap memory m, uint256 tok, uint256 a) internal pure returns (bool) {
+        if (tok == 0) {
+            if (m.mLoan < a) return false;
+            m.mLoan -= a;
+            m.cash[H_CB] += a;
+        } else {
+            if (m.mColl[tok - 1] < a) return false;
+            m.mColl[tok - 1] -= a;
+            m.ccash[H_CB][tok - 1] += a;
+        }
+        return true;
+    }
+
+    /// @dev flashLoan: Midnight cobra de vuelta `a` del token `tok` al callback.
+    function _flashIn(Snap memory m, uint256 tok, uint256 a) internal pure returns (bool) {
+        if (tok == 0) {
+            if (m.cash[H_CB] < a) return false;
+            m.cash[H_CB] -= a;
+            m.mLoan += a;
+        } else {
+            if (m.ccash[H_CB][tok - 1] < a) return false;
+            m.ccash[H_CB][tok - 1] -= a;
+            m.mColl[tok - 1] += a;
+        }
         return true;
     }
 
@@ -655,15 +875,14 @@ abstract contract NexusMNHunter is NexusMNBase {
         for (uint256 h; h < NH; ++h) {
             _lawPos(e.pos[h], p.pos[h]);
             _ok(p.consumed[h] == e.consumed[h], L_POS, "consumed del grupo distinto del modelo (modelo, real)", e.consumed[h], p.consumed[h]);
-            _ok(p.cash[h] == e.cash[h], L_FUNDS, "activo prestado de un actor distinto del modelo (modelo, real)", e.cash[h], p.cash[h]);
-            _ok(p.ccash[h][0] == e.ccash[h][0] && p.ccash[h][1] == e.ccash[h][1], L_FUNDS, "colateral de un actor distinto del modelo (modelo, real)", e.ccash[h][0] + e.ccash[h][1], p.ccash[h][0] + p.ccash[h][1]);
+        }
+        for (uint256 k; k < NHOLD; ++k) {
+            _ok(p.cash[k] == e.cash[k], L_FUNDS, "activo prestado de un tenedor distinto del modelo (modelo, real)", e.cash[k], p.cash[k]);
+            _ok(p.ccash[k][0] == e.ccash[k][0] && p.ccash[k][1] == e.ccash[k][1], L_FUNDS, "colateral de un tenedor distinto del modelo (modelo, real)", e.ccash[k][0] + e.ccash[k][1], p.ccash[k][0] + p.ccash[k][1]);
         }
         _ok(p.mLoan == e.mLoan, L_FUNDS, "activo prestado en Midnight distinto del modelo (modelo, real)", e.mLoan, p.mLoan);
-        _ok(p.liqCash == e.liqCash, L_FUNDS, "activo prestado del liquidador distinto del modelo (modelo, real)", e.liqCash, p.liqCash);
-        _ok(p.claimTo == e.claimTo, L_FUNDS, "comisiones cobradas distintas del modelo (modelo, real)", e.claimTo, p.claimTo);
         for (uint256 i; i < NC; ++i) {
             _ok(p.mColl[i] == e.mColl[i], L_FUNDS, "colateral en Midnight distinto del modelo (modelo, real)", e.mColl[i], p.mColl[i]);
-            _ok(p.liqColl[i] == e.liqColl[i], L_FUNDS, "colateral del liquidador distinto del modelo (modelo, real)", e.liqColl[i], p.liqColl[i]);
         }
     }
 
