@@ -39,7 +39,7 @@ Las reglas que más pesan al trabajar:
 
 - **El dueño** habilita los programas (el catálogo), envía los informes y autoriza los cambios de reglas.
 - **Claude trabaja solo en la PC** (R-12), con Claude Code: lee los informes de `NEXUS_HOME`, corre forge, lanza
-  campañas por el panel, escribe el código en una rama `claude/...` y abre el PR a `main` (`--base main`).
+  campañas por el panel, escribe el código en una rama `claude/...` y abre el PR a `main`.
   - Antes del PR: `..\.venv\Scripts\python -m nexus.devcheck` desde `local`, que corre lo mismo que el CI.
   - Con el CI en verde y sin conflictos, Claude fusiona (`gh pr merge N --merge --delete-branch`) y hace `git pull`
     en `main` (R-11).
@@ -212,10 +212,9 @@ ese objetivo.
 ### En orden de prioridad
 
 1. **Dueño:** no queda nada por fusionar. Desde el 30-oct Claude fusiona sus PR con el CI en verde (R-11), y el #90,
-   el #91 y el #92 ya están en `main`. Queda una decisión de configuración: que la rama por defecto de GitHub pase a
-   ser `main`. Hoy es `claude/nice-sagan-inp0u8`, un resto de las sesiones en la nube, y obliga a usar `--base main`
-   en cada PR. Lo que pedía el #76 ya está
-   probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
+   el #91 y el #92 ya están en `main`. El 30-oct, con el visto bueno del dueño, la rama por defecto de GitHub pasó a
+   ser `main`; antes era `claude/nice-sagan-inp0u8`, un resto de las sesiones en la nube. Lo que pedía el #76 ya
+   está probado: la corrida de MetaMorpho del 27-oct a las 10:18 pasó en verde y `colaSuministro` subió de 3–8 a
    18–19 por corrida. El ciclo del 28-oct tendría que terminar en verde también con la línea base de Euler (el
    `TypeError` del 27-oct se corrigió en el #79).
 2. **Dueño, rendimiento de la PC (configuración del sistema: la hace el dueño):**
