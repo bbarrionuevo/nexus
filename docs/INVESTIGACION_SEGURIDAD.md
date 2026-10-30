@@ -217,28 +217,31 @@ Los resultados quedan en `%LOCALAPPDATA%\nexus\secresearch\`:
 
 Para quitarlo: `Unregister-ScheduledTask nexus-ciclo -Confirm:$false`.
 
-### Iteración PC ↔ Claude
+### Iteración en la PC
 
-La sesión de Claude en la nube no llega a la PC. Los resultados nunca van al repo, que es público (R-4). El ciclo
-de mejora es:
+Desde el 30-oct Claude trabaja solo en la PC (R-12), con Claude Code en la carpeta de nexus: lee los informes
+directo, corre forge y lanza las campañas. Los resultados nunca van al repo, que es público (R-4). El ciclo de
+mejora es:
 
-1. **Traer el código a la PC.** Desde `%USERPROFILE%\nexus`: `git fetch` y `git checkout <rama>` para probar una rama
-   sin fusionar, o `git pull` en `main` después de fusionar el PR.
+1. **Partir de `main`.** Desde `%USERPROFILE%\nexus`: `git pull` en `main`. Para probar una rama sin fusionar,
+   `git checkout <rama>`.
 2. **Correr.**
    ```powershell
    ..\.venv\Scripts\python -m nexus.secresearch.validate morpho-org/metamorpho --harness morpho-org__metamorpho
    ```
-   La primera vez conviene a mano, para ver el tiempo de compilación. Después alcanza con el ciclo programado.
-3. **Devolverle a Claude `%LOCALAPPDATA%\nexus\secresearch\para_claude.md`.** Se puede pegar en la sesión, o abrir
-   Claude Code en la PC, en la carpeta de nexus (app de escritorio o `claude remote-control`), que lo lee directo y
-   puede reproducir con forge. Trae:
+   Para iterar rápido, `tools/forge_v2` y el panel. Lo largo, en campañas del panel o en el ciclo programado.
+3. **Leer `%LOCALAPPDATA%\nexus\secresearch\para_claude.md`** (y el log de cada campaña), que traen:
    - las fallas distintas, con su ley (`H-...`), el contraejemplo y la semilla;
    - la cobertura de la última corrida: llamadas y reversiones por cada acción y macro del handler (métricas de
      forge) y el log de `afterInvariant`: el contador de verificaciones (que la corrida no pasó en vacío) y las
      métricas del cazador. `validate` corre forge con `-vv` porque, sin eso, forge borra los logs del JSON.
 4. **Qué hace Claude con eso.**
-   - Una falla con código `H-...` se reproduce con la misma semilla y se clasifica: error del harness (se corrige) o
+   - Una falla con código de ley se reproduce con la misma semilla y se clasifica: error del harness (se corrige) o
      candidato (se aísla en un test mínimo y se revisa contra auditorías previas, etapas E y F).
+   - Una reversión del handler también se investiga, aunque el invariante pase: es una secuencia que quedó sin
+     verificar. Se reproduce con `fail_on_revert` y varias semillas (con una sola puede no aparecer) y se repite la
+     secuencia guardada con `-vvvv` (30-oct: así salieron los bordes de dominio de Midnight, el Vault V3 y
+     TokenizedStrategy).
    - Sin fallas, las métricas dicen hacia dónde empujar: por ejemplo, si una macro casi nunca corrió o revierte
      siempre, si las reversiones pasan del 5 % o si nunca hubo depósitos con 0 acciones.
 5. **Ver el estado sin pegar nada:** `python -m nexus.secresearch.dashboard` abre la página local con lo mismo que
@@ -273,19 +276,23 @@ catálogo privado, el 26-oct.
 **Seguridad de la PC:** compilar y testear código de terceros es ejecutar código ajeno. FFI de Foundry
 siempre apagado (`FOUNDRY_FFI=false`), y nunca correr scripts de despliegue (`forge script`) de esos repos.
 
-## Selección de programas (fase 3)
+## Selección de objetivos por valor esperado (R-13, desde el 30-oct)
 
-No hay programas seleccionados todavía. El 26-oct no se encontró un programa activo centrado en
-ERC-4626: la competencia de Immunefi sobre el vault ERC-4626 de Firelight terminó en noviembre de 2025.
-Procedimiento:
+Los tres programas del catálogo (Morpho, Yearn V3 y Euler v2) los habilitó el dueño. Dentro de ellos, el objetivo
+siguiente se elige por valor esperado: la recompensa del programa para ese código por la probabilidad de un
+hallazgo válido. Pesan:
 
-1. Buscar en los directorios oficiales (Immunefi, Cantina, Sherlock) los programas con vaults ERC-4626
-   en alcance y código abierto.
-2. Leer el reglamento vigente: alcance, exclusiones, requisitos de PoC, KYC, plazos y si permite fork local.
-3. Cargar como máximo 3 en el catálogo, con `in_scope` y `verified_by_owner` en `true`.
+- **La recompensa del grupo o componente:** los programas pagan distinto según el código (Morpho por grupo, Euler
+  por componente).
+- **Que sea la última versión desplegada y en alcance:** la página de direcciones del programa es la fuente de
+  verdad, y el commit desplegado se compara con el del repo.
+- **La probabilidad:** código nuevo o con poca auditoría, contabilidad compleja, interacciones (callbacks, adapters,
+  vaults sobre vaults) y pocos duplicados posibles (auditorías, concursos y riesgos documentados).
+- **El costo:** si nexus ya tiene un cazador parecido, el objetivo cuesta menos.
 
-Candidatos a **verificar** (protocolos con vaults ERC-4626 de código abierto; no se sabe si hoy tienen
-programa activo): Morpho (MetaMorpho), Yearn V3 y Euler v2.
+La tabla viva está en el traspaso (sección 5). Dentro de un programa habilitado, Claude puede sumar al catálogo un repo
+en alcance (R-1). Un programa nuevo lo habilita el dueño, después de leer el reglamento vigente: alcance,
+exclusiones, requisitos de PoC, KYC, plazos y si permite fork local.
 
 ## Plan de 30 días, con puntos de decisión
 

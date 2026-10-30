@@ -33,7 +33,7 @@ local/nexus/devcheck.py    verificación local: sintaxis, lint, tests, rutas pro
 local/nexus/paths.py       carpeta privada NEXUS_HOME (fuera del repo)
 local/tests/               tests (test_limits.py está protegido)
 tools/protected_paths.py   control de rutas protegidas (CI)
-tools/edr/                 verificación de harness sin forge (solc-js + EDR), para la nube
+tools/edr/                 verificación de harness sin forge (solc-js + EDR); histórica: Claude trabaja solo en la PC
 tools/windows/             registro del ciclo desatendido en el Programador de tareas
 docs/                      REGLAS (protegido) e INVESTIGACION_SEGURIDAD
 ```
