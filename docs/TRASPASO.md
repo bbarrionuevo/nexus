@@ -411,10 +411,13 @@ En orden de prioridad:
        llamadas) sin reversiones.
 
      Lección: en cada campaña hay que mirar la columna de reversiones por acción, no solo el PASS.
-   - **Campaña profunda de la B:** 1536×500 sobre las dos suites de callbacks, semilla `0xc14689c092fb170f`, lanzada
-     el 30-oct a las 03:33 desde el código del panel
-     (`20261030-033259_midnight_1536x500_0xc14689c092fb170f`). Al terminar, leer `FIN ... salida N` y las
-     reversiones por acción en `NEXUS_HOME\secresearch\campanas\` (o en el panel), y anotar el resultado acá.
+   - **Campaña profunda de la B** (30-oct, de las 03:33 a las 06:58, 1536×500, 768.000 llamadas por suite, semilla
+     `0xc14689c092fb170f`, `20261030-033259_midnight_1536x500_0xc14689c092fb170f`): las dos suites, sin gates y con
+     gates, en verde. **Ninguna ley violada y 0 reversiones del handler.** En la última corrida de cada suite hubo:
+     - unas 52.000 leyes evaluadas y 16 a 23 `take`;
+     - 14 a 16 operaciones con callback y 32 anidadas, de las que pasaron 23 a 25;
+     - un intento sobre el vendedor bloqueado;
+     - 13 a 15 préstamos flash y 21 `multicall`.
    - La etapa E está en `NEXUS_HOME/secresearch/etapa_e/morpho-org__midnight/` (privado): el índice, las 15
      auditorías en texto, la versión desplegada de cada contrato y el diseño del cazador.
    - Contexto de verificación previa:

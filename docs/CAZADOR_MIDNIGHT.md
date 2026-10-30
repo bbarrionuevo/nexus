@@ -4,7 +4,8 @@ Estado: **variantes A y B escritas y verificadas con forge en la PC** (29 y 30-o
 seis suites, cuatro de la A y dos de la B, sin falsos positivos ni reversiones: 32×300 con las semillas `0x2a` y
 `0x3`, y `validate` sobre el repo entero a 64×300. Las 47 mutaciones de referencia se detectan. La campaña profunda
 de la A (1536×500) pasó sin leyes rotas; las reversiones que tuvo con 6 decimales eran del cazador y están arregladas
-(sección 6). **No hay hallazgos.**
+(sección 6). La de la B (1536×500, 768.000 llamadas por suite) pasó sin leyes rotas y sin reversiones. **No hay
+hallazgos.**
 
 ## 1. Qué versión y qué alcance
 
@@ -204,6 +205,10 @@ son del harness arreglado.
   La semilla pesa: con `0x2a` cada variante hace de 30 a 39 `take`, y con `0x3`, de 8 a 9 y más rechazos. Con las
   mismas semillas, los números no son los del 29-oct: el fuzzer arma valores también con el código y el estado
   desplegados, y los dos cambiaron con la B y con el arreglo.
+- **Campaña profunda de la B** (30-oct, panel, 1536×500, 768.000 llamadas por suite, semilla `0xc14689c092fb170f`):
+  las dos suites en verde, sin leyes rotas y sin reversiones del handler. En la última corrida de cada suite hubo unas
+  52.000 leyes evaluadas, 32 operaciones anidadas (pasaron 23 a 25), un intento sobre el vendedor bloqueado, 13 a 15
+  préstamos flash y 21 `multicall`.
 - **Lo que el cazador recorre poco:**
   - las liquidaciones post-vencimiento (de 1 a 7 por corrida);
   - las llamadas sueltas a `updatePosition` que devengan comisión (0 o 1) o recortan crédito (de 0 a 4). Los devengos
