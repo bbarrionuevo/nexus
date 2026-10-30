@@ -52,15 +52,35 @@ def test_lo_que_se_lanza_esta_validado():
             panel.validate_params(bad)
 
 
-def test_el_panel_conoce_todos_los_perfiles_de_forge_v2():
-    """29-oct: el perfil vault-v3 estaba en tools/forge_v2 y no en el panel."""
+def _forge_v2():
     import importlib.util
     spec = importlib.util.spec_from_file_location("forge_v2", panel.FORGE_V2)
     fv2 = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fv2)
+    return fv2
+
+
+def test_el_panel_conoce_todos_los_perfiles_de_forge_v2():
+    """29-oct: el perfil vault-v3 estaba en tools/forge_v2 y no en el panel."""
+    fv2 = _forge_v2()
     assert set(panel.PERFILES) == set(fv2.PERFILES)
     for nombre, (_, prefijo) in panel.PERFILES.items():
         assert fv2.PERFILES[nombre]["match"] == "^" + prefijo, nombre
+
+
+def test_forge_v2_frena_si_un_submodulo_que_copia_no_esta_en_el_commit_fijado():
+    """30-oct: el ciclo movió el EVC de EulerEarn al último commit y armar lo copiaba sin avisar."""
+    fv2 = _forge_v2()
+    status = (" 232ff9ba lib/erc4626-tests (v0.1.1)\n"
+              "+4e5b8c56 lib/ethereum-vault-connector (v1.0.1-9-g4e5b8c5)\n"
+              "-77041d2c lib/forge-std\n"
+              " e4f70216 lib/openzeppelin-contracts (v4.8.0)\n"
+              "+5b98b420 lib/euler-vault-kit (v1.0.1)\n")
+    rels = ("src", "lib/forge-std", "lib/openzeppelin-contracts/contracts", "lib/ethereum-vault-connector/src")
+    # euler-vault-kit también está movido, pero el perfil no copia nada de ahí
+    assert fv2._submodulos_fuera(status, rels) == ["lib/ethereum-vault-connector", "lib/forge-std"]
+    en_orden = status.replace("+4e5b", " 4e5b").replace("-7704", " 7704")
+    assert fv2._submodulos_fuera(en_orden, rels) == []
 
 
 def test_solo_se_sirven_archivos_de_secresearch(home):

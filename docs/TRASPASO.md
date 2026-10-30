@@ -183,7 +183,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #89 | Morpho Midnight: el cazador del núcleo desplegado (leyes MN-...), el perfil `midnight` de `tools/forge_v2` y del panel, el alcance de Midnight y MetaMorpho V1.1 resuelto con el reglamento vigente, y las campañas del panel separadas del job de quien las lanza |
 | #90 | Morpho Midnight, variante B: callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates (10 mutaciones nuevas, B1–B10); el arreglo de `liqCycle` con el precio en 0, que dejó ver la campaña profunda; trae también los dos commits del traspaso que quedaron afuera del #89 |
 | #91 | Vault V3: el cazador a prueba de desbordes (el modelo de cada operación por llamada externa; si desborda, se espera que el vault revierta) y el dominio `total_supply` ≤ 2^128, tras las reversiones del handler de la campaña profunda; dos pruebas de regresión. Sale de la rama del #90 |
-| #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Sale de la rama del #91 |
+| #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Además, `tools/forge_v2` controla en `armar` y `mutar` el commit y los submódulos del clon. Sale de la rama del #91 |
 
 ## 5. Próximos pasos
 
@@ -350,7 +350,8 @@ En orden de prioridad:
    - **Campañas cortadas el 29-oct:** la profunda del vault (768×1000, semilla `0xe782c4dd280d82a0`, lanzada a las
      16:22) y las de 128×6000 de TokenizedStrategy y EulerEarn murieron sin resultados cuando se reinició la sesión de
      Claude Code que las había lanzado (entre las 17:35 y las 18:10). Quedaban dentro del job de esa sesión, y forge
-     escribe la salida recién al terminar cada variante. Las de 128×6000 siguen pendientes.
+     escribe la salida recién al terminar cada variante. Las de 128×6000 se relanzaron el 30-oct (ver la campaña
+     profunda de TokenizedStrategy, más abajo en este punto).
    - **Campaña profunda del vault** (`20261029-181742_vault-v3_768x1000_0xe782c4dd280d82a0`, relanzada a las 18:17 y
      terminada el 30-oct a las 02:49): las 4 variantes en verde y **ninguna ley violada**. Pero hubo reversiones del
      handler en dos variantes, y esas secuencias no quedaron verificadas:
@@ -389,8 +390,15 @@ En orden de prioridad:
      - las 39 mutaciones detectadas, en las mismas variantes que antes;
      - con `fail_on_revert`, 384.000 llamadas en la variante con protocolo, sin reversiones.
 
-     Las de 128×6000 (TokenizedStrategy `0x558c16a948b3b745` y EulerEarn `0xf204663f1abb7cbe`) murieron el 29-oct sin
-     resultados y quedan por relanzar (ver «Campañas cortadas el 29-oct»). Los resultados de las campañas están en
+     Las de 128×6000 murieron el 29-oct sin resultados y se relanzaron el 30-oct desde el panel, con las mismas
+     semillas:
+     - TokenizedStrategy, a las 08:19, con el harness del #92:
+       `20261030-081941_tokenized-strategy_128x6000_0x558c16a948b3b745`;
+     - EulerEarn, a las 08:21: `20261030-082114_euler-earn_128x6000_0xf204663f1abb7cbe`. El primer intento no
+       arrancó porque el ciclo había movido el clon (abajo, «Los clones de `NEXUS_HOME/work`»).
+
+     Al terminar, leer `FIN ... salida N` y las reversiones por acción, y anotar el resultado acá. Los resultados de las
+     campañas están en
      `NEXUS_HOME\secresearch\campanas\` (privado) y se ven en el panel.
    - **Herramienta nueva:** `vyper` 0.3.10 quedó instalado en el venv (28-oct, `pip install vyper==0.3.10`; anda en
      Python 3.12 con avisos de deprecación y compila `VaultV3.vy` en ~6 s). Los tests de foundry de
@@ -466,6 +474,13 @@ En orden de prioridad:
 
 ## 6. Pendientes y cuidados
 
+- **Los clones de `NEXUS_HOME/work` son compartidos.** El ciclo desatendido los mueve al último commit para sus
+  líneas base. `validate` vuelve al commit fijado; `tools/forge_v2`, no. El 30-oct el ciclo movió los de Midnight,
+  Vault V3, TokenizedStrategy y EulerEarn, y en EulerEarn también el submódulo del EVC, que volver al commit fijado
+  no restaura.
+  - Desde el 30-oct, `armar` y `mutar` controlan el commit y los submódulos que copian, y frenan con el comando para
+    volver.
+  - Se revisó con el reflog: las verificaciones del 30-oct se hicieron con los clones en el commit fijado.
 - **Campañas que sobreviven a la sesión:** desde el 29-oct `panel.launch` pide separarse del job de quien lanza
   (`CREATE_BREAKAWAY_FROM_JOB`) y, si Windows no lo permite, lanza como antes. Una campaña lanzada a mano desde una
   sesión de Claude Code, sin el panel, muere si la sesión se reinicia.
