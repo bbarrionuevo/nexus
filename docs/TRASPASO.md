@@ -99,7 +99,16 @@ Lo que conviene saber de forge en un handler:
 - `tools/forge_v2` tiene perfiles: sin nada, Vault V2; con `NEXUS_PERFIL=euler-earn`, EulerEarn (su proyecto reducido,
   su harness y `mutaciones_euler_earn.json`); con `NEXUS_PERFIL=tokenized-strategy`, TokenizedStrategy de Yearn V3
   (el clon en el tag `v3.1.0`). Los submódulos anidados de euler-earn pasan los 260 caracteres de ruta de Windows:
-  nexus clona con `-c core.longpaths=true`.
+  nexus clona con `-c core.longpaths=true`. Después se sumaron `vault-v3`, `midnight` y `midnight-bundles`.
+- **Fuzzing guiado por cobertura (30-oct), por defecto en `correr` y `mutar`:** forge guarda en un corpus las
+  secuencias que abren caminos nuevos y las muta. Con el mismo presupuesto (32×200, semillas `0x2a` y `0x3`), la
+  suite con gates de Midnight detectó 4 de 6 mutaciones raras (M25, M35, B3) con corpus y 1 de 6 sin él.
+  `NEXUS_CORPUS=0` lo apaga; en el panel, la casilla "guiada por cobertura". Con el corpus, forge escribe cada pocos
+  segundos un evento `pulse` por suite, y el panel (y `--resumen`) muestran el avance, la velocidad, los caminos vistos
+  y cuánto falta.
+- **Una sola compilación:** `forge test` no reusa la caché de `forge build` (otra selección de salidas), así que el
+  `forge build` previo quedó solo en los perfiles que despliegan por nombre con `deployCode` (`vault-v2` y
+  `vault-v3`). Con via_ir ahorra unos 95 s por corrida y por mutación en `midnight` y `midnight-bundles`.
 
 ## 3. Estado por etapa (29-oct-2026)
 
@@ -118,6 +127,7 @@ Lo que conviene saber de forge en un handler:
 | D''''. Harness de TokenizedStrategy | Nuevo (28-oct): Yearn V3, `v3.1.0` (lo desplegado en `0x310f…1e76` y en alcance), la contabilidad nueva ("constant accrual", pestillo por bloque, piso de 1e3 acciones, quema de bloqueadas por pérdida en vivo) y la de reporte, 11 leyes `Y-...` exactas contra el almacenamiento crudo ([CAZADOR_TOKENIZED_STRATEGY.md](CAZADOR_TOKENIZED_STRATEGY.md)). Verificado con forge en la PC: 4 de 4 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada, 8 de 8 con los escenarios) y las 39 mutaciones de referencia detectadas. Sin hallazgos |
 | D'''''. Harness del Vault V3 | Nuevo (29-oct): Yearn V3, `v3.1.0` (lo desplegado en `0xdD3F…7824`), el vault real por su fábrica compilado con el `vyper` del venv (sin FFI), tres estrategias ERC-4626 de prueba y un accountant; 10 leyes `YV-...` exactas contra el almacenamiento crudo ([CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md)). Verificado con forge en la PC: las 4 variantes sin falsos positivos ni reversiones (24×500 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×500, semilla `0x68a90a1321ee064a`, 4 de 4) y las 28 mutaciones de referencia detectadas. **Sin hallazgos** |
 | D''''''. Harness de Midnight | Nuevo (29-oct; variante B el 30-oct): Morpho Midnight, el núcleo desplegado (etiqueta `2026-08-24`, coincidencia completa en Sourcify), un mercado de dos colaterales con ofertas entre cuatro actores, liquidaciones normales y post-vencimiento y deuda incobrable; 8 leyes `MN-...` exactas contra los getters. La variante B suma callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates ([CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md)). Verificado con forge en la PC: las 6 suites (4 de la A y 2 de la B) sin falsos positivos ni reversiones (32×300 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×300, semilla `0x7dea4e2c53b47e39`, 10 de 10 con las pruebas de regresión) y las 47 mutaciones de referencia detectadas; la campaña profunda de la A (1536×500) sin leyes violadas. **Sin hallazgos** |
+| D'''''''. Harness de MidnightBundlesV2 | Nuevo (30-oct), fase 1: Morpho Bundles, la etiqueta `2026-10-06` (lo desplegado en `0x78ed…bDbA4`; en `main` solo cambió la licencia), las cuatro entradas de quien toma ofertas sobre el núcleo real de Midnight, con ofertas de los otros actores; 6 leyes `BU-...` universales y exactas contra saldos y posiciones ([CAZADOR_MIDNIGHT_BUNDLES.md](CAZADOR_MIDNIGHT_BUNDLES.md)). Verificado con forge en la PC: las 2 variantes sin falsos positivos ni reversiones (32×120 con `0x2a` y `0x3`, con corpus) y las 24 mutaciones de referencia detectadas. **Sin hallazgos** |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
@@ -181,6 +191,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #92 | TokenizedStrategy: el mismo arreglo que el #91 (el modelo de las entradas, las salidas, el reporte y el devengamiento de los setters por llamada externa, y el dominio `totalSupply` ≤ 2^128), tras reproducir las 11 reversiones del handler de su campaña con otras semillas; una prueba de regresión. Además, `tools/forge_v2` controla en `armar` y `mutar` el commit y los submódulos del clon. Sale de la rama del #91 |
 | #93 | Reglas y flujo, con la autorización del dueño del 30-oct: Claude fusiona sus PR con el CI en verde (R-11), trabaja solo en la PC (R-12) y elige los objetivos por valor esperado (R-13); dentro de un programa habilitado puede sumar repos en alcance (R-1); `nexus.devcheck` como chequeo único antes del PR; la primera tabla de objetivos por valor esperado |
 | #94 | Objetivos por valor esperado, con los programas releídos el 30-oct (Euler pasó a un presupuesto de 1,5M con tope del 10 % del impacto; Morpho publica los Bundles nuevos en su página de direcciones): los Bundles de Morpho, sumados al catálogo, son el objetivo siguiente |
+| #97 | Morpho Bundles: el cazador de MidnightBundlesV2, fase 1 (leyes BU-...), el perfil `midnight-bundles` de `tools/forge_v2` y del panel con 24 mutaciones; el fuzzing guiado por cobertura por defecto, el avance en vivo de las campañas en el panel, una sola compilación por corrida donde no hay `deployCode`, y las pruebas que ya no dependen de la configuración regional de Windows |
 | #95 | El panel automatiza la lección del 30-oct: lee las reversiones del handler por acción, marca en rojo una campaña que pasa con reversiones ("pasó con reversiones del handler (revisar)") y `--resumen <id>` la muestra en la terminal con cómo investigarlas |
 
 ## 5. Próximos pasos
@@ -193,7 +204,7 @@ ese objetivo.
 
 | Objetivo | Programa y grupo | Critical | Código | Estado en nexus | Valor esperado |
 |---|---|---|---|---|---|
-| **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Sin cazador; al catálogo el 30-oct (R-1). MidnightBundlesV2 usa los callbacks de Midnight que el cazador ya modela | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
+| **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Al catálogo el 30-oct (R-1). MidnightBundlesV2: fase 1 (las cuatro entradas de toma) verificada (#97). Revisión manual de los cuatro contratos (operaciones en nombre de otro, callbacks, permisos), de los ratifiers, `BlueBuyCallback` y `EcrecoverAuthorizer`: sin candidatos (privado) | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
 | Midnight: `Mempool` | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Nuevo en la página de direcciones (`0xde2d…A8F7`). Según Sourcify es `periphery/Log.sol`: 443 bytes, un `fallback` que solo emite la calldata como evento, sin estado ni fondos | Revisado el 30-oct | Prácticamente nulo |
 | Euler v2, núcleo (EVC, EVK sin Synths y Price Oracle) | Euler, "Core Components" | Hasta 1.500.000, pero como máximo el 10 % de la pérdida demostrable en producción | Grande y muy auditado | Del EVK, solo la línea base | Medio-bajo. El programa cambió: ya no son 7,5M sino un presupuesto total de 1,5M, por orden de llegada, con KYC |
 | Midnight (lo que falta del núcleo) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | — | Variantes A y B verificadas y campañas profundas sin leyes rotas | Medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
@@ -203,11 +214,11 @@ ese objetivo.
 | Yearn V3 | Yearn, Immunefi | Hasta 200.000 | La contabilidad de la 3.1.0 no tiene auditoría pública | TokenizedStrategy y Vault V3 verificados | Bajo: el tope es bajo |
 | MetaMorpho V1.1 | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | Cambios chicos sobre la V1.0; `lostAssets` ya cazado en EulerEarn | Evaluado el 29-oct | Bajo |
 
-**Lo siguiente: el cazador de los Bundles de Morpho**, empezando por MidnightBundlesV2. Es el más nuevo (auditado el
-6-oct) y opera sobre Midnight, que nexus ya modela con callbacks. Los pasos:
-- la etapa E: las diez auditorías y las specs de Certora, en `NEXUS_HOME` (privado);
-- la versión desplegada de cada contrato, contra las etiquetas del repo;
-- el diseño del cazador.
+**Lo siguiente: los Bundles de Morpho.** La fase 1 de MidnightBundlesV2 está verificada (punto 11). Siguen:
+- la campaña profunda de la fase 1, con corpus;
+- la fase 2: `CancelAndMake` con Blue, `BlueBuyCallback` y `PriceRatifierV1` reales, y las ventas de la fase 1
+  tomando ofertas financiadas desde Blue (diseño en `etapa_e/morpho-org__bundles/diseno_cazador.md`, privado);
+- después, BlueBundlesV1 (el grupo de recompensa más alto).
 
 ### En orden de prioridad
 
@@ -498,6 +509,19 @@ ese objetivo.
        se cazó en EulerEarn (fork), y las auditorías de la V1.1 no tienen Medium abiertos. Detalle en
        `etapa_e/morpho-org__metamorpho-v1.1/indice.md` (privado).
 
+11. **Morpho Bundles: MidnightBundlesV2, fase 1 (#97).** Ver [CAZADOR_MIDNIGHT_BUNDLES.md](CAZADOR_MIDNIGHT_BUNDLES.md).
+   - Las cuatro entradas de toma (compra y venta, por unidades y por activos) sobre el núcleo real, con 0 a 4 ofertas
+     de los otros actores por llamada, comisiones de referido extremas, objetivos `type(uint256).max`, colateral,
+     repago y retiro de crédito. Leyes BU-FUNDS, BU-FEE, BU-CONS, BU-ISO, BU-LIMIT y BU-LIVE (en las dos
+     direcciones: revierte cuando corresponde y no revierte por una validación que no corresponde).
+   - Verificado con forge en la PC: las dos variantes (comisiones de liquidación al 50 % y todas las comisiones al
+     máximo) sin falsos positivos ni reversiones del handler, 32×120 con `0x2a` y `0x3`; las 24 mutaciones de
+     referencia detectadas.
+   - Al armarlo: `TakeAmountsLib` revierte con ofertas no tomables y el bundle la llama fuera del `try`, así que una
+     de esas ofertas revierte la llamada entera; está documentado en la librería y el cazador las genera 1 de cada 16.
+   - En `main`, `src` solo cambió la licencia desde la etiqueta desplegada; el PR #199 es de specs de Certora.
+   - **Sin hallazgos.** La revisión manual está en `etapa_e/morpho-org__bundles/revision_manual.md` (privado).
+
 ## 6. Pendientes y cuidados
 
 - **Los clones de `NEXUS_HOME/work` son compartidos.** El ciclo desatendido los mueve al último commit para sus
@@ -519,8 +543,8 @@ ese objetivo.
   `secresearch.yaml` suelto en la carpeta del repo; quedó en un `git stash` del dueño. No se usa, porque nexus lee el
   de `%LOCALAPPDATA%\nexus`, y no conviene devolverlo a la carpeta del repo: es público.
 - **Ramas viejas del trading:** `pc-status`, `pc-sesion` y `data`. No se usan; borrarlas es decisión del dueño.
-- **Tests en la PC:** `python -m pytest -q` corrido directo en Windows necesita `$env:PYTHONUTF8 = '1'`. Sin eso,
-  tres tests fallan al leer archivos con acentos en la codificación de Windows. `devcheck` ya lo define.
+- **Tests en la PC:** desde el 30-oct `python -m pytest -q` pasa también sin `PYTHONUTF8`: las pruebas leen y
+  escriben en UTF-8 explícito, y `run.py` escribe sus informes en UTF-8.
 - **Errores de nexus que no son fallas del objetivo:** el 27-oct la línea base de `euler-vault-kit` pasó entera
   (483 pasan, 3 omitidos), pero el informe se cayó con un `TypeError`. La suite ESR llama `transfer`, `approve` y
   `mint` del token y del vault; al quitar el nombre del contrato, ordenar los pares repetidos comparaba diccionarios.

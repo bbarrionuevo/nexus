@@ -68,11 +68,12 @@ def test_una_campana_que_pasa_con_reversiones_del_handler_no_queda_como_pasa(hom
 
 def test_lo_que_se_lanza_esta_validado():
     p = panel.validate_params({"perfil": "euler-earn", "runs": "64", "depth": 200})
-    assert (p["runs"], p["depth"], p["match"], p["fail_on_revert"]) == (64, 200, "", False)
+    assert (p["runs"], p["depth"], p["match"], p["fail_on_revert"], p["corpus"]) == (64, 200, "", False, True)
     assert panel.SEED.match(p["seed"])
     ok = panel.validate_params({"perfil": "tokenized-strategy", "seed": "0xABC",
                                 "match": "^NexusTokenizedStrategyInvariantFeeTest$", "fail_on_revert": 1})
     assert ok["seed"] == "0xabc" and ok["fail_on_revert"] is True
+    assert panel.validate_params({"perfil": "vault-v2", "corpus": False})["corpus"] is False
     for bad in ({"perfil": "otro"}, {"perfil": "vault-v2", "runs": 0}, {"perfil": "vault-v2", "depth": 10**6},
                 {"perfil": "vault-v2", "seed": "12; calc"}, {"perfil": "vault-v2", "match": "^NexusVaultV2 & calc"},
                 {"perfil": "vault-v2", "match": "^NexusEulerEarn"}, {"perfil": "vault-v2", "runs": "x"}):
@@ -94,6 +95,18 @@ def test_el_panel_conoce_todos_los_perfiles_de_forge_v2():
     assert set(panel.PERFILES) == set(fv2.PERFILES)
     for nombre, (_, prefijo) in panel.PERFILES.items():
         assert fv2.PERFILES[nombre]["match"] == "^" + prefijo, nombre
+
+
+def test_forge_v2_lee_los_resultados_aunque_forge_escriba_otros_json():
+    """30-oct: con el fuzzing guiado por cobertura (corpus_dir), forge test --json escribe otros objetos antes del de
+    resultados, y mutar fallaba con «Extra data»."""
+    fv2 = _forge_v2()
+    res = {"test/nexus/X.t.sol:NexusXTest": {"test_results": {"invariant_x()": {"status": "Success"}}}}
+    otro = {"edge_coverage": 1234, "corpus": {"size": 7}}
+    salida = "Compiling...\n" + json.dumps(otro) + "\n" + json.dumps(res) + "\n"
+    assert fv2._resultados(salida) == res
+    assert fv2._resultados(json.dumps(res)) == res
+    assert fv2._resultados("Compiler run failed: Error") is None
 
 
 def test_forge_v2_frena_si_un_submodulo_que_copia_no_esta_en_el_commit_fijado():
@@ -196,3 +209,51 @@ def test_el_servidor_pide_token_host_y_encabezado_para_actuar(server):
     assert status == 400 and "desconocida" in json.loads(data)["error"]
     status, _, data = _req(server, "POST", "/api/launch", {"X-Nexus-Token": "tok"}, json.dumps({"perfil": "x"}))
     assert status == 400
+
+
+def test_forge_v2_guia_por_cobertura_salvo_que_se_apague(monkeypatch):
+    """30-oct: el corpus de forge (fuzzing guiado por cobertura) va por defecto en correr y mutar; NEXUS_CORPUS=0 lo
+    apaga, y lo que ya venga en el entorno manda."""
+    fv2 = _forge_v2()
+    monkeypatch.delenv("NEXUS_CORPUS", raising=False)
+    monkeypatch.delenv("FOUNDRY_INVARIANT_CORPUS_DIR", raising=False)
+    env = fv2._env(8, 50, "0x1")
+    assert env["FOUNDRY_INVARIANT_CORPUS_DIR"] == "cache/invariant/corpus" and env["FOUNDRY_FFI"] == "false"
+    monkeypatch.setenv("NEXUS_CORPUS", "0")
+    assert "FOUNDRY_INVARIANT_CORPUS_DIR" not in fv2._env(8, 50, "0x1")
+    monkeypatch.setenv("NEXUS_CORPUS", "1")
+    monkeypatch.setenv("FOUNDRY_INVARIANT_CORPUS_DIR", "otro/corpus")
+    assert fv2._env(8, 50, "0x1")["FOUNDRY_INVARIANT_CORPUS_DIR"] == "otro/corpus"
+
+
+def test_forge_v2_compila_el_proyecto_entero_solo_donde_hay_deploycode():
+    """30-oct: forge test no reusa la caché de forge build (otra selección de salidas); el build completo previo solo
+    hace falta donde el harness despliega artefactos por nombre (deployCode), y en el resto compilaba dos veces."""
+    fv2 = _forge_v2()
+    for nombre, perfil in fv2.PERFILES.items():
+        usa = any("deployCode" in f.read_text(encoding="utf-8") for f in perfil["harness"].glob("*.sol"))
+        assert bool(perfil.get("build")) == usa, nombre
+
+
+def test_el_avance_de_una_campana_guiada_por_cobertura_sale_de_los_pulsos(tmp_path):
+    """30-oct: con el corpus, forge escribe cada pocos segundos un evento "pulse" por suite; el panel se queda con el
+    último y estima cuánto falta (corridas × profundidad)."""
+    import json as _json
+
+    def pulso(txs, edges):
+        return _json.dumps({"timestamp": 1793377391, "event": "pulse",
+                            "contract": "test/nexus/NexusMidnightBundles.t.sol:NexusMidnightBundlesTest",
+                            "metrics": {"cumulative_edges_seen": edges, "corpus_count": 6},
+                            "total_txs": txs, "tps": 100.0, "worker": {"secs_since_new_edge": 0.5}},
+                           separators=(",", ":"))
+    log = "\n".join(["INICIO 2026-10-30T13:00:00-03:00 c2", pulso(600, 50), pulso(1200, 61), "{no es json"])
+    st = panel.parse_log(log)
+    assert st["progress"] == {"NexusMidnightBundlesTest": {"txs": 1200, "tps": 100.0, "edges": 61, "corpus": 6,
+                                                           "since_new_edge": 0.5}}
+    home = tmp_path / "home"
+    d = panel.camp_dir(home)
+    (d / "c2.txt").write_text(log, encoding="utf-8")
+    (d / "c2.json").write_text(_json.dumps({"id": "c2", "runs": 4, "depth": 1800, "corpus": True}), encoding="utf-8")
+    texto = panel.resumen("c2", home)
+    assert "(guiada por cobertura)" in texto
+    assert "1.200 de 7.200 transacciones" in texto and "faltan ~1 min" in texto and "caminos 61" in texto

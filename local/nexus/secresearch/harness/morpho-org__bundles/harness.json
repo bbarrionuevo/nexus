@@ -1,0 +1,13 @@
+{
+  "repo": "morpho-org/bundles",
+  "match_contract": "^NexusMidnightBundles",
+  "aislado": true,
+  "env": {
+    "FOUNDRY_FUZZ_RUNS": "1000",
+    "FOUNDRY_FUZZ_MAX_TEST_REJECTS": "150000",
+    "FOUNDRY_INVARIANT_RUNS": "64",
+    "FOUNDRY_INVARIANT_DEPTH": "200",
+    "FOUNDRY_INVARIANT_SHOW_METRICS": "true"
+  },
+  "verified": "30-oct-2026 con forge 1.8.6 en la PC, morpho-org/bundles en la etiqueta 2026-10-06 (2ed954e, lo desplegado en 0x78ed...bDbA4; en main solo cambio la licencia): en el proyecto reducido de tools/forge_v2 (NEXUS_PERFIL=midnight-bundles), fase 1 (las cuatro entradas de toma), las 2 variantes (comisiones de liquidacion al 50 % y todas al maximo) pasan 32x120 con 0x2a y 0x3, con el fuzzing guiado por cobertura, sin falsos positivos ni reversiones del handler; las 24 mutaciones de mutaciones_midnight_bundles.json (U1-U24) detectadas"
+}

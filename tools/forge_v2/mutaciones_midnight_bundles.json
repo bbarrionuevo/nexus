@@ -1,0 +1,122 @@
+[
+ [
+  "U1 compra por unidades: la comision de referido es filledBuyerAssets*pct/WAD",
+  "uint256 referralFeeAssets = filledBuyerAssets.mulDivDown(referralFeePct, WAD - referralFeePct);",
+  "uint256 referralFeeAssets = filledBuyerAssets.mulDivDown(referralFeePct, WAD);"
+ ],
+ [
+  "U2 venta por unidades: la comision de referido redondea hacia arriba",
+  "uint256 referralFeeAssets = filledSellerAssets.mulDivDown(referralFeePct, WAD);",
+  "uint256 referralFeeAssets = filledSellerAssets.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "U3 compra por activos: la comision de referido redondea hacia arriba",
+  "uint256 referralFeeAssets = targetBuyerAssets.mulDivDown(referralFeePct, WAD);",
+  "uint256 referralFeeAssets = targetBuyerAssets.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "U4 venta por activos: la comision de referido es target*pct/WAD",
+  "uint256 referralFeeAssets = targetSellerAssets.mulDivDown(referralFeePct, WAD - referralFeePct);",
+  "uint256 referralFeeAssets = targetSellerAssets.mulDivDown(referralFeePct, WAD);"
+ ],
+ [
+  "U5 compra por unidades: sin el control de reduceOnly",
+  "                targetUnits - filledUnits,\n                fill.units,\n                ConsumableUnitsLib.consumableUnits(MIDNIGHT, id, fill.offer),\n                fill.offer.reduceOnly ? credit(market, id, fill.offer.maker) : type(uint256).max\n            );\n            require(!reduceOnly || unitsToTake <= IMidnight(MIDNIGHT).debt(id, msg.sender), NotReduceOnly());",
+  "                targetUnits - filledUnits,\n                fill.units,\n                ConsumableUnitsLib.consumableUnits(MIDNIGHT, id, fill.offer),\n                fill.offer.reduceOnly ? credit(market, id, fill.offer.maker) : type(uint256).max\n            );"
+ ],
+ [
+  "U6 venta por unidades: sin el control de reduceOnly",
+  "                TakeAmountsLib.buyerAssetsToUnits(MIDNIGHT, id, fill.offer, buyerAssetsBound(id, fill.offer))\n            );\n            require(!reduceOnly || unitsToTake <= credit(market, id, msg.sender), NotReduceOnly());\n            try IMidnight(MIDNIGHT)\n                .take(fill.offer, fill.ratifierData, unitsToTake, msg.sender, address(this), address(0), \"\") returns (\n                uint256, uint256 resSellerAssets\n            ) {\n                filledUnits += unitsToTake;\n                filledSellerAssets += resSellerAssets;\n            } catch {}\n        }\n\n        require(filledUnits == targetUnits, OutOfOffers());",
+  "                TakeAmountsLib.buyerAssetsToUnits(MIDNIGHT, id, fill.offer, buyerAssetsBound(id, fill.offer))\n            );\n            try IMidnight(MIDNIGHT)\n                .take(fill.offer, fill.ratifierData, unitsToTake, msg.sender, address(this), address(0), \"\") returns (\n                uint256, uint256 resSellerAssets\n            ) {\n                filledUnits += unitsToTake;\n                filledSellerAssets += resSellerAssets;\n            } catch {}\n        }\n\n        require(filledUnits == targetUnits, OutOfOffers());"
+ ],
+ [
+  "U7 venta por unidades: sin el minimo minSellerAssets",
+  "require(filledSellerAssets - referralFeeAssets >= minSellerAssets, SellerAssetsTooLow());",
+  "require(true, SellerAssetsTooLow());"
+ ],
+ [
+  "U8 compra por activos: sin el minimo minUnits",
+  "require(filledUnits >= minUnits, UnitsTooLow());",
+  "require(true, UnitsTooLow());"
+ ],
+ [
+  "U9 venta por activos: sin el maximo maxUnits",
+  "require(filledUnits <= maxUnits, UnitsTooHigh());",
+  "require(true, UnitsTooHigh());"
+ ],
+ [
+  "U10 compra por unidades: acepta llenar menos que targetUnits",
+  "            filledBuyerAssets += repayUnits;\n        }\n\n        require(filledUnits == targetUnits, OutOfOffers());",
+  "            filledBuyerAssets += repayUnits;\n        }\n\n        require(filledUnits <= targetUnits, OutOfOffers());"
+ ],
+ [
+  "U11 venta por unidades: acepta llenar menos que targetUnits",
+  "        require(filledUnits == targetUnits, OutOfOffers());\n\n        uint256 referralFeeAssets = filledSellerAssets",
+  "        require(filledUnits <= targetUnits, OutOfOffers());\n\n        uint256 referralFeeAssets = filledSellerAssets"
+ ],
+ [
+  "U12 compra por activos: acepta llenar menos que el objetivo",
+  "require(filledBuyerAssets == targetFilledBuyerAssets, OutOfOffers());",
+  "require(filledBuyerAssets <= targetFilledBuyerAssets, OutOfOffers());"
+ ],
+ [
+  "U13 compra por unidades: sin el control del plazo",
+  "        uint256 maxBuyerAssets,\n        bool reduceOnly,\n        bool repayEnabled,\n        OfferFill[] memory offerFills,\n        CollateralTransfer[] memory collateralWithdrawals,\n        address collateralReceiver,\n        uint256 referralFeePct,\n        address referralFeeRecipient,\n        uint256 maxContinuousFee,\n        uint256 deadline,\n        address wrappedNative\n    ) external payable {\n        require(block.timestamp <= deadline, DeadlinePassed());",
+  "        uint256 maxBuyerAssets,\n        bool reduceOnly,\n        bool repayEnabled,\n        OfferFill[] memory offerFills,\n        CollateralTransfer[] memory collateralWithdrawals,\n        address collateralReceiver,\n        uint256 referralFeePct,\n        address referralFeeRecipient,\n        uint256 maxContinuousFee,\n        uint256 deadline,\n        address wrappedNative\n    ) external payable {"
+ ],
+ [
+  "U14 venta por unidades: sin el control de la comision de referido",
+  "        uint256 minSellerAssets,\n        bool reduceOnly,\n        address receiver,\n        CollateralTransfer[] memory collateralSupplies,\n        OfferFill[] memory offerFills,\n        uint256 referralFeePct,\n        address referralFeeRecipient,\n        uint256 deadline,\n        address wrappedNative\n    ) external payable {\n        require(block.timestamp <= deadline, DeadlinePassed());\n        if (msg.value > 0) wrapNativeToMsgSender(wrappedNative);\n        require(referralFeePct < WAD, PctExceeded());",
+  "        uint256 minSellerAssets,\n        bool reduceOnly,\n        address receiver,\n        CollateralTransfer[] memory collateralSupplies,\n        OfferFill[] memory offerFills,\n        uint256 referralFeePct,\n        address referralFeeRecipient,\n        uint256 deadline,\n        address wrappedNative\n    ) external payable {\n        require(block.timestamp <= deadline, DeadlinePassed());\n        if (msg.value > 0) wrapNativeToMsgSender(wrappedNative);"
+ ],
+ [
+  "U15 compra por unidades: no controla el lado de la oferta",
+  "        for (uint256 i; i < offerFills.length && filledUnits < targetUnits; i++) {\n            OfferFill memory fill = offerFills[i];\n            require(!fill.offer.buy, InconsistentSide());\n",
+  "        for (uint256 i; i < offerFills.length && filledUnits < targetUnits; i++) {\n            OfferFill memory fill = offerFills[i];\n"
+ ],
+ [
+  "U16 venta por unidades: no controla el mercado de la oferta",
+  "            require(fill.offer.buy, InconsistentSide());\n            require(IdLib.toId(fill.offer.market) == id, InconsistentMarket());\n            uint256 unitsToTake = min(\n                targetUnits - filledUnits,",
+  "            require(fill.offer.buy, InconsistentSide());\n            uint256 unitsToTake = min(\n                targetUnits - filledUnits,"
+ ],
+ [
+  "U17 compra por activos: no controla la comision continua maxima",
+  "        for (uint256 i; i < offerFills.length && filledBuyerAssets < targetFilledBuyerAssets; i++) {\n            OfferFill memory fill = offerFills[i];\n            require(!fill.offer.buy, InconsistentSide());\n            require(IdLib.toId(fill.offer.market) == id, InconsistentMarket());\n            require(IMidnight(MIDNIGHT).continuousFee(id) <= maxContinuousFee, ContinuousFeeAboveMax());\n",
+  "        for (uint256 i; i < offerFills.length && filledBuyerAssets < targetFilledBuyerAssets; i++) {\n            OfferFill memory fill = offerFills[i];\n            require(!fill.offer.buy, InconsistentSide());\n            require(IdLib.toId(fill.offer.market) == id, InconsistentMarket());\n"
+ ],
+ [
+  "U18 compra por activos: el bundle toma las ofertas para si",
+  "                MIDNIGHT, id, fill.offer, targetFilledBuyerAssets - filledBuyerAssets\n                ),\n                fill.units,\n                ConsumableUnitsLib.consumableUnits(MIDNIGHT, id, fill.offer),\n                fill.offer.reduceOnly ? credit(market, id, fill.offer.maker) : type(uint256).max\n            );\n            require(!reduceOnly || unitsToTake <= IMidnight(MIDNIGHT).debt(id, msg.sender), NotReduceOnly());\n            try IMidnight(MIDNIGHT)\n                .take(fill.offer, fill.ratifierData, unitsToTake, msg.sender, address(0), address(0), \"\") returns (",
+  "                MIDNIGHT, id, fill.offer, targetFilledBuyerAssets - filledBuyerAssets\n                ),\n                fill.units,\n                ConsumableUnitsLib.consumableUnits(MIDNIGHT, id, fill.offer),\n                fill.offer.reduceOnly ? credit(market, id, fill.offer.maker) : type(uint256).max\n            );\n            require(!reduceOnly || unitsToTake <= IMidnight(MIDNIGHT).debt(id, msg.sender), NotReduceOnly());\n            try IMidnight(MIDNIGHT)\n                .take(fill.offer, fill.ratifierData, unitsToTake, address(this), address(0), address(0), \"\") returns ("
+ ],
+ [
+  "U19 compra por unidades: el colateral retirado va a quien llama y no al receptor",
+  "IMidnight(MIDNIGHT).withdrawCollateral(market, collateralIndex, assets, msg.sender, collateralReceiver);\n        }\n\n        uint256 referralFeeAssets = filledBuyerAssets",
+  "IMidnight(MIDNIGHT).withdrawCollateral(market, collateralIndex, assets, msg.sender, msg.sender);\n        }\n\n        uint256 referralFeeAssets = filledBuyerAssets"
+ ],
+ [
+  "U20 compra por activos: retirar todo el colateral deja una unidad",
+  "if (assets == type(uint256).max) assets = IMidnight(MIDNIGHT).collateral(id, msg.sender, collateralIndex);\n            IMidnight(MIDNIGHT).withdrawCollateral(market, collateralIndex, assets, msg.sender, collateralReceiver);\n        }\n\n        if (referralFeeAssets > 0)",
+  "if (assets == type(uint256).max) assets = IMidnight(MIDNIGHT).collateral(id, msg.sender, collateralIndex) - 1;\n            IMidnight(MIDNIGHT).withdrawCollateral(market, collateralIndex, assets, msg.sender, collateralReceiver);\n        }\n\n        if (referralFeeAssets > 0)"
+ ],
+ [
+  "U21 venta por unidades: lo cobrado va a quien llama y no al receptor",
+  "SafeTransferLib.safeTransfer(loanToken, receiver, filledSellerAssets - referralFeeAssets);",
+  "SafeTransferLib.safeTransfer(loanToken, msg.sender, filledSellerAssets - referralFeeAssets);"
+ ],
+ [
+  "U22 venta por activos: la comision de referido va al receptor",
+  "        if (referralFeeAssets > 0) SafeTransferLib.safeTransfer(loanToken, referralFeeRecipient, referralFeeAssets);\n        SafeTransferLib.safeTransfer(loanToken, receiver, targetSellerAssets);",
+  "        if (referralFeeAssets > 0) SafeTransferLib.safeTransfer(loanToken, receiver, referralFeeAssets);\n        SafeTransferLib.safeTransfer(loanToken, receiver, targetSellerAssets);"
+ ],
+ [
+  "U23 compra por unidades: devuelve de menos (se queda con una comision de mas)",
+  "uint256 remainder = maxBuyerAssets - filledBuyerAssets - referralFeeAssets;",
+  "uint256 remainder = maxBuyerAssets - filledBuyerAssets - 2 * referralFeeAssets;"
+ ],
+ [
+  "U24 compra por unidades: el repago cuenta una unidad de mas",
+  "            filledUnits += repayUnits;\n            filledBuyerAssets += repayUnits;",
+  "            filledUnits += repayUnits;\n            filledBuyerAssets += repayUnits + 1;"
+ ]
+]

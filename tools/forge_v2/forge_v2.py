@@ -152,9 +152,30 @@ remappings = [
 [lint]
 lint_on_build = false
 """
+MB_FOUNDRY_TOML = """# Proyecto reducido de nexus para el harness de MidnightBundlesV2 (morpho-org/bundles): los ajustes del repo
+# (via_ir, osaka, sin hash de metadatos), salvo optimizer_runs: en el repo es 4294967295 y acá 200, para compilar
+# rápido (no cambia la semántica). Sin solc fijo: forge elige por pragma, como el repo.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+evm_version = "osaka"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+ffi = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+]
+
+[lint]
+lint_on_build = false
+"""
 PERFILES = {
     "vault-v2": {"harness": HARNESS, "sources": SOURCES, "trees": TREES, "toml": FOUNDRY_TOML,
-                 "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol"},
+                 "match": "^NexusVaultV2", "mutaciones": HERE / "mutaciones.json", "archivo": "src/VaultV2.sol",
+                 "build": True},
     "euler-earn": {"harness": HARNESS.parent / "euler-xyz__euler-earn", "sources": (),
                    "trees": ("src", "lib/forge-std", "lib/openzeppelin-contracts/contracts",
                              "lib/ethereum-vault-connector/src"),
@@ -172,11 +193,26 @@ PERFILES = {
                  "sources": ("contracts/VaultV3.vy", "contracts/VaultFactory.vy"),
                  "trees": ("lib/forge-std", "lib/openzeppelin-contracts/contracts"),
                  "toml": YV_FOUNDRY_TOML, "match": "^NexusVaultV3",
-                 "mutaciones": HERE / "mutaciones_vault_v3.json", "archivo": "contracts/VaultV3.vy", "ref": "5b698f9"},
+                 "mutaciones": HERE / "mutaciones_vault_v3.json", "archivo": "contracts/VaultV3.vy", "ref": "5b698f9",
+                 "build": True},
     "midnight": {"harness": HARNESS.parent / "morpho-org__midnight", "sources": ("src/Midnight.sol",),
                  "trees": ("src/libraries", "src/interfaces", "lib/forge-std"), "toml": MN_FOUNDRY_TOML,
                  "match": "^NexusMidnight", "mutaciones": HERE / "mutaciones_midnight.json",
                  "archivo": "src/Midnight.sol", "ref": "14e0b77"},
+    # MidnightBundlesV2 desplegado (0x78ed…bDbA4) = la etiqueta 2026-10-06 (2ed954e). Su lib/midnight (4603969) difiere
+    # del núcleo desplegado (14e0b77) solo en formato y comentarios. Blue y la fábrica de BlueBuyCallback, por ahora
+    # stubs del harness: las entradas de compra y venta no los usan.
+    "midnight-bundles": {"harness": HARNESS.parent / "morpho-org__bundles",
+                         "sources": ("src/midnight/MidnightBundlesV2.sol",
+                                     "src/midnight/interfaces/IMidnightBundlesV2.sol", "src/libraries/TokenLib.sol",
+                                     "src/libraries/interfaces/IERC20Permit.sol",
+                                     "src/libraries/interfaces/IWNative.sol"),
+                         "trees": ("lib/midnight/src", "lib/midnight/test/helpers", "lib/midnight/test/erc20s",
+                                   "lib/midnight/lib/morpho-blue/src", "lib/morpho-blue/src",
+                                   "lib/permit2/src/interfaces", "lib/forge-std"),
+                         "toml": MB_FOUNDRY_TOML, "match": "^NexusMidnightBundles",
+                         "mutaciones": HERE / "mutaciones_midnight_bundles.json",
+                         "archivo": "src/midnight/MidnightBundlesV2.sol", "ref": "2ed954e"},
 }
 
 
@@ -239,11 +275,21 @@ def armar(clone, dest):
     print(f"proyecto reducido en {dest}")
 
 
+def _corpus():
+    """Fuzzing guiado por cobertura de forge: guarda en cache/invariant/corpus las secuencias que abren caminos nuevos y
+    las muta (mutar borra cache/invariant entre mutaciones: cada una arranca de cero). 30-oct: con el mismo
+    presupuesto (32x200, semillas 0x2a y 0x3), la suite con gates de Midnight detectó 4 de 6 mutaciones raras (M25,
+    M35, B3) con corpus y 1 de 6 sin él. NEXUS_CORPUS=0 lo apaga."""
+    if os.environ.get("NEXUS_CORPUS", "1") == "0":
+        return {}
+    return {"FOUNDRY_INVARIANT_CORPUS_DIR": "cache/invariant/corpus", "FOUNDRY_INVARIANT_SHOW_EDGE_COVERAGE": "true"}
+
+
 def _env(runs, depth, seed, **extra):
     # el vyper del venv (perfil vault-v3) tiene que estar en el PATH de forge
     path = os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")])
-    return {**os.environ, "PATH": path, "FOUNDRY_INVARIANT_RUNS": str(runs), "FOUNDRY_INVARIANT_DEPTH": str(depth),
-            "FOUNDRY_FUZZ_SEED": seed, **extra, "FOUNDRY_FFI": "false"}
+    return {**_corpus(), **os.environ, "PATH": path, "FOUNDRY_INVARIANT_RUNS": str(runs),
+            "FOUNDRY_INVARIANT_DEPTH": str(depth), "FOUNDRY_FUZZ_SEED": seed, **extra, "FOUNDRY_FFI": "false"}
 
 
 def _harness(dest):
@@ -255,12 +301,29 @@ def correr(dest, runs, depth, seed):
     _harness(dest)
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHOW_METRICS="true")
     b = _build(dest, env)
-    if b.returncode:
+    if b and b.returncode:
         print((b.stdout + b.stderr)[-2000:])
         return b.returncode
     match = os.environ.get("NEXUS_MATCH", _perfil()["match"])  # una variante sola, p. ej. desde el panel
     return subprocess.run([shutil.which("forge"), "test", "--match-contract", match, "-vv"], cwd=dest,
                           env=env, check=False).returncode
+
+
+def _resultados(salida):
+    """El objeto de resultados de `forge test --json`: con el fuzzing guiado por cobertura (corpus_dir) forge escribe
+    además otros objetos JSON en la misma salida, y antes del primero puede haber texto. Junta los que tienen
+    `test_results`; None si no hay ninguno (no compiló)."""
+    dec, res, i = json.JSONDecoder(), {}, salida.find("{")
+    while 0 <= i < len(salida):
+        try:
+            obj, fin = dec.raw_decode(salida, i)
+        except json.JSONDecodeError:
+            i = salida.find("{", i + 1)
+            continue
+        if isinstance(obj, dict):
+            res.update({k: v for k, v in obj.items() if isinstance(v, dict) and "test_results" in v})
+        i = salida.find("{", fin)
+    return res or None
 
 
 def _laws(res):
@@ -279,8 +342,13 @@ def _laws(res):
 
 
 def _build(dest, env):
-    """forge build del proyecto entero: con un filtro de tests, forge test solo compila lo que esos tests importan, y
-    Morpho Blue y la IRM (que se despliegan con deployCode) quedarían sin compilar."""
+    """forge build del proyecto entero, solo en los perfiles con "build" (None en los demás): con un filtro de tests,
+    forge test solo compila lo que esos tests importan, y lo que se despliega por nombre con deployCode (Morpho Blue y
+    la IRM en vault-v2, el vault de Vyper en vault-v3) quedaría sin compilar. En los demás sobra: forge test compila
+    con otra selección de salidas y no reusa la caché de forge build, así que con via_ir se compilaba dos veces (30-oct:
+    unos 95 s de más por corrida y por mutación en midnight y midnight-bundles)."""
+    if not _perfil().get("build"):
+        return None
     return subprocess.run([shutil.which("forge"), "build"], cwd=dest, env=env, capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=3600, check=False)
 
@@ -317,19 +385,19 @@ def mutar(dest, clone, only=()):
             # una mutación heredaría el contraejemplo de la anterior.
             shutil.rmtree(dest / "cache" / "invariant", ignore_errors=True)
             b = _build(dest, env)
-            if b.returncode:
+            if b and b.returncode:
                 print(f"{name}: NO COMPILA {(b.stdout + b.stderr)[-600:]}", flush=True)
                 missed.append(name)
                 continue
             r = subprocess.run([shutil.which("forge"), "test", "--match-contract", match, "--json"], cwd=dest,
                                env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=3600, check=False)
-            start = r.stdout.find("{")
-            if start < 0:
+            res = _resultados(r.stdout)
+            if res is None:
                 print(f"{name}: NO COMPILA {(r.stdout + r.stderr)[-600:]}", flush=True)
                 missed.append(name)
                 continue
-            hits = _laws(json.loads(r.stdout[start:]))
+            hits = _laws(res)
             print(f"{name}: " + ("; ".join(f"{s}: {laws}" for s, laws in hits) if hits else "NO DETECTADA"), flush=True)
             if not hits:
                 missed.append(name)

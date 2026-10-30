@@ -78,8 +78,9 @@ def scan(targets, out_dir, get=changes._http_get, now=time.time, source="git"):
                "source": source, "network_ops": budget.used, "seconds": round(now() - t0, 1), "notes": notes,
                "by_tier": {t: sum(r["tier"] == t for r in ranked) for t in ("alta", "media", "baja")},
                "pending": len(pending)}
-    (out / "secresearch.json").write_text(json.dumps({"summary": summary, "new": ranked, "pending": pending}, indent=1))
-    (out / "secresearch.md").write_text(report(summary, pending, targets))
+    (out / "secresearch.json").write_text(json.dumps({"summary": summary, "new": ranked, "pending": pending}, indent=1),
+                                        encoding="utf-8")
+    (out / "secresearch.md").write_text(report(summary, pending, targets), encoding="utf-8")
     return summary, ranked
 
 
