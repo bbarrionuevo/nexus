@@ -96,6 +96,8 @@ corre forge a mano, agregar `.venv\Scripts` al PATH).
 - **`armar`:** copia el núcleo (`src/Midnight.sol`, sus librerías e interfaces) y forge-std con los ajustes del repo
   (solc 0.8.34, `osaka`, via_ir, 466 runs). La periferia queda afuera: con via_ir, compilar `src` entero llevó unos 40
   minutos con la PC cargada, y el proyecto reducido compila en unos 3.
-- **`mutar`:** toma `mutaciones_midnight.json`, 37 mutaciones sobre `src/Midnight.sol`.
+- **`mutar`:** toma `mutaciones_midnight.json`, 47 mutaciones sobre `src/Midnight.sol`. M1 a M37 son de la
+  contabilidad; B1 a B10 son del bloqueo de liquidación, de quién paga con callbacks, del préstamo flash y de los
+  gates, y las ve la variante B (`NexusMidnightCallbacks…`).
 - **El clon:** tiene que estar en la etiqueta `2026-08-24` (`14e0b77`), la última idéntica al núcleo desplegado.
 - **La batería:** cada mutación recompila con via_ir. Conviene `NEXUS_MUT_RUNS="32 200 0x2a"`.
