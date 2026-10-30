@@ -145,7 +145,8 @@ persigas lo ya reportado.
   3. Verificación:
      - Python: `..\.venv\Scripts\python -m nexus.devcheck` desde `local` (lo mismo que el CI);
      - Solidity: compilar y correr con forge en la PC (`tools/forge_v2` y `validate`).
-  4. Campaña. En el resultado, mirá la columna de reversiones por acción, no solo el PASS: una reversión del
+  4. Campaña. En el resultado (`python -m nexus.secresearch.panel --resumen <id>` desde `local`), mirá las
+     reversiones por acción, no solo el PASS: una reversión del
      handler es una secuencia que quedó sin verificar.
   5. Análisis.
   6. Commit, PR y, con el CI en verde, fusión (R-11).
