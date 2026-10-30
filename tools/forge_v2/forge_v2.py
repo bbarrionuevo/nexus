@@ -200,8 +200,9 @@ PERFILES = {
                  "match": "^NexusMidnight", "mutaciones": HERE / "mutaciones_midnight.json",
                  "archivo": "src/Midnight.sol", "ref": "14e0b77"},
     # MidnightBundlesV2 desplegado (0x78ed…bDbA4) = la etiqueta 2026-10-06 (2ed954e). Su lib/midnight (4603969) difiere
-    # del núcleo desplegado (14e0b77) solo en formato y comentarios. Blue y la fábrica de BlueBuyCallback, por ahora
-    # stubs del harness: las entradas de compra y venta no los usan.
+    # del núcleo desplegado (14e0b77) solo en formato y comentarios. La fase 1 usa stubs de Blue y de la fábrica de
+    # BlueBuyCallback; la fase 2 despliega Blue (0.8.19) con deployCode, de ahí "build". "once": en mutar alcanza con
+    # compilar una vez, porque lo que se muta (el bundle, BlueBuyCallback, PriceRatifierV1) lo importan los tests.
     "midnight-bundles": {"harness": HARNESS.parent / "morpho-org__bundles",
                          "sources": ("src/midnight/MidnightBundlesV2.sol",
                                      "src/midnight/interfaces/IMidnightBundlesV2.sol", "src/libraries/TokenLib.sol",
@@ -212,7 +213,7 @@ PERFILES = {
                                    "lib/permit2/src/interfaces", "lib/forge-std"),
                          "toml": MB_FOUNDRY_TOML, "match": "^NexusMidnightBundles",
                          "mutaciones": HERE / "mutaciones_midnight_bundles.json",
-                         "archivo": "src/midnight/MidnightBundlesV2.sol", "ref": "2ed954e"},
+                         "archivo": "src/midnight/MidnightBundlesV2.sol", "ref": "2ed954e", "build": "once"},
 }
 
 
@@ -346,7 +347,8 @@ def _build(dest, env):
     forge test solo compila lo que esos tests importan, y lo que se despliega por nombre con deployCode (Morpho Blue y
     la IRM en vault-v2, el vault de Vyper en vault-v3) quedaría sin compilar. En los demás sobra: forge test compila
     con otra selección de salidas y no reusa la caché de forge build, así que con via_ir se compilaba dos veces (30-oct:
-    unos 95 s de más por corrida y por mutación en midnight y midnight-bundles)."""
+    unos 95 s de más por corrida y por mutación en midnight y midnight-bundles). Con "build": "once", mutar compila
+    entero una sola vez: lo que despliega por nombre no se muta (Blue en midnight-bundles)."""
     if not _perfil().get("build"):
         return None
     return subprocess.run([shutil.which("forge"), "build"], cwd=dest, env=env, capture_output=True, text=True,
@@ -365,6 +367,12 @@ def mutar(dest, clone, only=()):
     match = os.environ.get("NEXUS_MUT_MATCH", perfil["match"])
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)
+    once = perfil.get("build") == "once"
+    if once:
+        b = _build(dest, env)
+        if b and b.returncode:
+            print(f"el proyecto sin mutar no compila: {(b.stdout + b.stderr)[-600:]}", flush=True)
+            return 1
     touched = {}
     missed = []
     try:
@@ -384,7 +392,7 @@ def mutar(dest, clone, only=()):
             # forge guarda cada falla en cache/invariant y la reproduce primero en la corrida siguiente: sin borrarla,
             # una mutación heredaría el contraejemplo de la anterior.
             shutil.rmtree(dest / "cache" / "invariant", ignore_errors=True)
-            b = _build(dest, env)
+            b = None if once else _build(dest, env)
             if b and b.returncode:
                 print(f"{name}: NO COMPILA {(b.stdout + b.stderr)[-600:]}", flush=True)
                 missed.append(name)

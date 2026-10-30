@@ -118,5 +118,59 @@
   "U24 compra por unidades: el repago cuenta una unidad de mas",
   "            filledUnits += repayUnits;\n            filledBuyerAssets += repayUnits;",
   "            filledUnits += repayUnits;\n            filledBuyerAssets += repayUnits + 1;"
+ ],
+ [
+  "K1 CancelAndMake: no controla maxConsumed",
+  "            require(\n                IMidnight(MIDNIGHT).consumed(msg.sender, cancellation.group) <= cancellation.maxConsumed,\n                ConsumedAboveMax()\n            );\n",
+  ""
+ ],
+ [
+  "K2 CancelAndMake: deja el grupo con consumo maxConsumed y no maximo",
+  "IMidnight(MIDNIGHT).setConsumed(cancellation.group, type(uint128).max, msg.sender);",
+  "IMidnight(MIDNIGHT).setConsumed(cancellation.group, cancellation.maxConsumed, msg.sender);"
+ ],
+ [
+  "K3 CancelAndMake: estaciona en Blue a nombre del usuario y no de su callback",
+  "IMorpho(BLUE).supply(blueMarket, assetsToPark, 0, blueBuyCallback, \"\");",
+  "IMorpho(BLUE).supply(blueMarket, assetsToPark, 0, msg.sender, \"\");"
+ ],
+ [
+  "K4 CancelAndMake: ignora la sal del callback",
+  "IBlueBuyCallbackFactory(BLUE_BUY_CALLBACK_FACTORY).createBlueBuyCallback(msg.sender, callbackSalt);",
+  "IBlueBuyCallbackFactory(BLUE_BUY_CALLBACK_FACTORY).createBlueBuyCallback(msg.sender, bytes32(0));"
+ ],
+ [
+  "K5 CancelAndMake: no autoriza al ratifier",
+  "            IMidnight(MIDNIGHT).setIsAuthorized(ratifier, true, msg.sender);\n",
+  ""
+ ],
+ [
+  "K6 CancelAndMake: sin el control del plazo",
+  "        address wrappedNative\n    ) external payable {\n        require(block.timestamp <= deadline, DeadlinePassed());\n        if (msg.value > 0) wrapNativeToMsgSender(wrappedNative);\n\n        for (uint256 i; i < groupsToCancel.length; i++) {",
+  "        address wrappedNative\n    ) external payable {\n        if (msg.value > 0) wrapNativeToMsgSender(wrappedNative);\n\n        for (uint256 i; i < groupsToCancel.length; i++) {"
+ ],
+ [
+  "C1 BlueBuyCallback: paga compras de cualquiera, no solo de su dueno",
+  "        require(buyer == OWNER, NotOwnerBuyer());\n",
+  "",
+  "lib/midnight/src/periphery/blue-buy-callback/BlueBuyCallback.sol"
+ ],
+ [
+  "C2 BlueBuyCallback: saca de Blue una unidad de mas",
+  "if (buyerAssets > 0) IMorpho(BLUE).withdraw(marketParams, buyerAssets, 0, address(this), address(this));",
+  "if (buyerAssets > 0) IMorpho(BLUE).withdraw(marketParams, buyerAssets + 1, 0, address(this), address(this));",
+  "lib/midnight/src/periphery/blue-buy-callback/BlueBuyCallback.sol"
+ ],
+ [
+  "R1 PriceRatifierV1: no controla el allowedTaker",
+  "        require(allowedTaker == address(0) || taker == allowedTaker, UnauthorizedTaker());\n",
+  "",
+  "lib/midnight/src/ratifiers/PriceRatifierV1.sol"
+ ],
+ [
+  "R2 PriceRatifierV1: no controla que la raiz este ratificada",
+  "        require(ratification[offer.maker][root].isRootRatified, NotRatified());\n",
+  "",
+  "lib/midnight/src/ratifiers/PriceRatifierV1.sol"
  ]
 ]
