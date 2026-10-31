@@ -1,0 +1,155 @@
+[
+ [
+  "W1 Deposit: la comision de referido redondea hacia arriba",
+  "        require(referralFeePct < WAD, PctExceeded());\n\n        uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD);\n        uint256 toDeposit",
+  "        require(referralFeePct < WAD, PctExceeded());\n\n        uint256 referralFeeAssets = assets.mulDivUp(referralFeePct, WAD);\n        uint256 toDeposit",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W2 Deposit: sin el control de maxSharePriceE27",
+  "        require(toDeposit.mulDivUp(1e27, shares) <= maxSharePriceE27, SlippageExceeded());\n",
+  "",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W3 Deposit: deposita a nombre del referido",
+  "uint256 shares = IERC4626(vault).deposit(toDeposit, msg.sender);",
+  "uint256 shares = IERC4626(vault).deposit(toDeposit, referralFeeRecipient);",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W4 Withdraw: sin el control de exactamente uno de assets y shares",
+  "        require((assets == 0) != (shares == 0), NotExactlyOneZero());\n",
+  "",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W5 Withdraw: la comision de referido va a quien llama",
+  "        uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD);\n        if (referralFeeAssets > 0) SafeTransferLib.safeTransfer(asset, referralFeeRecipient, referralFeeAssets);\n        SafeTransferLib.safeTransfer(asset, msg.sender, assets - referralFeeAssets);",
+  "        uint256 referralFeeAssets = assets.mulDivDown(referralFeePct, WAD);\n        if (referralFeeAssets > 0) SafeTransferLib.safeTransfer(asset, msg.sender, referralFeeAssets);\n        SafeTransferLib.safeTransfer(asset, msg.sender, assets - referralFeeAssets);",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W6 Withdraw: sin el control de la comision de referido",
+  "        require((assets == 0) != (shares == 0), NotExactlyOneZero());\n        require(referralFeePct < WAD, PctExceeded());\n",
+  "        require((assets == 0) != (shares == 0), NotExactlyOneZero());\n",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W7 Migrate: sin el control del precio de destino",
+  "        require(toDeposit.mulDivUp(1e27, sharesMinted) <= destMaxSharePriceE27, SlippageExceeded());\n",
+  "",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W8 Migrate: la comision de referido redondea hacia arriba",
+  "uint256 referralFeeAssets = assetsWithdrawn.mulDivDown(referralFeePct, WAD);",
+  "uint256 referralFeeAssets = assetsWithdrawn.mulDivUp(referralFeePct, WAD);",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "X1 InKindRedemptionVaultV2: desasigna sin descontar la penalidad",
+  "uint256 assetsToDeallocate = (exitAssets - assetsToWithdrawFromIdle).mulDivDown(WAD, WAD + penalty);",
+  "uint256 assetsToDeallocate = exitAssets - assetsToWithdrawFromIdle;"
+ ],
+ [
+  "X2 InKindRedemptionVaultV2: la posicion en Blue queda a nombre del bundle",
+  "IMorpho(BLUE).supply(marketParamsList[i], assets, 0, msg.sender, data);",
+  "IMorpho(BLUE).supply(marketParamsList[i], assets, 0, address(this), data);"
+ ],
+ [
+  "X3 InKindRedemptionVaultV2: lo ocioso no le llega al usuario",
+  "SafeTransferLib.safeTransfer(asset, msg.sender, assetsToWithdrawFromIdle);",
+  "SafeTransferLib.safeTransfer(asset, vault, assetsToWithdrawFromIdle);"
+ ],
+ [
+  "X4 onMorphoSupply: retira del vault una unidad de mas",
+  "IVaultV2(vault).withdraw(assets, address(this), sender);",
+  "IVaultV2(vault).withdraw(assets + 1, address(this), sender);"
+ ],
+ [
+  "X5 ForceWithdrawVaultV2: desasigna sin descontar la penalidad",
+  "uint256 assetsToDeallocate = (exitAssets - assetsToWithdraw).mulDivDown(WAD, WAD + penalty);",
+  "uint256 assetsToDeallocate = exitAssets - assetsToWithdraw;"
+ ],
+ [
+  "X6 ForceWithdrawVaultV2: sin el control de minSharePriceE27",
+  "totalSharesBurnt == 0 || withdrawn.mulDivDown(1e27, totalSharesBurnt) >= minSharePriceE27,",
+  "true,"
+ ],
+ [
+  "X7 ForceWithdrawVaultV2: la comision de referido redondea hacia arriba",
+  "uint256 referralFeeAssets = withdrawn.mulDivDown(referralFeePct, WAD);",
+  "uint256 referralFeeAssets = withdrawn.mulDivUp(referralFeePct, WAD);"
+ ],
+ [
+  "X8 InKindRedemptionVaultV2: sin el control del plazo",
+  "        require(block.timestamp <= deadline, DeadlinePassed());\n        require(IVaultV2(vault).adaptersLength() == 1, InvalidAdaptersLength());\n        require(IVaultV2(vault).isAdapter(adapter), AdapterNotPartOfVault());\n        require(IMorphoMarketV1AdapterV2(adapter).morpho() == BLUE, MorphoMismatch());\n\n        TokenLib.submitPermit(vault, sharesPermit);\n\n        address asset",
+  "        require(IVaultV2(vault).adaptersLength() == 1, InvalidAdaptersLength());\n        require(IVaultV2(vault).isAdapter(adapter), AdapterNotPartOfVault());\n        require(IMorphoMarketV1AdapterV2(adapter).morpho() == BLUE, MorphoMismatch());\n\n        TokenLib.submitPermit(vault, sharesPermit);\n\n        address asset"
+ ],
+ [
+  "W9 Deposit: el control de maxSharePriceE27 es estricto",
+  "require(toDeposit.mulDivUp(1e27, shares) <= maxSharePriceE27, SlippageExceeded());",
+  "require(toDeposit.mulDivUp(1e27, shares) < maxSharePriceE27, SlippageExceeded());",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W10 Deposit: el control de maxSharePriceE27 redondea hacia abajo",
+  "require(toDeposit.mulDivUp(1e27, shares) <= maxSharePriceE27, SlippageExceeded());",
+  "require(toDeposit.mulDivDown(1e27, shares) <= maxSharePriceE27, SlippageExceeded());",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W11 Migrate: el control del precio de destino redondea hacia abajo",
+  "require(toDeposit.mulDivUp(1e27, sharesMinted) <= destMaxSharePriceE27, SlippageExceeded());",
+  "require(toDeposit.mulDivDown(1e27, sharesMinted) <= destMaxSharePriceE27, SlippageExceeded());",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W12 Withdraw: por acciones, retira esa cantidad de activo",
+  "else assets = IERC4626(vault).redeem(shares, address(this), msg.sender);",
+  "else assets = IERC4626(vault).withdraw(shares, address(this), msg.sender);",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "W13 Migrate: por acciones, retira esa cantidad de activo",
+  "else assetsWithdrawn = IERC4626(sourceVault).redeem(sharesRedeemed, address(this), msg.sender);",
+  "else assetsWithdrawn = IERC4626(sourceVault).withdraw(sharesRedeemed, address(this), msg.sender);",
+  "src/vault/VaultBundlesV1.sol"
+ ],
+ [
+  "X9 ForceWithdrawVaultV2: el control de minSharePriceE27 redondea hacia arriba",
+  "totalSharesBurnt == 0 || withdrawn.mulDivDown(1e27, totalSharesBurnt) >= minSharePriceE27,",
+  "totalSharesBurnt == 0 || withdrawn.mulDivUp(1e27, totalSharesBurnt) >= minSharePriceE27,"
+ ],
+ [
+  "X10 ForceWithdrawVaultV2: el control de minSharePriceE27 es estricto",
+  "totalSharesBurnt == 0 || withdrawn.mulDivDown(1e27, totalSharesBurnt) >= minSharePriceE27,",
+  "totalSharesBurnt == 0 || withdrawn.mulDivDown(1e27, totalSharesBurnt) > minSharePriceE27,"
+ ],
+ [
+  "X11 ForceWithdrawVaultV2: cobra la penalidad sobre el doble de lo que desasigna",
+  "IVaultV2(vault).forceDeallocate(adapter, abi.encode(marketParams), assets, msg.sender);",
+  "IVaultV2(vault).forceDeallocate(adapter, abi.encode(marketParams), 2 * assets, msg.sender);"
+ ],
+ [
+  "X12 onMorphoSupply: cobra la penalidad sobre el doble de lo que desasigna",
+  "IVaultV2(vault).forceDeallocate(adapter, abi.encode(marketParams), assets, sender);",
+  "IVaultV2(vault).forceDeallocate(adapter, abi.encode(marketParams), 2 * assets, sender);"
+ ],
+ [
+  "X13 ForceWithdrawVaultV2: no cuenta la liquidez del adapter de liquidez",
+  "withdrawableAssets += UtilsLib.min(liquidityAdapterAssets, totalSupplyAssets - totalBorrowAssets);",
+  "withdrawableAssets += 0;"
+ ],
+ [
+  "X14 InKindRedemptionVaultV2: usa una penalidad fija en vez de la del adapter",
+  "uint256 penalty = IVaultV2(vault).forceDeallocatePenalty(adapter);\n        uint256 assetsToDeallocate = (exitAssets - assetsToWithdrawFromIdle)",
+  "uint256 penalty = 0.005e18;\n        uint256 assetsToDeallocate = (exitAssets - assetsToWithdrawFromIdle)"
+ ],
+ [
+  "X15 ForceWithdrawVaultV2: usa una penalidad fija en vez de la del adapter",
+  "uint256 penalty = IVaultV2(vault).forceDeallocatePenalty(adapter);\n        uint256 assetsToDeallocate = (exitAssets - assetsToWithdraw)",
+  "uint256 penalty = 0.005e18;\n        uint256 assetsToDeallocate = (exitAssets - assetsToWithdraw)"
+ ]
+]

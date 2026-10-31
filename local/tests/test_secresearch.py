@@ -1,6 +1,7 @@
 """Motor de investigación: cambios, triaje, invariantes, orquestador y circuito local (sin red)."""
 import json
 import os
+import re
 from pathlib import Path
 
 from nexus.secresearch import changes, invariants, run, triage
@@ -450,10 +451,15 @@ def test_harness_de_midnight_es_coherente_y_no_sale_de_la_evm_local():
 def test_harness_de_midnight_bundles_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__bundles")
-    assert man["repo"] == "morpho-org/bundles" and man["match_contract"] == "^Nexus(Midnight|Blue)Bundles"
+    assert man["repo"] == "morpho-org/bundles" and man["match_contract"] == "^Nexus(Midnight|Blue|Vault)Bundles"
     assert man["aislado"] is True
     assert {f.name for f in files} == {"NexusMidnightBundles.t.sol", "NexusMidnightBundlesMake.t.sol",
-                                       "NexusBlueBundles.t.sol", "NexusBlueImport.sol"}
+                                       "NexusBlueBundles.t.sol", "NexusBlueImport.sol", "NexusVaultBundles.t.sol",
+                                       "NexusVaultImport0819.sol", "NexusVaultImport0828.sol"}
+    # un solo Morpho.sol en todo el harness: validate lo compila junto y deployCode("Morpho.sol") sería ambiguo
+    morphos = [f.name for f in files
+               if re.search(r'^import .*/Morpho\.sol";', f.read_text(encoding="utf-8"), re.MULTILINE)]
+    assert morphos == ["NexusBlueImport.sol"], morphos
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

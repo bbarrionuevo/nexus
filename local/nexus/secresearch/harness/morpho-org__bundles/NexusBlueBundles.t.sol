@@ -3,20 +3,26 @@ pragma solidity 0.8.34;
 
 // Cazador de BlueBundlesV1 (morpho-org/bundles; lo desplegado en 0x38B0…22e6AD es la etiqueta 2026-08-25, igual en
 // lógica a 2026-10-06). Variante B1: las cinco entradas sin reasignaciones públicas, sobre Morpho Blue real (0.8.19,
-// por deployCode, sin interés), con dos mercados de los mismos tokens (para la migración) y uno de otro colateral.
-// Leyes exactas contra el estado de Blue, en cada llamada que pasa:
+// por deployCode), con dos familias de dos mercados de los mismos tokens (para la migración); la segunda, de colateral
+// barato (precio 1e30), donde el borde de maxLtv es exacto al wei. Blue devenga interés (una IRM de tasa fija por
+// mercado) y cobra comisión en dos mercados: la relación entre acciones y activos deja de ser la redonda de partida
+// (1e6 acciones por activo) y los redondeos de Blue y del bundle se ejercitan.
+// Leyes exactas contra el estado de Blue (devengado), en cada llamada que pasa:
 //   BB-FUNDS  el bundle no se queda con saldo; lo que paga y cobra el usuario es exactamente lo documentado;
 //   BB-FEE    la comisión de referido es exactamente la documentada, sobre lo que de verdad se pidió, repagó o retiró;
 //   BB-POS    la posición del usuario en Blue cambia exactamente (acciones redondeadas como Blue);
 //   BB-LTV    con maxLtv, el LTV resultante (deuda redondeada hacia arriba, como el bundle) no lo supera;
 //   BB-ISO    ninguna otra posición ni saldo cambia;
-//   BB-LIVE   con el plazo vencido, pct >= WAD o tokens distintos en la migración, revierte.
+//   BB-LIVE   con el plazo vencido, pct >= WAD o tokens distintos en la migración, revierte; y al revés, no revierte
+//             por una de esas validaciones ni por maxLtv cuando no corresponde: maxLtv se prueba en su borde exacto
+//             (el mínimo que pasa, sacado de una corrida en seco que se revierte, tiene que pasar, y uno menos, no).
 
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {IMorpho, MarketParams, Position, Market} from "../../lib/morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "../../lib/morpho-blue/src/libraries/MarketParamsLib.sol";
 import {SharesMathLib} from "../../lib/morpho-blue/src/libraries/SharesMathLib.sol";
+import {MorphoBalancesLib} from "../../lib/morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {BlueBundlesV1} from "../../src/blue/BlueBundlesV1.sol";
 import {IBlueBundlesV1, SignedAuthorization, PublicAllocations} from "../../src/blue/interfaces/IBlueBundlesV1.sol";
 import {TokenPermit, PermitKind} from "../../src/libraries/TokenLib.sol";
@@ -68,17 +74,36 @@ contract NexusBBOracle {
     }
 }
 
+/// @notice IRM de prueba: una tasa fija por segundo (en WAD) según el LLTV del mercado, de alrededor de 9,5 % y 38 %
+/// anual. Basta para que Blue devengue y el precio de las acciones se mueva.
+contract NexusBBIrm {
+    function borrowRate(MarketParams memory mp, Market memory) external pure returns (uint256) {
+        return _rate(mp);
+    }
+
+    function borrowRateView(MarketParams memory mp, Market memory) external pure returns (uint256) {
+        return _rate(mp);
+    }
+
+    function _rate(MarketParams memory mp) internal pure returns (uint256) {
+        return mp.lltv == 0.86e18 ? 3e9 : 1.2e10;
+    }
+}
+
 contract NexusBlueBundlesHandler is Test {
     using MarketParamsLib for MarketParams;
     using SharesMathLib for uint256;
+    using MorphoBalancesLib for IMorpho;
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant PSCALE = 1e36;
+    uint256 internal constant CHEAP = 1e30; // precio de partida de la familia de colateral barato (mercados 2 y 3)
     uint256 internal constant NH = 4; // usuarios
     uint256 internal constant NA = 6; // los 4 usuarios y 2 referidos
     uint256 internal constant I_REF = 4;
     uint256 internal constant NM = 4; // mercados: 0 y 1 con un colateral, 2 y 3 con otro (distinto LLTV)
     uint256 internal constant AMT = 1e24;
+    address internal constant FEE_RECIPIENT = address(uint160(uint256(keccak256("nexus.bb.feeRecipient"))));
 
     uint8 internal constant L_FUNDS = 0;
     uint8 internal constant L_FEE = 1;
@@ -105,6 +130,7 @@ contract NexusBlueBundlesHandler is Test {
     uint256 internal hFees;
     uint256 internal hLtvChecked;
     uint256 internal hMigrations;
+    uint256 internal hLtvEdge; // llamadas con maxLtv en el borde exacto (el mínimo que pasa, o uno menos)
     uint256[8] internal hRev; // 0 LtvExceeded, 1 InconsistentTokens, 2 plazo o pct, 3 Blue (salud, liquidez), 4 pánico, 5 otro
 
     struct Acct {
@@ -134,11 +160,13 @@ contract NexusBlueBundlesHandler is Test {
         uint256 ref;
         uint256 deadline;
         uint256 maxLtv;
+        uint256 edge; // maxLtv en el borde exacto: 1, el mínimo que pasa; 2, uno menos (ver _ltvFor)
     }
 
     constructor() {
         blue = IMorpho(deployCode("Morpho.sol", abi.encode(address(this))));
-        blue.enableIrm(address(0));
+        address irm = address(new NexusBBIrm());
+        blue.enableIrm(irm);
         blue.enableLltv(0.86e18);
         blue.enableLltv(0.945e18);
         loan = new NexusBBToken("loan");
@@ -146,10 +174,13 @@ contract NexusBlueBundlesHandler is Test {
         coll[1] = new NexusBBToken("collB");
         oracle[0] = new NexusBBOracle();
         oracle[1] = new NexusBBOracle();
-        mps[0] = MarketParams(address(loan), address(coll[0]), address(oracle[0]), address(0), 0.86e18);
-        mps[1] = MarketParams(address(loan), address(coll[0]), address(oracle[0]), address(0), 0.945e18);
-        mps[2] = MarketParams(address(loan), address(coll[1]), address(oracle[1]), address(0), 0.86e18);
-        mps[3] = MarketParams(address(loan), address(coll[1]), address(oracle[1]), address(0), 0.945e18);
+        // la segunda familia es de colateral "barato" (precio 1e30, como un colateral con más decimales que el activo
+        // prestado): un punto de maxLtv mueve la deuda máxima en alrededor de 1 wei, y el borde de maxLtv es exacto
+        oracle[1].setPrice(CHEAP);
+        mps[0] = MarketParams(address(loan), address(coll[0]), address(oracle[0]), irm, 0.86e18);
+        mps[1] = MarketParams(address(loan), address(coll[0]), address(oracle[0]), irm, 0.945e18);
+        mps[2] = MarketParams(address(loan), address(coll[1]), address(oracle[1]), irm, 0.86e18);
+        mps[3] = MarketParams(address(loan), address(coll[1]), address(oracle[1]), irm, 0.945e18);
         // liquidez inicial de un prestamista aparte (no es un actor): sin ella casi no hay deuda que repagar o migrar
         address lp = address(uint160(uint256(keccak256("nexus.bb.lp"))));
         loan.mint(lp, NM * 100 * AMT);
@@ -159,6 +190,22 @@ contract NexusBlueBundlesHandler is Test {
             blue.createMarket(mps[i]);
             vm.prank(lp);
             blue.supply(mps[i], 100 * AMT, 0, lp, "");
+        }
+        // comisión de Blue en dos mercados (a una cuenta que no es de los actores): acciones de comisión al devengar
+        blue.setFeeRecipient(FEE_RECIPIENT);
+        blue.setFee(mps[1], 0.1e18);
+        blue.setFee(mps[3], 0.25e18);
+        // un prestatario aparte toma la mitad de cada mercado: hay interés desde el principio
+        address debtor = address(uint160(uint256(keccak256("nexus.bb.debtor"))));
+        for (uint256 i; i < NM; ++i) {
+            NexusBBToken ct = _collOf(i);
+            uint256 dc = i >= 2 ? 200 * AMT * (PSCALE / CHEAP) : 200 * AMT;
+            ct.mint(debtor, dc);
+            vm.startPrank(debtor);
+            ct.approve(address(blue), type(uint256).max);
+            blue.supplyCollateral(mps[i], dc, debtor, "");
+            blue.borrow(mps[i], 50 * AMT, 0, debtor, debtor);
+            vm.stopPrank();
         }
         bundle = new BlueBundlesV1(address(blue), address(uint160(uint256(keccak256("nexus.bb.allocator")))));
         for (uint256 h; h < NA; ++h) {
@@ -186,16 +233,11 @@ contract NexusBlueBundlesHandler is Test {
         ct.mint(accts[p.u], c);
         uint256 maxB = _maxBorrow(p.u, p.m, c);
         uint256 b = _h(bSeed, 3) % 8 == 0 ? 0 : (_h(bSeed, 4) % 4 == 0 ? _amt(bSeed, 5, AMT) : _amt(bSeed, 6, maxB + 1) - 1);
+        (uint256 maxLtv, bool ltvFails) = _ltvFor(p, p.m, _scabData(p, c, b, type(uint256).max));
         Snap memory pre = _snap();
         vm.prank(accts[p.u]);
-        (bool ok, bytes memory ret) = address(bundle).call(
-            abi.encodeCall(
-                bundle.blueBundlesV1SupplyCollateralAndBorrow,
-                (mps[p.m], c, b, p.maxLtv, _noPermit(), _noSig(), new PublicAllocations[](0), p.pct, accts[p.ref],
-                    p.deadline)
-            )
-        );
-        if (!_after(0, ok, ret, p, pre)) return;
+        (bool ok, bytes memory ret) = address(bundle).call(_scabData(p, c, b, maxLtv));
+        if (!_after(0, ok, ret, p, pre, ltvFails, false)) return;
         Snap memory post = _snap();
         uint256 fee = b * p.pct / WAD;
         _okI(_dl(pre, post, p.ref) == int256(fee), L_FEE, "SupplyCollateralAndBorrow: comision distinta de borrow*pct/WAD (esperada, real)", int256(fee), _dl(pre, post, p.ref));
@@ -204,8 +246,15 @@ contract NexusBlueBundlesHandler is Test {
         _ok(post.a[p.u].collateral[p.m] == pre.a[p.u].collateral[p.m] + c, L_POS, "SupplyCollateralAndBorrow: el colateral en Blue no subio exactamente (esperado, real)", pre.a[p.u].collateral[p.m] + c, post.a[p.u].collateral[p.m]);
         uint256 sh = b == 0 ? 0 : b.toSharesUp(pre.tba[p.m], pre.tbs[p.m]);
         _ok(post.a[p.u].borrowShares[p.m] == pre.a[p.u].borrowShares[p.m] + sh, L_POS, "SupplyCollateralAndBorrow: las acciones de deuda no subieron como redondea Blue (esperado, real)", pre.a[p.u].borrowShares[p.m] + sh, post.a[p.u].borrowShares[p.m]);
-        _ltvLaw(p.u, p.m, p.maxLtv, post);
+        _ltvLaw(p.u, p.m, maxLtv, post);
         if (fee > 0) ++hFees;
+    }
+
+    function _scabData(P memory p, uint256 c, uint256 b, uint256 maxLtv) internal view returns (bytes memory) {
+        return abi.encodeCall(
+            bundle.blueBundlesV1SupplyCollateralAndBorrow,
+            (mps[p.m], c, b, maxLtv, _noPermit(), _noSig(), new PublicAllocations[](0), p.pct, accts[p.ref], p.deadline)
+        );
     }
 
     function repayAndWithdrawCollateral(uint256 userSeed, uint256 seed, uint256 rSeed, uint256 cSeed) external {
@@ -232,15 +281,11 @@ contract NexusBlueBundlesHandler is Test {
         // retiro de colateral: nada, todo (sano si repaga todo), o hasta lo que sobra sobre la deuda actual
         uint256 spare = _spare(p.u, p.m);
         uint256 c = _h(cSeed, 12) % 3 == 0 ? 0 : (mode == 3 && _h(cSeed, 13) % 2 == 0 ? have : _amt(cSeed, 14, spare + 1) - 1);
+        (uint256 maxLtv, bool ltvFails) = _ltvFor(p, p.m, _rawcData(p, rA, rS, maxRepay, c, type(uint256).max));
         Snap memory pre = _snap();
         vm.prank(accts[p.u]);
-        (bool ok, bytes memory ret) = address(bundle).call(
-            abi.encodeCall(
-                bundle.blueBundlesV1RepayAndWithdrawCollateral,
-                (mps[p.m], rA, rS, maxRepay, c, p.maxLtv, _noPermit(), _noSig(), p.pct, accts[p.ref], p.deadline)
-            )
-        );
-        if (!_after(1, ok, ret, p, pre)) return;
+        (bool ok, bytes memory ret) = address(bundle).call(_rawcData(p, rA, rS, maxRepay, c, maxLtv));
+        if (!_after(1, ok, ret, p, pre, ltvFails, false)) return;
         Snap memory post = _snap();
         if (rS == type(uint256).max) rS = pre.a[p.u].borrowShares[p.m];
         uint256 repaid;
@@ -258,8 +303,19 @@ contract NexusBlueBundlesHandler is Test {
         _ok(post.a[p.u].borrowShares[p.m] + sh == pre.a[p.u].borrowShares[p.m], L_POS, "RepayAndWithdrawCollateral: las acciones de deuda no bajaron como redondea Blue (esperado, real)", pre.a[p.u].borrowShares[p.m] - sh, post.a[p.u].borrowShares[p.m]);
         _ok(post.a[p.u].collateral[p.m] + c == pre.a[p.u].collateral[p.m], L_POS, "RepayAndWithdrawCollateral: el colateral en Blue no bajo exactamente (esperado, real)", pre.a[p.u].collateral[p.m] - c, post.a[p.u].collateral[p.m]);
         _okI(_dc(pre, post, p.u, p.m) == int256(c), L_FUNDS, "RepayAndWithdrawCollateral: el usuario no recibio exactamente el colateral (esperado, recibido)", int256(c), _dc(pre, post, p.u, p.m));
-        _ltvLaw(p.u, p.m, p.maxLtv, post);
+        _ltvLaw(p.u, p.m, maxLtv, post);
         if (fee > 0) ++hFees;
+    }
+
+    function _rawcData(P memory p, uint256 rA, uint256 rS, uint256 maxRepay, uint256 c, uint256 maxLtv)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encodeCall(
+            bundle.blueBundlesV1RepayAndWithdrawCollateral,
+            (mps[p.m], rA, rS, maxRepay, c, maxLtv, _noPermit(), _noSig(), p.pct, accts[p.ref], p.deadline)
+        );
     }
 
     function supply(uint256 userSeed, uint256 seed, uint256 aSeed) external {
@@ -271,7 +327,7 @@ contract NexusBlueBundlesHandler is Test {
         (bool ok, bytes memory ret) = address(bundle).call(
             abi.encodeCall(bundle.blueBundlesV1Supply, (mps[p.m], a, _noPermit(), p.pct, accts[p.ref], p.deadline))
         );
-        if (!_after(2, ok, ret, p, pre)) return;
+        if (!_after(2, ok, ret, p, pre, false, false)) return;
         Snap memory post = _snap();
         uint256 fee = a * p.pct / WAD;
         uint256 sh = (a - fee).toSharesDown(pre.tsa[p.m], pre.tss[p.m]);
@@ -298,7 +354,7 @@ contract NexusBlueBundlesHandler is Test {
                 (mps[p.m], wA, wS, _noSig(), new PublicAllocations[](0), p.pct, accts[p.ref], p.deadline)
             )
         );
-        if (!_after(3, ok, ret, p, pre)) return;
+        if (!_after(3, ok, ret, p, pre, false, false)) return;
         Snap memory post = _snap();
         uint256 got;
         uint256 sh;
@@ -322,16 +378,12 @@ contract NexusBlueBundlesHandler is Test {
         // la pareja con los mismos tokens; 1 de cada 8, un mercado de la otra familia (tiene que revertir)
         uint256 dst = _h(dSeed, 19) % 8 == 0 ? (p.m + 2) % NM : p.m ^ 1;
         bool otherTokens = (p.m >= 2) != (dst >= 2);
+        (uint256 maxLtv, bool ltvFails) = _ltvFor(p, dst, _migData(p, dst, type(uint256).max));
         Snap memory pre = _snap();
         vm.prank(accts[p.u]);
-        (bool ok, bytes memory ret) = address(bundle).call(
-            abi.encodeCall(
-                bundle.blueBundlesV1MigrateBorrowPosition,
-                (mps[p.m], mps[dst], p.maxLtv, _noSig(), new PublicAllocations[](0), p.pct, accts[p.ref], p.deadline)
-            )
-        );
+        (bool ok, bytes memory ret) = address(bundle).call(_migData(p, dst, maxLtv));
         if (otherTokens) _ok(!ok, L_LIVE, "Migrate: paso con tokens distintos entre origen y destino (origen, destino)", p.m, dst);
-        if (!_after(4, ok && !otherTokens, ret, p, pre)) return;
+        if (!_after(4, ok && !otherTokens, ret, p, pre, ltvFails, otherTokens)) return;
         Snap memory post = _snap();
         uint256 sh = pre.a[p.u].borrowShares[p.m];
         uint256 c = pre.a[p.u].collateral[p.m];
@@ -343,9 +395,16 @@ contract NexusBlueBundlesHandler is Test {
         _ok(post.a[p.u].borrowShares[dst] == pre.a[p.u].borrowShares[dst] + shDst, L_POS, "Migrate: la deuda de destino no es lo repagado mas la comision (esperado, real)", pre.a[p.u].borrowShares[dst] + shDst, post.a[p.u].borrowShares[dst]);
         _okI(_dl(pre, post, p.ref) == int256(fee), L_FEE, "Migrate: comision distinta de repaid*pct/(WAD-pct) (esperada, real)", int256(fee), _dl(pre, post, p.ref));
         _okI(_dl(pre, post, p.u), L_FUNDS, "Migrate: cambio el saldo del usuario (cambio, 0)", _dl(pre, post, p.u), 0);
-        _ltvLaw(p.u, dst, p.maxLtv, post);
+        _ltvLaw(p.u, dst, maxLtv, post);
         ++hMigrations;
         if (fee > 0) ++hFees;
+    }
+
+    function _migData(P memory p, uint256 dst, uint256 maxLtv) internal view returns (bytes memory) {
+        return abi.encodeCall(
+            bundle.blueBundlesV1MigrateBorrowPosition,
+            (mps[p.m], mps[dst], maxLtv, _noSig(), new PublicAllocations[](0), p.pct, accts[p.ref], p.deadline)
+        );
     }
 
     /* ENTRE LLAMADAS */
@@ -360,8 +419,10 @@ contract NexusBlueBundlesHandler is Test {
         blue.supply(mps[m], a, 0, accts[h], "");
     }
 
+    /// @dev Entre la mitad y 2,5 veces el precio de partida de cada familia.
     function setPrice(uint256 i, uint256 seed) external {
-        oracle[i % 2].setPrice(PSCALE / 2 + seed % (2 * PSCALE));
+        uint256 base = i % 2 == 0 ? PSCALE : CHEAP;
+        oracle[i % 2].setPrice(base / 2 + seed % (2 * base));
     }
 
     function warp(uint256 secs) external {
@@ -387,8 +448,53 @@ contract NexusBlueBundlesHandler is Test {
         p.pct = k < 3 ? 0 : (k == 3 ? 1 : (k == 4 ? 0.003e18 : (k == 5 ? 0.5e18 : (k == 6 ? WAD - 1 : WAD))));
         p.ref = I_REF + (s >> 16) % 2;
         p.deadline = (s >> 24) % 32 == 0 ? block.timestamp - 1 : block.timestamp;
-        uint256 l = (s >> 32) % 4;
-        p.maxLtv = l == 0 ? 0.5e18 : (l == 1 ? 0.8e18 : type(uint256).max);
+        uint256 l = (s >> 32) % 8;
+        p.maxLtv = l == 0 ? 0.5e18 : (l == 1 ? 0.8e18 : (l == 7 ? 0 : type(uint256).max));
+        if (l == 4 || l == 5) (p.maxLtv, p.edge) = (0.8e18, 1);
+        if (l == 6) (p.maxLtv, p.edge) = (0.8e18, 2);
+    }
+
+    error NexusDryLtv(uint256 borrowed, uint256 collateralValue);
+    error NexusDryFailed();
+
+    /// @dev El maxLtv de la llamada y si su control tiene que fallar. Salvo sin control (max), corre en seco la misma
+    /// llamada sin control y se revierte, con la deuda que queda (redondeada hacia arriba, devengada) y el valor del
+    /// colateral: de ahí sale el mínimo maxLtv que pasa. En el borde (`edge`), maxLtv es ese mínimo o uno menos.
+    function _ltvFor(P memory p, uint256 m, bytes memory dry) internal returns (uint256 maxLtv, bool fails) {
+        maxLtv = p.maxLtv;
+        if (maxLtv == type(uint256).max) return (maxLtv, false);
+        try this.dryLtv(accts[p.u], m, dry) {}
+        catch (bytes memory r) {
+            if (r.length != 68 || bytes4(r) != NexusDryLtv.selector) return (maxLtv, false);
+            uint256 borrowed = _word(r, 4);
+            uint256 x = _word(r, 36);
+            if (borrowed == 0) return (maxLtv, false); // sin deuda el bundle no controla
+            // borrowed <= floor(x * maxLtv / WAD) si y solo si maxLtv >= ceil(borrowed * WAD / x)
+            uint256 need = x == 0 ? type(uint256).max : (borrowed * WAD + x - 1) / x;
+            if (p.edge == 1) maxLtv = need;
+            if (p.edge == 2) maxLtv = need - 1;
+            if (p.edge != 0) ++hLtvEdge;
+            fails = maxLtv < need;
+        }
+    }
+
+    /// @dev Corrida en seco (ver _ltvFor): revierte siempre.
+    function dryLtv(address w, uint256 m, bytes calldata data) external {
+        require(msg.sender == address(this), "nexus: solo el handler");
+        vm.prank(w);
+        (bool ok,) = address(bundle).call(data);
+        if (!ok) revert NexusDryFailed();
+        uint256 shares = blue.position(mps[m].id(), w).borrowShares;
+        uint256 coll_ = blue.position(mps[m].id(), w).collateral;
+        uint256 price = (m >= 2 ? oracle[1] : oracle[0]).price();
+        revert NexusDryLtv(shares.toAssetsUp(_tba(m), _tbs(m)), coll_ * price / PSCALE);
+    }
+
+    /// @dev La palabra de 32 bytes de r que empieza en off.
+    function _word(bytes memory r, uint256 off) internal pure returns (uint256 x) {
+        for (uint256 i; i < 32; ++i) {
+            x = (x << 8) | uint8(r[off + i]);
+        }
     }
 
     /// @dev Un mercado donde `u` tiene deuda, empezando por `m` (o `m` si no tiene en ninguno).
@@ -426,20 +532,21 @@ contract NexusBlueBundlesHandler is Test {
         return maxB < liq ? maxB : liq;
     }
 
-    function _tsa(uint256 m) internal view returns (uint256) {
-        return blue.market(mps[m].id()).totalSupplyAssets;
+    // Los totales del mercado devengados hasta ahora (lo que ve Blue al operar): con interés, los guardados quedan viejos.
+    function _tsa(uint256 m) internal view returns (uint256 x) {
+        (x,,,) = blue.expectedMarketBalances(mps[m]);
     }
 
-    function _tss(uint256 m) internal view returns (uint256) {
-        return blue.market(mps[m].id()).totalSupplyShares;
+    function _tss(uint256 m) internal view returns (uint256 x) {
+        (, x,,) = blue.expectedMarketBalances(mps[m]);
     }
 
-    function _tba(uint256 m) internal view returns (uint256) {
-        return blue.market(mps[m].id()).totalBorrowAssets;
+    function _tba(uint256 m) internal view returns (uint256 x) {
+        (,, x,) = blue.expectedMarketBalances(mps[m]);
     }
 
-    function _tbs(uint256 m) internal view returns (uint256) {
-        return blue.market(mps[m].id()).totalBorrowShares;
+    function _tbs(uint256 m) internal view returns (uint256 x) {
+        (,,, x) = blue.expectedMarketBalances(mps[m]);
     }
 
     function _noPermit() internal pure returns (TokenPermit memory t) {
@@ -462,24 +569,28 @@ contract NexusBlueBundlesHandler is Test {
             }
         }
         for (uint256 m; m < NM; ++m) {
-            Market memory mk = blue.market(mps[m].id());
-            s.tsa[m] = mk.totalSupplyAssets;
-            s.tss[m] = mk.totalSupplyShares;
-            s.tba[m] = mk.totalBorrowAssets;
-            s.tbs[m] = mk.totalBorrowShares;
+            (s.tsa[m], s.tss[m], s.tba[m], s.tbs[m]) = blue.expectedMarketBalances(mps[m]);
         }
         s.bLoan = loan.balanceOf(address(bundle));
         s.bC0 = coll[0].balanceOf(address(bundle));
         s.bC1 = coll[1].balanceOf(address(bundle));
     }
 
-    /// @dev BB-LIVE, y si pasó, BB-FUNDS (el bundle sin saldo) y BB-ISO. Devuelve si siguen las leyes de la entrada.
-    function _after(uint256 kind, bool ok, bytes memory ret, P memory p, Snap memory pre) internal returns (bool) {
+    /// @dev BB-LIVE en las dos direcciones, y si pasó, BB-FUNDS (el bundle sin saldo) y BB-ISO. Devuelve si siguen las
+    /// leyes de la entrada. `ltvFails`: el control de maxLtv tiene que fallar; `otherTokens`: la migración, también.
+    function _after(uint256 kind, bool ok, bytes memory ret, P memory p, Snap memory pre, bool ltvFails, bool otherTokens)
+        internal
+        returns (bool)
+    {
         ++hCalls[kind];
-        bool mustRevert = p.deadline < block.timestamp || p.pct >= WAD;
+        bool late = p.deadline < block.timestamp;
+        bool mustRevert = late || p.pct >= WAD;
         _ok(!(ok && mustRevert), L_LIVE, "paso con el plazo vencido o con comision de referido >= WAD (entrada, comision)", kind, p.pct);
         if (!ok) {
-            ++hRev[_revKind(ret)];
+            uint256 r = _revKind(ret);
+            ++hRev[r];
+            bool wrong = (r == 0 && !ltvFails) || (r == 1 && !otherTokens) || (r == 2 && !late && p.pct < WAD);
+            _ok(!wrong, L_LIVE, "revirtio por una validacion del bundle que no correspondia (entrada, motivo: 0 LtvExceeded, 1 InconsistentTokens, 2 plazo o comision)", kind, r);
             return false;
         }
         if (mustRevert) return false;
@@ -588,6 +699,12 @@ contract NexusBlueBundlesHandler is Test {
     {
         return (hLaws, hCalls, hOk, hFees, hLtvChecked, hMigrations, hRev);
     }
+
+    /// @dev Las llamadas con maxLtv en el borde y lo que valen hoy 1e24 acciones de oferta del mercado 0 y de deuda del
+    /// mercado 3 (de partida, 1e18: la relación redonda de Blue).
+    function extra() external view returns (uint256, uint256, uint256) {
+        return (hLtvEdge, uint256(1e24).toAssetsDown(_tsa(0), _tss(0)), uint256(1e24).toAssetsUp(_tba(3), _tbs(3)));
+    }
 }
 
 contract NexusBlueBundlesTest is Test {
@@ -626,6 +743,10 @@ contract NexusBlueBundlesTest is Test {
         emit log_named_uint("cobertura: llamadas con comision de referido", fees);
         emit log_named_uint("cobertura: controles de maxLtv", ltv);
         emit log_named_uint("cobertura: migraciones", mig);
+        (uint256 edge, uint256 supplyPrice, uint256 borrowPrice) = handler.extra();
+        emit log_named_uint("cobertura: llamadas con maxLtv en el borde exacto", edge);
+        emit log_named_uint("cobertura: activo de 1e24 acciones de oferta del mercado 0 (de partida 1e18)", supplyPrice);
+        emit log_named_uint("cobertura: activo de 1e24 acciones de deuda del mercado 3 (de partida 1e18)", borrowPrice);
         emit log_named_uint("reversiones: LtvExceeded", r[0]);
         emit log_named_uint("reversiones: InconsistentTokens", r[1]);
         emit log_named_uint("reversiones: plazo o comision >= WAD", r[2]);

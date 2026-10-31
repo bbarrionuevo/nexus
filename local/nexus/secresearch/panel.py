@@ -43,7 +43,8 @@ PERFILES = {"vault-v2": ("morpho-org__vault-v2", "NexusVaultV2"),
             "vault-v3": ("yearn__yearn-vaults-v3", "NexusVaultV3"),
             "midnight": ("morpho-org__midnight", "NexusMidnight"),
             "midnight-bundles": ("morpho-org__bundles", "NexusMidnightBundles"),
-            "blue-bundles": ("morpho-org__bundles", "NexusBlueBundles")}
+            "blue-bundles": ("morpho-org__bundles", "NexusBlueBundles"),
+            "vault-bundles": ("morpho-org__bundles", "NexusVaultBundles")}
 LAW = re.compile(r"\b(?:YV|MN|[HVEY])-[A-Z]+(?:-\d+)?")
 SEED = re.compile(r"^0x[0-9a-f]{1,16}$")
 MATCH = re.compile(r"^\^?[A-Za-z0-9]+\$?$")
