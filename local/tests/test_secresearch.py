@@ -450,9 +450,10 @@ def test_harness_de_midnight_es_coherente_y_no_sale_de_la_evm_local():
 def test_harness_de_midnight_bundles_es_coherente_y_no_sale_de_la_evm_local():
     from nexus.secresearch import limits, validate
     man, files = validate.load_harness("morpho-org__bundles")
-    assert man["repo"] == "morpho-org/bundles" and man["match_contract"] == "^NexusMidnightBundles"
+    assert man["repo"] == "morpho-org/bundles" and man["match_contract"] == "^Nexus(Midnight|Blue)Bundles"
     assert man["aislado"] is True
-    assert {f.name for f in files} == {"NexusMidnightBundles.t.sol"}
+    assert {f.name for f in files} == {"NexusMidnightBundles.t.sol", "NexusMidnightBundlesMake.t.sol",
+                                       "NexusBlueBundles.t.sol", "NexusBlueImport.sol"}
     banned = ("ffi(", "createFork", "createSelectFork", "selectFork", "rpc(", "rpcUrl", "broadcast", "readFile",
               "writeFile", "envOr", "envString", "setEnv", "sign(", *limits.FORBIDDEN)
     for f in files:

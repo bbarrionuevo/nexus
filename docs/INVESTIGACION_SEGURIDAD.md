@@ -147,6 +147,28 @@ Modelo, ecuaciones, leyes, auditoría del handler anterior e integración: [CAZA
 
 Son los próximos frentes, en ese orden de valor.
 
+### Cómo escribir un cazador nuevo (lecciones hasta el 30-oct)
+
+- **Leyes universales primero, modelo después.** En los Bundles alcanzó con leyes que no necesitan modelo del núcleo:
+  el contrato intermediario no se queda con saldo, lo que paga una parte es lo que cobra la otra más las comisiones
+  documentadas, nadie ajeno cambia, las garantías documentadas se cumplen, y la llamada revierte si y solo si una
+  validación lo exige (BU-LIVE en las dos direcciones). El núcleo lo cubre su propio cazador.
+- **Medir del otro lado.** Lo "llenado" se mide como lo que entró a las contrapartes y al protocolo, no como lo que
+  dice el contrato bajo prueba.
+- **Decisiones por hash, montos mezclados.** Con semillas chicas, que el fuzzer da a menudo, los bits altos son cero
+  y una decisión por bits cae siempre en la misma rama: las decisiones salen de un hash de la semilla. Forge saca del
+  diccionario el 80 % de los valores de una campaña de invariantes (`dictionary_weight = 80`), así que los montos
+  crudos quedan chicos: 1 de cada 4 crudo (para apuntar a valores exactos) y el resto uniforme en el rango.
+- **Una reversión que no rompe una validación no es violación,** pero la proporción importa: si la mitad de las
+  llamadas revierte por lo mismo, el cazador gasta la campaña. Se cuentan por motivo (selector) en las métricas.
+- **Solidity: `P memory q = p` copia la referencia.** Cambiar un campo de la copia cambia el original (falso
+  positivo de BlueBundlesV1 del 30-oct). Pasar los parámetros sueltos.
+- **Todo cálculo de la ley con signo.** Una resta que desborda dentro del handler lo hace revertir, y la reversión
+  borra la violación que se acababa de registrar: los deltas van en `int256` y las leyes con división se saltean si
+  ya se registró que la llamada no tenía que pasar.
+- **Verificación antes de campaña:** línea base sin mutar con dos semillas, sin falsos positivos ni reversiones del
+  handler, y una batería de mutaciones que pruebe que cada ley ve lo suyo. Después, la campaña profunda.
+
 ## Límites de seguridad
 
 Ver [REGLAS.md](REGLAS.md) (R-1 a R-10). Se hacen cumplir con `limits.py` y `tests/test_limits.py`

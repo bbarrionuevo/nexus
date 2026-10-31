@@ -157,11 +157,8 @@ abstract contract NexusMBBase is Test {
         id = midnight.touchMarket(_market());
         id2 = midnight.touchMarket(_market2());
 
-        address blue = address(uint160(uint256(keccak256("nexus.mb.blue"))));
-        NexusMBFactoryStub fac = new NexusMBFactoryStub(address(midnight), blue);
-        bundle = new MidnightBundlesV2(
-            address(midnight), blue, address(fac), address(uint160(uint256(keccak256("nexus.mb.log"))))
-        );
+        (address blue, address fac, address log) = _periphery();
+        bundle = new MidnightBundlesV2(address(midnight), blue, fac, log);
 
         for (uint256 h; h < NA; ++h) {
             address u = address(uint160(uint256(keccak256(abi.encode("nexus.mb.acct", h)))));
@@ -178,6 +175,14 @@ abstract contract NexusMBBase is Test {
             }
             vm.stopPrank();
         }
+    }
+
+    /// @dev Blue, la fábrica de BlueBuyCallback y el log del bundle. Fase 1: stubs, porque las entradas de toma no los
+    /// usan; la fase 2 despliega los reales. Corre dentro del constructor, con el núcleo y los tokens ya desplegados.
+    function _periphery() internal virtual returns (address blue, address fac, address log) {
+        blue = address(uint160(uint256(keccak256("nexus.mb.blue"))));
+        fac = address(new NexusMBFactoryStub(address(midnight), blue));
+        log = address(uint160(uint256(keccak256("nexus.mb.log"))));
     }
 
     function _market() internal view returns (Market memory mk) {
@@ -214,13 +219,17 @@ abstract contract NexusMBBase is Test {
 
     /// @dev Pone el colateral `i` que necesita `h` para deber `units` más de lo que ya debe (con 25 % de margen).
     function _collateralize(uint256 h, uint256 i, uint256 units) internal {
+        _collateralizeIn(_market(), h, i, units);
+    }
+
+    function _collateralizeIn(Market memory mk, uint256 h, uint256 i, uint256 units) internal {
         uint256 p = oracle[i].price();
         if (p == 0 || units == 0) return;
         uint256 need = ((units * WAD) / lltv[i] + 1) * PSCALE / p + 1;
         need += need / 4;
         coll[i].mint(accts[h], need);
         vm.prank(accts[h]);
-        midnight.supplyCollateral(_market(), i, need, accts[h]);
+        midnight.supplyCollateral(mk, i, need, accts[h]);
     }
 }
 
@@ -246,7 +255,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
     uint256 internal hRepaid; // llamadas de compra que repagaron deuda
     uint256 internal hWithdrawn; // llamadas de venta que retiraron crédito antes de tomar ofertas
     uint256 internal hFees; // llamadas que pagaron comisión de referido
-    uint256[9] internal hRev; // reversiones del bundle por motivo (ver _revKind)
+    uint256[10] internal hRev; // reversiones del bundle por motivo (ver _revKind)
     uint256 internal hDirect; // posiciones directas (sin el bundle) que se abrieron
     uint256 internal hDirectRepay; // repagos directos
     bytes4 internal lastOther; // el último motivo de reversión sin clasificar
@@ -269,6 +278,8 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         uint256 bC1;
         uint256 midLoan;
         uint256 withdrawable;
+        uint256 ext; // activo prestado de Blue y los BlueBuyCallback (fase 2; 0 en la fase 1)
+        uint256[] extState; // estado propio de la fase 2 (posiciones de los callbacks en Blue)
     }
 
     /// @dev Lo que eligió el fuzzer para una llamada.
@@ -295,7 +306,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
     function buyUnits(uint256 userSeed, uint256 offersSeed, uint256 paramsSeed, uint256 collSeed) external {
         P memory p = _params(userSeed, paramsSeed);
         p.target = _target(paramsSeed, midnight.debt(id, accts[p.u]));
-        p.bound = _h(collSeed, 1) % 4 == 0 ? 1 + collSeed % AMT : 4 * AMT; // maxBuyerAssets
+        p.bound = _h(collSeed, 1) % 4 == 0 ? _amt(collSeed, 70, AMT) : 4 * AMT; // maxBuyerAssets
         OfferFill[] memory f = _fills(p, true, offersSeed);
         CollateralTransfer[] memory cw = _withdrawals(p.u, collSeed);
         loan.mint(accts[p.u], p.bound);
@@ -334,7 +345,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         P memory p = _params(userSeed, paramsSeed);
         (uint128 c0,,) = midnight.updatePositionView(_market(), id, accts[p.u]);
         p.target = _target(paramsSeed, c0);
-        p.bound = _h(collSeed, 1) % 4 == 0 ? collSeed % AMT : 0; // minSellerAssets
+        p.bound = _h(collSeed, 1) % 4 == 0 ? _amt(collSeed, 70, AMT) - 1 : 0; // minSellerAssets
         OfferFill[] memory f = _fills(p, false, offersSeed);
         CollateralTransfer[] memory cs = _supplies(p.u, collSeed);
         Snap memory pre = _snap();
@@ -369,8 +380,8 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
 
     function buyAssets(uint256 userSeed, uint256 offersSeed, uint256 paramsSeed, uint256 collSeed) external {
         P memory p = _params(userSeed, paramsSeed);
-        p.target = 1 + paramsSeed % AMT; // targetBuyerAssets
-        p.bound = _h(collSeed, 1) % 4 == 0 ? collSeed % AMT : 0; // minUnits
+        p.target = _amt(paramsSeed, 72, AMT); // targetBuyerAssets
+        p.bound = _h(collSeed, 1) % 4 == 0 ? _amt(collSeed, 70, AMT) - 1 : 0; // minUnits
         OfferFill[] memory f = _fills(p, true, offersSeed);
         CollateralTransfer[] memory cw = _withdrawals(p.u, collSeed);
         loan.mint(accts[p.u], p.target);
@@ -404,8 +415,8 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
 
     function sellAssets(uint256 userSeed, uint256 offersSeed, uint256 paramsSeed, uint256 collSeed) external {
         P memory p = _params(userSeed, paramsSeed);
-        p.target = 1 + paramsSeed % AMT; // targetSellerAssets
-        p.bound = _h(collSeed, 1) % 4 == 0 ? collSeed % AMT : type(uint256).max; // maxUnits
+        p.target = _amt(paramsSeed, 72, AMT); // targetSellerAssets
+        p.bound = _h(collSeed, 1) % 4 == 0 ? _amt(collSeed, 70, AMT) - 1 : type(uint256).max; // maxUnits
         OfferFill[] memory f = _fills(p, false, offersSeed);
         CollateralTransfer[] memory cs = _supplies(p.u, collSeed);
         Snap memory pre = _snap();
@@ -445,7 +456,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         uint256 s = _h(seed, 4);
         uint256 seller = s % NH;
         uint256 buyer = (seller + 1 + (s >> 8) % (NH - 1)) % NH;
-        uint256 units = 1 + unitsSeed % AMT;
+        uint256 units = _amt(unitsSeed, 74, AMT);
         _collateralize(seller, (s >> 16) % NC, units);
         loan.mint(accts[buyer], 2 * units + 1);
         Offer memory o;
@@ -500,7 +511,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         uint256 h = _h(seed, 7) % NH;
         uint256 d = midnight.debt(id, accts[h]);
         if (d == 0) return;
-        uint256 r = 1 + amt % d;
+        uint256 r = _amt(amt, 76, d);
         loan.mint(accts[h], r);
         vm.prank(accts[h]);
         midnight.repay(_market(), r, accts[h], address(0), "");
@@ -531,8 +542,15 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
     function _target(uint256 seed, uint256 have) internal pure returns (uint256) {
         uint256 k = _h(seed, 1) % 8;
         if (k < 2) return type(uint256).max;
-        if (k == 2 && have > 0) return 1 + seed % have;
-        return 1 + seed % AMT;
+        if (k == 2 && have > 0) return _amt(seed, 78, have);
+        return _amt(seed, 80, AMT);
+    }
+
+    /// @dev Un monto en [1, max]: 1 de cada 4 veces el valor crudo (el diccionario del fuzzer apunta a valores
+    /// exactos: saldos, posiciones, constantes), las demás uniforme. Con dictionary_weight = 80 (lo de forge para
+    /// invariantes), casi todos los montos crudos salían del diccionario y quedaban chicos.
+    function _amt(uint256 seed, uint256 salt, uint256 max) internal pure returns (uint256) {
+        return _h(seed, salt) % 4 == 0 ? 1 + seed % max : 1 + _h(seed, salt + 1) % max;
     }
 
     function _params(uint256 userSeed, uint256 seed) internal view returns (P memory p) {
@@ -551,7 +569,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
 
     /// @dev Entre 1 y 4 ofertas de los otros actores, del lado que corresponde (si quien llama compra, ofertas de
     /// venta). Algunas vencidas (el núcleo las rechaza y el bundle las saltea), con reduceOnly o con topes.
-    function _fills(P memory p, bool takerBuys, uint256 seed) internal returns (OfferFill[] memory f) {
+    function _fills(P memory p, bool takerBuys, uint256 seed) internal virtual returns (OfferFill[] memory f) {
         // sin ofertas 1 de cada 8 veces: repago o retiro directos (documentado: con targetUnits = type(uint256).max y
         // sin ofertas, la compra por unidades repaga toda la deuda)
         uint256 hn = _h(seed, 6);
@@ -581,6 +599,10 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
             f[k].units = (s >> 128) % 4 == 0 ? type(uint256).max : 1 + (s >> 136) % AMT;
             if (o.buy) loan.mint(accts[m], 2 * AMT); // el creador compra: paga él
             else _collateralize(m, (s >> 200) % NC, 2 * AMT); // el creador vende: puede quedar con deuda
+            // la oferta del mercado equivocado tiene que poder tomarse si el bundle no la rechaza: colateral en ese mercado
+            // para quien se endeuda (el que toma si la oferta es de compra, el creador si es de venta). Sin esto, la
+            // toma fallaba por salud, se salteaba, y BU-LIVE no veía que faltara el control del mercado (U16, 30-oct).
+            if (k == 0 && bad == 1) _collateralizeIn(_market2(), o.buy ? p.u : m, (s >> 208) % NC, 2 * AMT);
         }
     }
 
@@ -627,7 +649,20 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         s.bC1 = coll[1].balanceOf(address(bundle));
         s.midLoan = loan.balanceOf(address(midnight));
         s.withdrawable = midnight.withdrawable(id);
+        s.ext = _extLoan();
+        s.extState = _extState();
     }
+
+    /// @dev Fase 2: el activo prestado que tienen Blue y los BlueBuyCallback.
+    function _extLoan() internal view virtual returns (uint256) {
+        return 0;
+    }
+
+    /// @dev Fase 2: estado propio para sus leyes (posiciones de los callbacks en Blue y sus saldos).
+    function _extState() internal view virtual returns (uint256[] memory) {}
+
+    /// @dev Fase 2: leyes propias después de una llamada de toma que pasó.
+    function _extLaws(uint256 kind, P memory p, Snap memory pre, Snap memory post) internal virtual {}
 
     /// @dev Lo común a toda llamada: BU-LIVE, y si pasó, BU-FUNDS (el bundle sin saldo), BU-ISO y BU-CONS. Devuelve
     /// si siguen las leyes propias de la entrada (no, si revirtió o si pasó cuando tenía que revertir).
@@ -666,14 +701,17 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         _okI(sum == dw, L_CONS, "las unidades no se conservan: lo que cambio entre usuario y creadores no es lo que cambio withdrawable (suma, withdrawable)", sum, dw);
         if (dw > 0) ++hRepaid;
         if (dw < 0) ++hWithdrawn;
+        _extLaws(kind, p, pre, post);
         return true;
     }
 
     /// @dev Clase del motivo de una reversión del bundle: 0 OutOfOffers, 1 UnitsTooLow, 2 UnitsTooHigh,
     /// 3 SellerAssetsTooLow, 4 NotReduceOnly, 5 validaciones (DeadlinePassed, PctExceeded, InconsistentSide,
     /// InconsistentMarket, ContinuousFeeAboveMax), 6 pánico (aritmética: en TakeAmountsLib, una oferta de compra con
-    /// precio menor que la comisión), 7 otro, 8 PriceGreaterThanOne (TakeAmountsLib: oferta de venta no tomable).
+    /// precio menor que la comisión), 7 otro, 8 PriceGreaterThanOne (TakeAmountsLib: oferta de venta no tomable),
+    /// 9 sin datos (una oferta de compra tocada con un callback sin código: buyerAssetsBound revierte fuera del try).
     function _revKind(bytes memory ret) internal pure returns (uint256) {
+        if (ret.length == 0) return 9;
         if (ret.length < 4) return 7;
         bytes4 s = bytes4(ret);
         if (s == IMidnightBundlesV2.OutOfOffers.selector) return 0;
@@ -716,6 +754,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
             s += int256(post.a[h].loan) - int256(pre.a[h].loan);
         }
         s += int256(post.midLoan) - int256(pre.midLoan);
+        s += int256(post.ext) - int256(pre.ext);
     }
 
     /// @dev Variación del saldo de activo prestado de `h`.
@@ -807,7 +846,7 @@ contract NexusMidnightBundlesHandler is NexusMBBase {
         return (hLaws, hCalls, hOk, hTakesFilled, hRepaid, hWithdrawn, hFees);
     }
 
-    function revertCounts() external view returns (uint256[9] memory, uint256, uint256, bytes4, uint256) {
+    function revertCounts() external view returns (uint256[10] memory, uint256, uint256, bytes4, uint256) {
         return (hRev, hDirect, hDirectRepay, lastOther, lastPanic);
     }
 }
@@ -858,7 +897,7 @@ contract NexusMidnightBundlesTest is Test {
         emit log_named_uint("cobertura: llamadas con repago", repaid);
         emit log_named_uint("cobertura: llamadas con retiro de credito", withdrawn);
         emit log_named_uint("cobertura: llamadas con comision de referido", fees);
-        (uint256[9] memory r, uint256 direct, uint256 directRepay, bytes4 other, uint256 panic) =
+        (uint256[10] memory r, uint256 direct, uint256 directRepay, bytes4 other, uint256 panic) =
             handler.revertCounts();
         emit log_named_uint("cobertura: posiciones directas abiertas", direct);
         emit log_named_uint("cobertura: repagos directos", directRepay);
@@ -871,6 +910,7 @@ contract NexusMidnightBundlesTest is Test {
         emit log_named_uint("reversiones: panico aritmetico", r[6]);
         emit log_named_uint("reversiones: codigo del ultimo panico", panic);
         emit log_named_uint("reversiones: oferta de venta no tomable (PriceGreaterThanOne)", r[8]);
+        emit log_named_uint("reversiones: sin datos (callback sin codigo)", r[9]);
         emit log_named_uint("reversiones: otras", r[7]);
         emit log_named_bytes32("reversiones: ultimo motivo sin clasificar", bytes32(other));
     }
