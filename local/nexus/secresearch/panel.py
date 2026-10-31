@@ -153,6 +153,32 @@ def launch(params, home=None):
     return rec
 
 
+# La campaña rotativa: profunda, guiada por cobertura y con el corpus acumulado de cada perfil.
+ROTACION = {"runs": 512, "depth": 500, "corpus": True}
+
+
+def rotar(home=None, launch_fn=None):
+    """Si no hay ninguna campaña corriendo, lanza una profunda del perfil que hace más tiempo que no corre (primero los
+    que nunca corrieron), con una semilla al azar. La llama el ciclo desatendido al terminar: así la PC caza también las
+    horas que quedan libres. Una sola a la vez: con una campaña de varias variantes ya se usa buena parte de los 8
+    hilos, y la PC la usa también el dueño. Devuelve (estado, detalle): ("lanzada", id) u ("omitida", motivo)."""
+    home = Path(home or paths.home())
+    recs = campaigns(home)
+    corriendo = [c["id"] for c in recs if c["estado"] == "corriendo"]
+    if corriendo:
+        return "omitida", f"ya hay una campaña corriendo: {corriendo[0]}"
+    ultima = {}
+    for c in recs:
+        # el id de launch empieza con la fecha y la hora (AAAAMMDD-HHMMSS): ordena igual que el inicio, y no depende de
+        # lo que se lea del log (su línea INICIO pisa al "started" del registro en campaigns)
+        perfil, inicio = c.get("perfil"), str(c.get("id", ""))[:15]
+        if perfil in PERFILES and inicio > ultima.get(perfil, ""):
+            ultima[perfil] = inicio
+    perfil = min(PERFILES, key=lambda p: (ultima.get(p, ""), p))
+    rec = (launch_fn or launch)({"perfil": perfil, **ROTACION}, home)
+    return "lanzada", rec["id"]
+
+
 def _campaign_env(rec):
     """El entorno de forge_v2 para una campaña: perfil, filtro, fail_on_revert y el corpus."""
     env = {**os.environ, "NEXUS_PERFIL": rec["perfil"], "FOUNDRY_FFI": "false", "PYTHONUTF8": "1",
@@ -623,6 +649,10 @@ $('filt').oninput=drawFiles;refresh();setInterval(refresh,5000);setInterval(tail
 def main(argv):
     if argv[:1] == ["--run"] and len(argv) == 2:
         return run_campaign(argv[1])
+    if argv[:1] == ["--rotar"]:  # la campaña rotativa (la usa el ciclo; también a mano)
+        estado, detalle = rotar()
+        print(f"campaña rotativa {estado}: {detalle}")
+        return 0
     if argv[:1] == ["--resumen"] and len(argv) == 2:  # una campaña en la terminal, sin abrir el panel
         print(resumen(argv[1]))
         return 0

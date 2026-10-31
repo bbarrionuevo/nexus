@@ -526,6 +526,18 @@ def test_ciclo_desatendido_una_vez_con_candado_topes_y_resumen(tmp_path):
     rep = cycle.cycle(baselines=1, **{**kw, "check": roto})
     assert [s["ok"] for s in rep["steps"]] == [True, None, False, True] and "manifiesto roto" in rep["steps"][2]["detail"]
 
+    rotadas = []                                                             # la campaña rotativa, al final (31-oct)
+    clock["t"] += 86400
+    rep = cycle.cycle(baselines=0, **kw, rotar=lambda h: rotadas.append(h) or ("lanzada", "c9"))
+    assert rotadas == [home] and rep["steps"][-1] == {"step": "campaña rotativa", "ok": True, "detail": "lanzada: c9"}
+    rep = cycle.cycle(baselines=0, **kw, rotar=lambda h: ("omitida", "ya hay una campaña corriendo: c9"))
+    assert rep["steps"][-1] == {"step": "campaña rotativa", "ok": None, "detail": "omitida: ya hay una campaña corriendo: c9"}
+
+    def rota(h):
+        raise OSError("sin procesos")
+    rep = cycle.cycle(baselines=0, **kw, rotar=rota)
+    assert rep["steps"][-1]["ok"] is False and "sin procesos" in rep["steps"][-1]["detail"]
+
     calls.clear()                                                            # otro ciclo en curso: no corre nada
     (out / "ciclo.lock").write_text("{}")
     assert cycle.cycle(**kw)["skipped"] and calls == []
