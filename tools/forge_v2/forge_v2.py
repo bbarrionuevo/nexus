@@ -273,10 +273,36 @@ def _clon_fijado(clone, perfil):
                          f"git -C {clone} submodule update --init {' '.join(fuera)}")
 
 
+def _git(clone, *args):
+    return subprocess.run(["git", "-c", "core.longpaths=true", "-C", str(clone), *args], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", check=False)
+
+
+def _fijar(clone, perfil):
+    """Lleva el clon a lo desplegado (`ref`) y los submódulos que copia el perfil al commit que fija ese ref, y después
+    controla que haya quedado así (_clon_fijado). El ciclo desatendido mueve cada noche los clones compartidos al
+    último commit (31-oct: Bundles, Midnight, EulerEarn y Vault V3 amanecieron fuera de lo desplegado), y sin esto cada
+    campaña del día siguiente fallaba al armar. Mover el clon no le molesta al ciclo: validate hace su propio
+    checkout."""
+    ref = perfil.get("ref")
+    if ref:
+        head = _git(clone, "rev-parse", "HEAD").stdout.strip()
+        if not head.startswith(ref):
+            r = _git(clone, "checkout", "--quiet", ref)
+            print(f"clon llevado de {head[:10] or '?'} a {ref}" + (f": {r.stderr.strip()[-300:]}" if r.returncode else ""),
+                  flush=True)
+        fuera = _submodulos_fuera(_git(clone, "submodule", "status").stdout, (*perfil["sources"], *perfil["trees"]))
+        if fuera:
+            r = _git(clone, "submodule", "update", "--init", "--quiet", "--", *fuera)
+            print(f"submódulos llevados a lo que fija {ref}: {', '.join(fuera)}"
+                  + (f": {r.stderr.strip()[-300:]}" if r.returncode else ""), flush=True)
+    _clon_fijado(clone, perfil)
+
+
 def armar(clone, dest):
     clone, dest = Path(clone), Path(dest)
     perfil = _perfil()
-    _clon_fijado(clone, perfil)
+    _fijar(clone, perfil)
     if dest.exists():
         shutil.rmtree(dest)
     for rel in perfil["sources"]:
@@ -382,7 +408,7 @@ def mutar(dest, clone, only=()):
     dest = Path(dest)
     runs, depth, seed = os.environ.get("NEXUS_MUT_RUNS", "64 200 0x2a").split()
     perfil = _perfil()
-    _clon_fijado(clone, perfil)  # la copia limpia de cada mutación sale del clon
+    _fijar(clone, perfil)  # la copia limpia de cada mutación sale del clon
     match = os.environ.get("NEXUS_MUT_MATCH", perfil["match"])
     env = _env(runs, depth, seed, FOUNDRY_INVARIANT_SHRINK_RUN_LIMIT="0")
     _harness(dest)

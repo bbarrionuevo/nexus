@@ -128,7 +128,7 @@ Lo que conviene saber de forge en un handler:
 | D. Validación con Foundry | Funciona en la PC: `validate` clona fijado a un commit, FFI apagado, informe privado |
 | D'. Harness de MetaMorpho | Funciona: suite a16z, handler original y `NexusVulnerabilityHunter` con una suite multi-mercado con gobierno |
 | D''. Harness de Vault V2 | Funciona (28-oct): variante A con capital asignado de verdad y 12 leyes `V-...` (con `forceDeallocate`, los topes, el gobierno con timelock y la cota de dominio V-BOUND), variante B con el adapter real sobre Blue y el Public Allocator; verificadas con forge en la PC: las 35 mutaciones de referencia con el harness del #82 y las 20 del gobierno y de la cota (V36–V55) con el del #84 ([CAZADOR_VAULT_V2.md](CAZADOR_VAULT_V2.md)) |
-| Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard |
+| Ciclo desatendido | Funciona: corre A–C, los harness con semilla nueva y líneas base; escribe `para_claude.md` y el dashboard. Desde el 31-oct (#99), al terminar lanza la campaña rotativa: si no hay ninguna corriendo, una profunda (512×500, guiada por cobertura, con el corpus acumulado) del perfil de `tools/forge_v2` que hace más tiempo que no corre (`python -m nexus.secresearch.panel --rotar`; `NEXUS_ROTACION=0` la apaga) |
 | Dashboard | Nuevo (27-oct): página local con fallas, cobertura, métricas, corridas, programas, cambios, ciclos y expedientes |
 | Panel | Nuevo (28-oct): servidor local (`nexus.secresearch.panel`, solo biblioteca estándar) para monitorear forge, lanzar y frenar campañas y descargar informes sin pasar por Claude; solo `127.0.0.1`, token por arranque, control de `Host` y del encabezado de las acciones |
 | D'''. Harness de EulerEarn | Nuevo (28-oct): variante A sobre `a8cc099` (lo desplegado), 8 leyes `E-...` exactas con estrategias ERC-4626 de prueba ([CAZADOR_EULER_EARN.md](CAZADOR_EULER_EARN.md)). Verificado con forge en la PC: 3 de 3 a 256×500 sin falsos positivos ni reversiones (`0x2a`, `0x3` y `validate` con compilación aislada) y las 22 mutaciones de referencia detectadas. Sin hallazgos |
@@ -201,6 +201,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #93 | Reglas y flujo, con la autorización del dueño del 30-oct: Claude fusiona sus PR con el CI en verde (R-11), trabaja solo en la PC (R-12) y elige los objetivos por valor esperado (R-13); dentro de un programa habilitado puede sumar repos en alcance (R-1); `nexus.devcheck` como chequeo único antes del PR; la primera tabla de objetivos por valor esperado |
 | #94 | Objetivos por valor esperado, con los programas releídos el 30-oct (Euler pasó a un presupuesto de 1,5M con tope del 10 % del impacto; Morpho publica los Bundles nuevos en su página de direcciones): los Bundles de Morpho, sumados al catálogo, son el objetivo siguiente |
 | #97 | Morpho Bundles: el cazador de MidnightBundlesV2, fase 1 (leyes BU-...), el perfil `midnight-bundles` de `tools/forge_v2` y del panel con 24 mutaciones; el fuzzing guiado por cobertura por defecto, el avance en vivo de las campañas en el panel, una sola compilación por corrida donde no hay `deployCode`, y las pruebas que ya no dependen de la configuración regional de Windows |
+| #99 | La campaña rotativa: el ciclo, al terminar, lanza una campaña profunda del perfil más relegado si no hay otra corriendo (`panel --rotar`); `armar` y `mutar` llevan solos el clon compartido al commit desplegado (el ciclo los mueve cada noche); los resultados de las campañas profundas del 30 y 31-oct |
 | #98 | MidnightBundlesV2, fase 2: `CancelAndMake` con Blue (por `deployCode`), `BlueBuyCallback` y `PriceRatifierV1` reales, las ventas tomando esas ofertas y 10 mutaciones nuevas (K, C, R); el cazador de BlueBundlesV1 (variante B1, 14 mutaciones) y su perfil `blue-bundles`; montos mezclados; `"build": "once"` y archivos por perfil en `tools/forge_v2`; el corpus acumulado entre campañas del panel |
 | #95 | El panel automatiza la lección del 30-oct: lee las reversiones del handler por acción, marca en rojo una campaña que pasa con reversiones ("pasó con reversiones del handler (revisar)") y `--resumen <id>` la muestra en la terminal con cómo investigarlas |
 
@@ -440,10 +441,12 @@ ese objetivo.
      - TokenizedStrategy, a las 08:19, con el harness del #92:
        `20261030-081941_tokenized-strategy_128x6000_0x558c16a948b3b745`;
      - EulerEarn, a las 08:21: `20261030-082114_euler-earn_128x6000_0xf204663f1abb7cbe`. El primer intento no
-       arrancó porque el ciclo había movido el clon (abajo, «Los clones de `NEXUS_HOME/work`»).
+       arrancó porque el ciclo había movido el clon (abajo, «Los clones de `NEXUS_HOME/work`»). **Terminó el 31-oct a
+       las 12:56: las tres variantes (con comisión, 6 decimales y la base) pasaron 768.000 llamadas cada una, unas 28 h
+       por variante, sin leyes violadas y con 0 reversiones del handler.**
 
-     Al terminar, leer `FIN ... salida N` y las reversiones por acción, y anotar el resultado acá. Los resultados de las
-     campañas están en
+     La de TokenizedStrategy seguía corriendo el 31-oct a la tarde: al terminar, leer `FIN ... salida N` y las
+     reversiones por acción (`panel --resumen <id>`) y anotar el resultado acá. Los resultados de las campañas están en
      `NEXUS_HOME\secresearch\campanas\` (privado) y se ven en el panel.
    - **Herramienta nueva:** `vyper` 0.3.10 quedó instalado en el venv (28-oct, `pip install vyper==0.3.10`; anda en
      Python 3.12 con avisos de deprecación y compila `VaultV3.vy` en ~6 s). Los tests de foundry de
@@ -540,6 +543,11 @@ ese objetivo.
      usuario, raíces de Merkle ratificadas, y las ventas tomando esas ofertas, que pagan desde Blue. Leyes MK-CANCEL,
      MK-PARK, MK-RATIFY, MK-COLL, MK-ISO, MK-LIVE, BU-CB (un callback solo paga compras de su dueño) y BU-TAKE (solo el
      `allowedTaker` y solo con la raíz ratificada). Verificada: las 4 suites sin falsos positivos ni reversiones (32×120 con `0x2a` y `0x3`) y las 34 mutaciones detectadas (U1-U24, K1-K6, C1-C2, R1-R2).
+   - **Campaña profunda de las dos fases juntas** (30-oct, de las 21:00 a las 22:47, 512×500 con el corpus acumulado,
+     semilla `0x2e9fe52ee16d9670`, `20261030-210023_midnight-bundles_512x500_0x2e9fe52ee16d9670`): las cuatro suites
+     en verde, 256.000 llamadas cada una, **ninguna ley violada y 0 reversiones del handler**. En la última corrida de
+     las suites de la fase 2 pasaron 33 y 37 `CancelAndMake`, con 9 y 16 tomas pagadas desde Blue; la guía por
+     cobertura vio 154 y 160 caminos (95 y 98 en las de la fase 1) y el corpus acumulado llegó a 447 secuencias.
    - Al armar la fase 2: una oferta de compra tocada con un callback sin código hace revertir la venta entera
      (`buyerAssetsBound` revierte fuera del `try`). Es la misma clase que Spearbit 5.1.5, que Morpho aceptó: no es
      candidato. Y los montos: forge saca del diccionario el 80 % de los valores de una campaña de invariantes, así que
@@ -560,8 +568,11 @@ ese objetivo.
   líneas base. `validate` vuelve al commit fijado; `tools/forge_v2`, no. El 30-oct el ciclo movió los de Midnight,
   Vault V3, TokenizedStrategy y EulerEarn, y en EulerEarn también el submódulo del EVC, que volver al commit fijado
   no restaura.
-  - Desde el 30-oct, `armar` y `mutar` controlan el commit y los submódulos que copian, y frenan con el comando para
-    volver.
+  - Desde el 30-oct, `armar` y `mutar` controlan el commit y los submódulos que copian. Desde el 31-oct (#99) los
+    llevan solos al commit fijado antes de copiar: esa mañana Bundles, Midnight, EulerEarn y Vault V3 amanecieron en
+    `main` por el ciclo, y sin esto cada campaña del día (la rotativa incluida) fallaba al armar.
+  - La `validate` del ciclo del 31-oct dejó inicializados en el clon de Bundles los submódulos `lib/vault-v2` y
+    `lib/metamorpho`, que necesitan los cazadores de VaultBundlesV1 y VaultExitBundlesV1.
   - Se revisó con el reflog: las verificaciones del 30-oct se hicieron con los clones en el commit fijado.
 - **Campañas que sobreviven a la sesión:** desde el 29-oct `panel.launch` pide separarse del job de quien lanza
   (`CREATE_BREAKAWAY_FROM_JOB`) y, si Windows no lo permite, lanza como antes. Una campaña lanzada a mano desde una

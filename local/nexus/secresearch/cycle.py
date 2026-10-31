@@ -7,7 +7,10 @@
    cada corrida explora entradas distintas y la semilla queda en el informe para reproducir.
 3. Etapa D: líneas base de hasta N repos del catálogo sin una en los últimos 7 días (primero los que nunca la
    tuvieron). Muestran qué compila y qué pasa antes de escribir un harness para cada repo.
-4. Resumen del ciclo (ciclo.md, ciclo.jsonl), un acumulado para pegarle a Claude (para_claude.md) y el dashboard
+4. La campaña rotativa (panel.rotar, desde el 31-oct): si no hay ninguna corriendo, una profunda del perfil de
+   tools/forge_v2 que hace más tiempo que no corre, guiada por cobertura y con el corpus acumulado. Se lanza aparte,
+   con prioridad baja, y sigue después de que el ciclo termina. NEXUS_ROTACION=0 la apaga.
+5. Resumen del ciclo (ciclo.md, ciclo.jsonl), un acumulado para pegarle a Claude (para_claude.md) y el dashboard
    (dashboard.html), todo en NEXUS_HOME/secresearch: privado, nunca en el repo.
 
 Corre UNA vez y termina: el Programador de tareas de Windows decide cuándo vuelve a correr; el ciclo nunca se
@@ -93,7 +96,7 @@ def _guarded(name, fn):
 
 
 def cycle(max_minutes=180, baselines=2, programs=None, home=None, now=time.time, scan=run.scan,
-          check=validate.validate, harness_base=None):
+          check=validate.validate, harness_base=None, rotar=None):
     base = Path(home or paths.home())
     out = results_dir(base / "secresearch")
     out.mkdir(parents=True, exist_ok=True)
@@ -133,6 +136,13 @@ def cycle(max_minutes=180, baselines=2, programs=None, home=None, now=time.time,
                 steps.append({"step": f"línea base {repo}", "ok": None, "detail": "tope de tiempo del ciclo"})
                 break
             steps.append(_guarded(f"línea base {repo}", lambda r=repo: check(r, **kw)))
+        if rotar is not None:
+            try:
+                estado, detalle = rotar(base)
+                steps.append({"step": "campaña rotativa", "ok": True if estado == "lanzada" else None,
+                              "detail": f"{estado}: {detalle}"})
+            except Exception as e:                               # noqa: BLE001 (se informa y se sigue)
+                steps.append({"step": "campaña rotativa", "ok": False, "detail": f"{type(e).__name__}: {e}"[:300]})
         rep = {"ts": t0, "minutes": round((now() - t0) / 60, 1), "ok": all(s["ok"] is not False for s in steps),
                "steps": steps}
         (out / "ciclo.md").write_text(report(rep), encoding="utf-8")
@@ -275,7 +285,12 @@ def main(argv):
     # Con pythonw (sin ventana) no hay stdout ni stderr: todo, errores incluidos, va a ciclo.log.
     sys.stdout = sys.stderr = _Tee(sys.stdout, log / "ciclo.log")
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ciclo: inicio", flush=True)
-    rep = cycle(max_minutes=float(opts.get("--max-minutes", 180)), baselines=int(opts.get("--baselines", 2)))
+    rotar = None
+    if os.environ.get("NEXUS_ROTACION", "1") != "0":
+        from . import panel  # solo acá: las pruebas del ciclo no lanzan campañas de verdad
+        rotar = panel.rotar
+    rep = cycle(max_minutes=float(opts.get("--max-minutes", 180)), baselines=int(opts.get("--baselines", 2)),
+                rotar=rotar)
     print(rep["skipped"] if rep.get("skipped") else report(rep), flush=True)
     return 0 if rep.get("ok") else 1
 

@@ -279,3 +279,57 @@ def test_el_corpus_de_las_campanas_se_acumula_por_version_del_harness(tmp_path, 
     assert env["FOUNDRY_FFI"] == "false" and env["NEXUS_PERFIL"] == "midnight-bundles"
     viejo = panel._campaign_env({"perfil": "midnight-bundles"})  # las campañas de antes no tienen el campo
     assert viejo["NEXUS_CORPUS"] == "0" and "FOUNDRY_INVARIANT_CORPUS_DIR" not in viejo
+
+
+def test_la_rotativa_lanza_el_perfil_que_hace_mas_que_no_corre_y_una_sola_a_la_vez(tmp_path, monkeypatch):
+    """31-oct: el ciclo, al terminar, lanza una campaña profunda del perfil más relegado, si no hay otra corriendo."""
+    import json as _json
+    home = tmp_path / "home"
+    d = panel.camp_dir(home)
+    fechas = {"vault-v2": "20261029-100000", "midnight": "20261030-100000"}
+    ids = {}
+    for perfil, inicio in fechas.items():
+        cid = ids[perfil] = f"{inicio}_{perfil}_512x500_0x1"
+        (d / f"{cid}.txt").write_text(f"INICIO 2026-10-31T00:00:00-03:00 {cid}\nFIN x salida 0\n", encoding="utf-8")
+        (d / f"{cid}.json").write_text(_json.dumps({"id": cid, "perfil": perfil}), encoding="utf-8")
+    lanzadas = []
+
+    def lanzar(params, home_):
+        lanzadas.append(params)
+        return {"id": "nueva"}
+    estado, detalle = panel.rotar(home, launch_fn=lanzar)
+    # primero los que nunca corrieron, en orden alfabético
+    assert (estado, detalle) == ("lanzada", "nueva")
+    nunca = sorted(set(panel.PERFILES) - set(fechas))
+    assert lanzadas[-1] == {"perfil": nunca[0], **panel.ROTACION}
+    assert lanzadas[-1]["corpus"] is True and lanzadas[-1]["runs"] * lanzadas[-1]["depth"] >= 256000
+    # si todos corrieron, el que hace más tiempo
+    monkeypatch.setattr(panel, "PERFILES", {k: panel.PERFILES[k] for k in fechas})
+    panel.rotar(home, launch_fn=lanzar)
+    assert lanzadas[-1]["perfil"] == "vault-v2"
+    # con una corriendo, no lanza otra
+    corre = ids["midnight"]
+    monkeypatch.setattr(panel, "_estado", lambda rec, st: "corriendo" if rec.get("id") == corre else "pasó")
+    assert panel.rotar(home, launch_fn=lanzar) == ("omitida", f"ya hay una campaña corriendo: {corre}")
+    assert len(lanzadas) == 2
+
+
+def test_forge_v2_lleva_el_clon_al_commit_fijado_antes_de_armar(tmp_path):
+    """31-oct: el ciclo mueve cada noche los clones compartidos al último commit; armar los vuelve a lo desplegado."""
+    import subprocess
+    fv2 = _forge_v2()
+    clon = tmp_path / "clon"
+    g = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", str(clon)]
+    subprocess.run(["git", "init", "-q", str(clon)], check=True)
+    (clon / "src").mkdir()
+    (clon / "src" / "A.sol").write_text("v1", encoding="utf-8")
+    subprocess.run(g + ["add", "-A"], check=True)
+    subprocess.run(g + ["commit", "-qm", "v1"], check=True)
+    fijo = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    (clon / "src" / "A.sol").write_text("v2", encoding="utf-8")
+    subprocess.run(g + ["commit", "-qam", "v2"], check=True)
+    perfil = {"ref": fijo[:7], "sources": ("src/A.sol",), "trees": ()}
+    fv2._fijar(clon, perfil)
+    head = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    assert head == fijo and (clon / "src" / "A.sol").read_text(encoding="utf-8") == "v1"
+
