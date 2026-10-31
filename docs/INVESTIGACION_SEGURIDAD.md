@@ -147,7 +147,7 @@ Modelo, ecuaciones, leyes, auditoría del handler anterior e integración: [CAZA
 
 Son los próximos frentes, en ese orden de valor.
 
-### Cómo escribir un cazador nuevo (lecciones hasta el 30-oct)
+### Cómo escribir un cazador nuevo (lecciones hasta el 31-oct)
 
 - **Leyes universales primero, modelo después.** En los Bundles alcanzó con leyes que no necesitan modelo del núcleo:
   el contrato intermediario no se queda con saldo, lo que paga una parte es lo que cobra la otra más las comisiones
@@ -166,6 +166,17 @@ Son los próximos frentes, en ese orden de valor.
 - **Todo cálculo de la ley con signo.** Una resta que desborda dentro del handler lo hace revertir, y la reversión
   borra la violación que se acababa de registrar: los deltas van en `int256` y las leyes con división se saltean si
   ya se registró que la llamada no tenía que pasar.
+- **El precio por acción no puede quedar redondo.** Con el precio clavado en un número redondo, cada conversión entre
+  acciones y activos es exacta y ningún redondeo se ejercita: confundir acciones con activos, o redondear al revés,
+  pasa inadvertido. Pasa solo con los valores por defecto: un Vault V2 con `maxRate` en 0 no reconoce interés ni
+  donaciones (precio 1), y un mercado de Blue sin IRM deja la relación en 1e6 acciones por activo. El cazador tiene
+  que mover el precio (interés, donaciones, comisiones, pérdidas) y loguear el precio final para mostrar que se movió.
+- **Los parámetros de gobierno, variables.** Con una penalidad o una comisión fijas en el `setUp`, un contrato que
+  use una constante en vez de leer la vigente pasa la batería. Una acción del handler las cambia entre llamadas.
+- **Los controles de precio, en su borde exacto y en las dos direcciones.** Con el precio exacto que realiza la
+  llamada tiene que pasar, y con uno peor, revertir. Si el precio no se puede predecir de las vistas, sale de una
+  corrida en seco: una llamada externa del handler a sí mismo que ejecuta la operación, mide y revierte con el
+  resultado (lo transitorio de EIP-1153 también se revierte).
 - **Verificación antes de campaña:** línea base sin mutar con dos semillas, sin falsos positivos ni reversiones del
   handler, y una batería de mutaciones que pruebe que cada ley ve lo suyo. Después, la campaña profunda.
 

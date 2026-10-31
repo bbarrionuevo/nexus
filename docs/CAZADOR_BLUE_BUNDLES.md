@@ -1,9 +1,10 @@
 # Cazador de BlueBundlesV1 (Morpho Bundles)
 
-Estado (30-oct): **variante B1 (las cinco entradas sin reasignaciones públicas) escrita y verificada con forge en la
-PC**: pasa sin falsos positivos ni reversiones del handler con dos semillas, las 14 mutaciones de referencia se
-detectan y la campaña profunda (512×500, 256.000 llamadas) pasó sin leyes violadas ni reversiones. **No hay
-hallazgos.**
+Estado (31-oct): **variante B1 (las cinco entradas sin reasignaciones públicas) verificada con forge en la PC, ahora
+con interés en Blue**: hasta el 30-oct los mercados no tenían IRM y la relación de acciones quedaba en 1e6 por activo,
+así que ningún redondeo de acciones se ejercitaba. Con interés, comisión de Blue, colateral barato y `maxLtv` en su
+borde exacto, pasa sin falsos positivos ni reversiones del handler con dos semillas y se detectan las 18 mutaciones,
+incluidas cuatro del control de `maxLtv` que antes eran invisibles. **No hay hallazgos.**
 
 ## 1. Qué versión y qué alcance
 
@@ -43,19 +44,31 @@ En cada llamada que pasa:
 - **BB-POS:** la posición del usuario en Blue cambia exactamente: colateral, y acciones de oferta y de deuda con el
   redondeo de Blue (`toSharesUp` al pedir, `toSharesDown` al depositar y al repagar por activos, etc.). En la
   migración, el origen queda en cero y el destino suma el colateral y lo repagado más la comisión.
-- **BB-LTV:** con `maxLtv`, la deuda (redondeada hacia arriba) no supera colateral·precio·`maxLtv`.
+- **BB-LTV:** con `maxLtv`, la deuda (redondeada hacia arriba, devengada) no supera colateral·precio·`maxLtv`.
 - **BB-ISO:** ninguna otra posición ni saldo cambia.
-- **BB-LIVE:** con el plazo vencido, `pct ≥ WAD` o tokens distintos entre origen y destino de la migración, revierte.
+- **BB-LIVE**, en las dos direcciones (desde el 31-oct): con el plazo vencido, `pct ≥ WAD` o tokens distintos entre
+  origen y destino de la migración, revierte; y no revierte por una de esas validaciones, ni por `maxLtv`, cuando no
+  corresponde. `maxLtv` se prueba en su borde exacto: el mínimo que pasa (sale de una corrida en seco sin control,
+  que se revierte, con la deuda y el valor del colateral que deja la llamada) tiene que pasar, y uno menos, revertir.
 
 ## 4. Harness (`local/nexus/secresearch/harness/morpho-org__bundles/NexusBlueBundles.t.sol`)
 
-- **Entorno:** Morpho Blue real (solc 0.8.19, por `deployCode` desde `NexusBlueImport.sol`), sin interés (IRM en
-  `address(0)`), cuatro mercados: dos con un colateral y dos con otro, con LLTV de 86 % y 94,5 % (cada par es una
-  migración posible; entre familias, `InconsistentTokens`). Un prestamista aparte pone liquidez inicial.
+- **Entorno:** Morpho Blue real (solc 0.8.19, por `deployCode` desde `NexusBlueImport.sol`), cuatro mercados: dos
+  con un colateral y dos con otro, con LLTV de 86 % y 94,5 % (cada par es una migración posible; entre familias,
+  `InconsistentTokens`). Un prestamista aparte pone liquidez inicial.
+- **Interés y precio no redondo (desde el 31-oct):** hasta el 30-oct los mercados no tenían IRM (`address(0)`), Blue
+  no devengaba y la relación quedaba clavada en 1e6 acciones por activo: ningún redondeo de acciones se ejercitaba.
+  Ahora una IRM de prueba fija una tasa por mercado (alrededor de 9,5 % y 38 % anual), un prestatario aparte toma la
+  mitad de cada mercado desde el principio y Blue cobra comisión en dos mercados (10 % y 25 %). Las leyes usan los
+  totales devengados (`expectedMarketBalances`): los guardados quedan viejos.
+- **Colateral barato:** la segunda familia tiene precio de oráculo 1e30 (como un colateral con más decimales que el
+  activo prestado). Con colateral caro, un punto de `maxLtv` mueve la deuda máxima en un millón de wei y el borde de
+  `maxLtv` no es exacto en la deuda; con el barato, en alrededor de 1 wei.
 - **Actores:** cuatro usuarios que autorizan al bundle en Blue y dos referidos.
 - **Parámetros:** préstamos dentro de lo sano casi siempre (y a veces cualquiera); repagos por activos, por acciones o
   todo, a veces de más o los dos a la vez (Blue revierte); retiros de colateral dentro de lo libre; comisiones de
-  referido 0, 1 wei, 0,3 %, 50 %, `WAD − 1` y `WAD`; `maxLtv` de 50 %, 80 % o sin control; plazos vencidos.
+  referido 0, 1 wei, 0,3 %, 50 %, `WAD − 1` y `WAD`; `maxLtv` de 50 %, 80 %, 0, sin control o en el borde exacto;
+  plazos vencidos.
 - **Entre llamadas:** depósitos directos en Blue, cambios de precio y saltos de reloj.
 - **Montos:** 1 de cada 4 veces la semilla cruda, las demás uniformes en todo el rango.
 - **Métricas:** por entrada, llamadas que pasaron; comisiones, controles de `maxLtv`, migraciones; reversiones por
@@ -64,7 +77,28 @@ En cada llamada que pasa:
 Al armarlo apareció un falso positivo del cazador: en Solidity, `P memory q = p` copia la referencia, y cambiar el
 mercado de la copia cambiaba el del original (las leyes "del origen" de la migración miraban el destino).
 
-## 5. Verificación (30-oct, forge 1.8.6 en la PC)
+## 5. Verificación
+
+### Con interés (31-oct, forge 1.8.6 en la PC)
+
+En el proyecto reducido de `tools/forge_v2` (`NEXUS_PERFIL=blue-bundles`), con el fuzzing guiado por cobertura:
+
+- pasa 64×200 con `0x2a` y `0x3` (12.800 llamadas cada una), sin falsos positivos ni reversiones del handler; en la
+  última corrida pasaron las cinco entradas (14 y 16 préstamos, 23 y 21 repagos, 18 y 16 depósitos, 14 y 8 retiros,
+  7 y 3 migraciones), con 15 y 21 controles de `maxLtv` y 12 y 20 llamadas con `maxLtv` en el borde exacto. Al final,
+  1e24 acciones de oferta del mercado 0 valían 1,0055e18 y 1,0068e18 activos, y las de deuda del mercado 3, 1,045e18 y
+  1,056e18 (de partida, 1e18);
+- se detectan las 18 mutaciones: las 14 de antes con las mismas leyes, y las cuatro nuevas del control de `maxLtv`,
+  que con la relación redonda y sin borde exacto no se podían ver:
+
+| Mutación | Ley que la ve |
+|---|---|
+| B15: la deuda redondeada hacia abajo | BB-LTV |
+| B16: sin devengar el interés antes de medir la deuda (Blue no devenga al aportar colateral) | BB-LTV |
+| B17: el control estricto (`<` en vez de `<=`) | BB-LIVE (revierte con el mínimo que pasa) |
+| B18: la deuda máxima redondeada hacia arriba | BB-LTV |
+
+### Sin interés (30-oct, forge 1.8.6 en la PC)
 
 En el proyecto reducido de `tools/forge_v2` (`NEXUS_PERFIL=blue-bundles`, que compila en menos de un minuto), con el
 fuzzing guiado por cobertura:
@@ -96,4 +130,4 @@ salud, liquidez, entradas), pánico aritmético (15: comisiones extremas y repag
 - Las reasignaciones públicas (Blue Public Allocator, Vault V2 y sus penalidades, el préstamo flash que las paga):
   la variante siguiente, sobre la infraestructura del cazador de Vault V2.
 - Permisos y autorizaciones por firma (el test de coherencia no permite firmas) y el token nativo.
-- Interés (IRM en cero) y liquidaciones en Blue.
+- Liquidaciones y deuda incobrable en Blue: el precio de las acciones solo sube.

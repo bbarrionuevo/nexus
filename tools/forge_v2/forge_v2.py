@@ -226,12 +226,30 @@ PERFILES = {
                      "toml": MB_FOUNDRY_TOML, "match": "^NexusBlueBundles",
                      "mutaciones": HERE / "mutaciones_blue_bundles.json",
                      "archivo": "src/blue/BlueBundlesV1.sol", "ref": "2ed954e", "build": "once"},
+    # VaultBundlesV1 y VaultExitBundlesV1 desplegados (0x0291…650B y 0xaf85…9B02) = las etiquetas 2026-08-07 a 2026-08-24;
+    # hasta 2ed954e solo cambiaron comentarios. Vault V2 (0.8.28), su adapter de Blue y la fábrica, Blue y la IRM
+    # adaptativa (0.8.19) por deployCode; Blue, el mismo Morpho.sol que los otros perfiles de Bundles (NexusBlueImport):
+    # validate compila todo el harness junto, y con dos Morpho.sol deployCode("Morpho.sol") sería ambiguo.
+    "vault-bundles": {"harness": HARNESS.parent / "morpho-org__bundles",
+                      "files": ("NexusVaultBundles*.sol", "NexusVaultImport*.sol", "NexusBlueImport.sol"),
+                      "sources": ("src/vault/VaultBundlesV1.sol", "src/vault/interfaces/IVaultBundlesV1.sol",
+                                  "src/vault-exit/VaultExitBundlesV1.sol",
+                                  "src/vault-exit/interfaces/IVaultExitBundlesV1.sol", "src/libraries/TokenLib.sol",
+                                  "src/libraries/interfaces/IERC20Permit.sol", "src/libraries/interfaces/IWNative.sol"),
+                      "trees": ("lib/midnight/src", "lib/morpho-blue/src", "lib/vault-v2/src", "lib/vault-v2/lib/morpho-blue/src",
+                                "lib/vault-v2/lib/morpho-blue-irm/src", "lib/vault-v2/lib/morpho-blue-irm/lib/morpho-blue/src",
+                                "lib/metamorpho/src", "lib/metamorpho/lib/morpho-blue/src",
+                                "lib/metamorpho/lib/openzeppelin-contracts/contracts", "lib/permit2/src/interfaces",
+                                "lib/forge-std"),
+                      "toml": MB_FOUNDRY_TOML, "match": "^NexusVaultBundles",
+                      "mutaciones": HERE / "mutaciones_vault_bundles.json",
+                      "archivo": "src/vault-exit/VaultExitBundlesV1.sol", "ref": "2ed954e", "build": "once"},
 }
 
 
 def _perfil():
     """NEXUS_PERFIL elige el repo: vault-v2 (por defecto), euler-earn, tokenized-strategy, vault-v3, midnight,
-    midnight-bundles o blue-bundles."""
+    midnight-bundles, blue-bundles o vault-bundles."""
     nombre = os.environ.get("NEXUS_PERFIL", "vault-v2")
     if nombre not in PERFILES:
         raise SystemExit(f"NEXUS_PERFIL desconocido: {nombre} (opciones: {', '.join(PERFILES)})")

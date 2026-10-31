@@ -1,7 +1,7 @@
 # Traspaso: estado de nexus y cómo continuar
 
 Documento de entrega para retomar el proyecto desde cualquier conversación nueva con Claude. Actualizado el
-30-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
+31-oct-2026. Si algo de acá contradice al código, manda el código; si contradice a [REGLAS.md](REGLAS.md), mandan
 las reglas.
 
 Para arrancar una sesión que trabaje directo en la PC del dueño, con acceso a GitHub, el prompt de arranque está en
@@ -136,7 +136,8 @@ Lo que conviene saber de forge en un handler:
 | D'''''. Harness del Vault V3 | Nuevo (29-oct): Yearn V3, `v3.1.0` (lo desplegado en `0xdD3F…7824`), el vault real por su fábrica compilado con el `vyper` del venv (sin FFI), tres estrategias ERC-4626 de prueba y un accountant; 10 leyes `YV-...` exactas contra el almacenamiento crudo ([CAZADOR_VAULT_V3.md](CAZADOR_VAULT_V3.md)). Verificado con forge en la PC: las 4 variantes sin falsos positivos ni reversiones (24×500 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×500, semilla `0x68a90a1321ee064a`, 4 de 4) y las 28 mutaciones de referencia detectadas. **Sin hallazgos** |
 | D''''''. Harness de Midnight | Nuevo (29-oct; variante B el 30-oct): Morpho Midnight, el núcleo desplegado (etiqueta `2026-08-24`, coincidencia completa en Sourcify), un mercado de dos colaterales con ofertas entre cuatro actores, liquidaciones normales y post-vencimiento y deuda incobrable; 8 leyes `MN-...` exactas contra los getters. La variante B suma callbacks con operaciones anidadas, el bloqueo de liquidación del vendedor, los pagadores, el préstamo flash, `multicall` y los gates ([CAZADOR_MIDNIGHT.md](CAZADOR_MIDNIGHT.md)). Verificado con forge en la PC: las 6 suites (4 de la A y 2 de la B) sin falsos positivos ni reversiones (32×300 con `0x2a` y `0x3`; `validate` sobre el repo entero a 64×300, semilla `0x7dea4e2c53b47e39`, 10 de 10 con las pruebas de regresión) y las 47 mutaciones de referencia detectadas; la campaña profunda de la A (1536×500) sin leyes violadas. **Sin hallazgos** |
 | D'''''''. Harness de MidnightBundlesV2 | Nuevo (30-oct), fase 1: Morpho Bundles, la etiqueta `2026-10-06` (lo desplegado en `0x78ed…bDbA4`; en `main` solo cambió la licencia), las cuatro entradas de quien toma ofertas sobre el núcleo real de Midnight, con ofertas de los otros actores; 6 leyes `BU-...` universales y exactas contra saldos y posiciones ([CAZADOR_MIDNIGHT_BUNDLES.md](CAZADOR_MIDNIGHT_BUNDLES.md)). Verificado con forge en la PC: las 2 variantes sin falsos positivos ni reversiones (32×120 con `0x2a` y `0x3`, con corpus) y las 24 mutaciones de referencia detectadas; la campaña profunda (512×500) sin leyes violadas ni reversiones. Fase 2 (#98): `CancelAndMake` con Morpho Blue, `BlueBuyCallback` y `PriceRatifierV1` reales, y las ventas tomando esas ofertas; verificada: las 4 suites sin falsos positivos ni reversiones (32×120 con `0x2a` y `0x3`) y las 34 mutaciones detectadas (U1-U24, K1-K6, C1-C2, R1-R2). **Sin hallazgos** |
-| D''''''''. Harness de BlueBundlesV1 | Nuevo (30-oct, #98), variante B1: las cinco entradas sin reasignaciones públicas sobre Morpho Blue real (lo desplegado es la etiqueta `2026-08-25`, igual en lógica al clon), cuatro mercados (dos pares de los mismos tokens para la migración); 6 leyes `BB-...` exactas contra el estado de Blue ([CAZADOR_BLUE_BUNDLES.md](CAZADOR_BLUE_BUNDLES.md)). Verificado con forge en la PC: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones, las 14 mutaciones detectadas (B1-B14) y la campaña profunda (512×500, `20261030-180012_blue-bundles_512x500_0x54a4b94f0009d8fb`) sin leyes violadas ni reversiones. **Sin hallazgos** |
+| D''''''''. Harness de BlueBundlesV1 | Nuevo (30-oct, #98), variante B1: las cinco entradas sin reasignaciones públicas sobre Morpho Blue real (lo desplegado es la etiqueta `2026-08-25`, igual en lógica al clon), cuatro mercados (dos pares de los mismos tokens para la migración); 6 leyes `BB-...` exactas contra el estado de Blue ([CAZADOR_BLUE_BUNDLES.md](CAZADOR_BLUE_BUNDLES.md)). Verificado con forge en la PC: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones, las 14 mutaciones detectadas (B1-B14) y la campaña profunda (512×500, `20261030-180012_blue-bundles_512x500_0x54a4b94f0009d8fb`) sin leyes violadas ni reversiones. Desde el 31-oct (#100), con interés en Blue (antes la relación de acciones quedaba en 1e6 por activo y ningún redondeo se ejercitaba), colateral barato y `maxLtv` en su borde exacto: 64×200 con las dos semillas sin falsos positivos y 18 de 18 mutaciones (B15-B18 nuevas). **Sin hallazgos** |
+| D'''''''''. Harness de VaultBundlesV1 y VaultExitBundlesV1 | Nuevo (31-oct, #100), variante VB1: las cinco entradas (depositar, retirar y migrar; redención en especie y retiro forzado de Vault V2) sobre Vault V2 real con el adapter de Blue y la IRM adaptativa, con el precio por acción no redondo (tasa máxima, donaciones, interés y comisiones de los vaults) y la penalidad variable; 6 leyes `VB-...` exactas, con los controles de precio en su borde exacto ([CAZADOR_VAULT_BUNDLES.md](CAZADOR_VAULT_BUNDLES.md)). Verificado con forge en la PC: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones del handler y las 28 mutaciones detectadas (W1-W13, X1-X15). **Sin hallazgos** |
 | E. Duplicados | Funciona: auditorías de Vault V2 (15), MetaMorpho (3), EulerEarn (3) y TokenizedStrategy (3, todas de la v3.0.x) resumidas en `NEXUS_HOME`, privadas |
 | F. Expediente | Nuevo (27-oct): `python -m nexus.secresearch.expediente INFORME` arma el borrador para reclamar |
 
@@ -204,6 +205,7 @@ Comportamientos conocidos que **no** son hallazgos (detalle en CAZADOR_METAMORPH
 | #99 | La campaña rotativa: el ciclo, al terminar, lanza una campaña profunda del perfil más relegado si no hay otra corriendo (`panel --rotar`); `armar` y `mutar` llevan solos el clon compartido al commit desplegado (el ciclo los mueve cada noche); los resultados de las campañas profundas del 30 y 31-oct |
 | #98 | MidnightBundlesV2, fase 2: `CancelAndMake` con Blue (por `deployCode`), `BlueBuyCallback` y `PriceRatifierV1` reales, las ventas tomando esas ofertas y 10 mutaciones nuevas (K, C, R); el cazador de BlueBundlesV1 (variante B1, 14 mutaciones) y su perfil `blue-bundles`; montos mezclados; `"build": "once"` y archivos por perfil en `tools/forge_v2`; el corpus acumulado entre campañas del panel |
 | #95 | El panel automatiza la lección del 30-oct: lee las reversiones del handler por acción, marca en rojo una campaña que pasa con reversiones ("pasó con reversiones del handler (revisar)") y `--resumen <id>` la muestra en la terminal con cómo investigarlas |
+| #100 | Morpho Bundles: el cazador de VaultBundlesV1 y VaultExitBundlesV1 (variante VB1, leyes VB-...) sobre Vault V2 real con el adapter de Blue, con el precio por acción no redondo (tasa máxima, donaciones e interés), comisiones de los vaults, penalidad variable y los controles de precio probados en su borde exacto; el perfil `vault-bundles` de `tools/forge_v2` y del panel con 28 mutaciones (W1-W13, X1-X15). Y BlueBundlesV1 con interés: hasta acá sus mercados no tenían IRM y la relación de acciones de Blue quedaba en 1e6 por activo; ahora devenga, cobra comisión, tiene una familia de colateral barato para que el borde de `maxLtv` sea exacto al wei y BB-LIVE va en las dos direcciones (B15-B18). La lección del precio redondo en la guía para escribir cazadores |
 
 ## 5. Próximos pasos
 
@@ -215,7 +217,7 @@ ese objetivo.
 
 | Objetivo | Programa y grupo | Critical | Código | Estado en nexus | Valor esperado |
 |---|---|---|---|---|---|
-| **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Al catálogo el 30-oct (R-1). MidnightBundlesV2: fase 1 (las cuatro entradas de toma) verificada (#97) y su campaña profunda limpia; fase 2 (`CancelAndMake`, Blue y `BlueBuyCallback`) y BlueBundlesV1 (variante B1) en el #98. Revisión manual de los cuatro contratos (operaciones en nombre de otro, callbacks, permisos), de los ratifiers, `BlueBuyCallback` y `EcrecoverAuthorizer`: sin candidatos (privado) | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
+| **Bundles de Morpho** (`morpho-org/bundles`: BlueBundlesV1, MidnightBundlesV2, VaultExitBundlesV1 y VaultBundlesV1) | Morpho. El grupo "Blue y Vault V1" dice "including bundlers" (250.000 a 2.500.000); si el triaje los pone con Midnight y Vault V2, 150.000 a 1.500.000 | hasta 2.500.000 | Muy nuevo: el repo es de mayo de 2026, la última etiqueta del 6-oct y tiene cambios hasta el 30-oct. Unos 90 KB en 4 contratos. Diez auditorías (Spearbit, Stermi, Blackthorn, Trustsec, Sherlock) y Certora. Reemplazan a Bundler3, que quedó deprecado | Al catálogo el 30-oct (R-1). MidnightBundlesV2: fase 1 (las cuatro entradas de toma) verificada (#97) y su campaña profunda limpia; fase 2 (`CancelAndMake`, Blue y `BlueBuyCallback`) y BlueBundlesV1 (variante B1) en el #98; VaultBundlesV1 y VaultExitBundlesV1 (variante VB1, con Vault V2) en el #100. Revisión manual de los cuatro contratos (operaciones en nombre de otro, callbacks, permisos), de los ratifiers, `BlueBuyCallback` y `EcrecoverAuthorizer`: sin candidatos (privado) | **El más alto:** la recompensa más alta, código nuevo con integraciones complejas, y se reusa el cazador de Midnight |
 | Midnight: `Mempool` | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | Nuevo en la página de direcciones (`0xde2d…A8F7`). Según Sourcify es `periphery/Log.sol`: 443 bytes, un `fallback` que solo emite la calldata como evento, sin estado ni fondos | Revisado el 30-oct | Prácticamente nulo |
 | Euler v2, núcleo (EVC, EVK sin Synths y Price Oracle) | Euler, "Core Components" | Hasta 1.500.000, pero como máximo el 10 % de la pérdida demostrable en producción | Grande y muy auditado | Del EVK, solo la línea base | Medio-bajo. El programa cambió: ya no son 7,5M sino un presupuesto total de 1,5M, por orden de llegada, con KYC |
 | Midnight (lo que falta del núcleo) | Morpho, "Midnight y Vault V2" | 150.000 a 1.500.000 | — | Variantes A y B verificadas y campañas profundas sin leyes rotas | Medio: lo que no cubre (CAZADOR_MIDNIGHT.md §8) |
@@ -225,12 +227,18 @@ ese objetivo.
 | Yearn V3 | Yearn, Immunefi | Hasta 200.000 | La contabilidad de la 3.1.0 no tiene auditoría pública | TokenizedStrategy y Vault V3 verificados | Bajo: el tope es bajo |
 | MetaMorpho V1.1 | Morpho, "Blue y Vault V1" | 250.000 a 2.500.000 | Cambios chicos sobre la V1.0; `lostAssets` ya cazado en EulerEarn | Evaluado el 29-oct | Bajo |
 
-**Lo siguiente: los Bundles de Morpho.** MidnightBundlesV2 tiene las fases 1 y 2 y BlueBundlesV1 su variante B1
-(puntos 11 y 12). Siguen:
-- las campañas profundas de la fase 2 y de BlueBundlesV1, con el corpus acumulado;
+**Lo siguiente: los Bundles de Morpho.** Los cuatro tienen cazador: MidnightBundlesV2 (fases 1 y 2), BlueBundlesV1
+(variante B1) y VaultBundlesV1 con VaultExitBundlesV1 (variante VB1, con Vault V2), en los puntos 11 a 13. Siguen:
+- la campaña profunda de los Bundles de vaults, con el corpus acumulado (la rotativa la elige sola, porque es el
+  perfil que nunca corrió), y la de BlueBundlesV1 con interés;
+- MidnightBundlesV2 fase 2 con interés en Blue: su mercado de estacionamiento tampoco tiene IRM (la relación de
+  acciones queda en 1e6 por activo), y MK-PARK espera que la posición del callback suba exactamente lo estacionado,
+  que con interés pasa a ser lo que redondea Blue; `BlueBuyCallback.onBuy` retira por activos y `buyerAssetsBound`
+  redondea hacia abajo;
+- la variante VB2, con Vault V1 (MetaMorpho): `InKindRedemptionVaultV1` (el préstamo flash de Blue y la cola de
+  retiro) y las tres entradas de VaultBundlesV1 sobre un vault V1;
 - BlueBundlesV1 con reasignaciones públicas (BluePublicAllocator, un Vault V2 y el préstamo flash de las penalidades),
-  sobre la infraestructura del cazador de Vault V2;
-- VaultBundlesV1 y VaultExitBundlesV1 (necesitan los submódulos `lib/vault-v2` y `lib/metamorpho` del clon).
+  sobre la infraestructura del cazador de Vault V2.
 
 ### En orden de prioridad
 
@@ -560,6 +568,33 @@ ese objetivo.
    - Verificado con forge en la PC: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones, las 14 mutaciones detectadas (B1-B14) y la campaña profunda (512×500, `20261030-180012_blue-bundles_512x500_0x54a4b94f0009d8fb`) sin leyes violadas ni reversiones.
    - Al armarlo: en Solidity, `P memory q = p` copia la referencia; cambiar el mercado de la copia cambiaba el del
      original y las leyes del origen de la migración miraban el destino (falso positivo, corregido).
+   - **Con interés (31-oct, #100):** los mercados no tenían IRM, así que la relación de acciones de Blue quedaba en
+     1e6 por activo y ningún redondeo de acciones se ejercitaba (lo mismo que le pasaba al cazador de vaults con
+     `maxRate` en 0). Ahora una IRM de tasa fija, un prestatario aparte desde el principio, comisión de Blue en dos
+     mercados, una familia de colateral barato (precio 1e30, para que el borde de `maxLtv` sea exacto al wei), leyes
+     sobre los totales devengados y BB-LIVE en las dos direcciones, con `maxLtv` en su borde exacto por una corrida en
+     seco. Verificado: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones del handler, y 18 de 18
+     mutaciones (B15-B18 nuevas: el control de `maxLtv` sin devengar, con la deuda o el máximo redondeados al revés, o
+     estricto).
+   - **Sin hallazgos.**
+13. **Morpho Bundles: VaultBundlesV1 y VaultExitBundlesV1, variante VB1 (#100).** Ver
+    [CAZADOR_VAULT_BUNDLES.md](CAZADOR_VAULT_BUNDLES.md).
+   - Las cinco entradas con Vault V2: depositar, retirar y migrar (VaultBundlesV1, entre un vault con el adapter de
+     Blue y otro solo ocioso), y la redención en especie y el retiro forzado (VaultExitBundlesV1, con el allocator
+     sacando la liquidez sin penalidad antes de la mitad de las salidas). Leyes VB-FUNDS, VB-FEE, VB-SHARES (exactas
+     contra las vistas del vault, o la cota de `exitAssets + N` que documenta el bundle), VB-KIND, VB-ISO y VB-LIVE en
+     las dos direcciones.
+   - **La lección del día, el precio redondo:** la primera versión pasó la verificación con el precio por acción
+     clavado en 1, porque Vault V2 con `maxRate` en 0 (por defecto) no reconoce interés ni donaciones; con el precio
+     redondo ningún redondeo se ejercita y confundir acciones con activos pasa inadvertido. Se le dio la tasa máxima,
+     donaciones, comisiones de los vaults y una penalidad variable, y los controles de precio se prueban en su borde
+     exacto (en el retiro forzado, con una corrida en seco que se revierte). Lo mismo tenía BlueBundlesV1 (punto 12).
+     Está en la guía para escribir cazadores (INVESTIGACION_SEGURIDAD.md).
+   - Verificado: 64×200 con `0x2a` y `0x3` sin falsos positivos ni reversiones del handler y las 28 mutaciones
+     detectadas (W1-W13 sobre VaultBundlesV1 y X1-X15 sobre VaultExitBundlesV1).
+   - Tres compiladores en el proyecto reducido (los bundles 0.8.34, Vault V2 0.8.28, Blue y la IRM 0.8.19) y un solo
+     `Morpho.sol` en todo el harness: `validate` compila todo junto y `deployCode("Morpho.sol")` sería ambiguo (una
+     prueba lo controla).
    - **Sin hallazgos.**
 
 ## 6. Pendientes y cuidados

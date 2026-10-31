@@ -68,5 +68,25 @@
   "B14 MigrateBorrowPosition: sin el control de maxLtv",
   "        }\n        requireMaxLtv(destMarketParams, msg.sender, maxLtv);",
   "        }"
+ ],
+ [
+  "B15 requireMaxLtv: la deuda redondea hacia abajo",
+  "uint256(position.borrowShares).toAssetsUp(market.totalBorrowAssets, market.totalBorrowShares);",
+  "uint256(position.borrowShares).toAssetsDown(market.totalBorrowAssets, market.totalBorrowShares);"
+ ],
+ [
+  "B16 requireMaxLtv: no devenga el interes antes de medir la deuda",
+  "                if (market.lastUpdate != block.timestamp) {\n                    IMorpho(BLUE).accrueInterest(marketParams);\n                    market = IMorpho(BLUE).market(marketParams.id());\n                }\n",
+  ""
+ ],
+ [
+  "B17 requireMaxLtv: el control es estricto",
+  "require(borrowed <= maxBorrow, LtvExceeded());",
+  "require(borrowed < maxBorrow, LtvExceeded());"
+ ],
+ [
+  "B18 requireMaxLtv: la deuda maxima redondea hacia arriba",
+  "uint256(position.collateral).mulDivDown(price, ORACLE_PRICE_SCALE).mulDivDown(maxLtv, WAD);",
+  "uint256(position.collateral).mulDivDown(price, ORACLE_PRICE_SCALE).mulDivUp(maxLtv, WAD);"
  ]
 ]

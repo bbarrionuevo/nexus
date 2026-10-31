@@ -24,10 +24,10 @@ $RED  = "$env:LOCALAPPDATA\nexus\work\vault-v2-reducido"
 `correr` copia el harness de `local/nexus/secresearch/harness/morpho-org__vault-v2/`, hace `forge build` (con un
 filtro de tests, forge solo compila lo que esos tests importan, y Morpho Blue, que se despliega con `deployCode`, quedaría
 afuera) y muestra el log de `afterInvariant` (cobertura y métricas del cazador). El `forge build` previo solo lo hacen
-los perfiles con `"build"` (`vault-v2`, `vault-v3` y `midnight-bundles`, los que despliegan artefactos por nombre; una
+los perfiles con `"build"` (`vault-v2`, `vault-v3` y los tres de Bundles, los que despliegan artefactos por nombre; una
 prueba lo ata al uso de `deployCode`): `forge test` no reusa su caché, y en los demás compilaba todo dos veces. Con
-`"build": "once"` (`midnight-bundles`, donde lo desplegado por nombre es Blue y no se muta), `mutar` compila entero una
-sola vez. `mutar` aplica cada entrada de
+`"build": "once"` (los tres de Bundles, donde lo desplegado por nombre, Blue, la IRM, Vault V2 y su adapter, no se
+muta), `mutar` compila entero una sola vez. `mutar` aplica cada entrada de
 `mutaciones.json` (`[nombre, original, mutado]` sobre `src/VaultV2.sol`, o `[nombre, original, mutado, archivo]`, por
 ejemplo sobre el adapter real) a una copia limpia de ese archivo del clon, corre todas las variantes sin achicar la
 secuencia y lista, por variante, las leyes `V-...` que fallaron. El cazador informa todas las
@@ -155,3 +155,32 @@ corre forge a mano, agregar `.venv\Scripts` al PATH).
   que se compile; por eso el perfil lleva `"build": "once"`.
 - **El clon:** tiene que estar en la etiqueta `2026-10-06` (`2ed954e`, lo desplegado en `0x78ed…bDbA4`).
 - **El cazador:** [docs/CAZADOR_MIDNIGHT_BUNDLES.md](../../docs/CAZADOR_MIDNIGHT_BUNDLES.md).
+
+## Perfil de BlueBundlesV1 (Morpho Bundles)
+
+`NEXUS_PERFIL=blue-bundles` comparte el clon fijado de `midnight-bundles` (lo desplegado, la etiqueta `2026-08-25`,
+difiere de `2ed954e` solo en dos comentarios):
+- **`armar`:** copia `BlueBundlesV1` con sus interfaces y `TokenLib`, Morpho Blue de su submódulo y forge-std; Blue
+  (0.8.19) se despliega con `deployCode` desde `NexusBlueImport.sol`, de ahí `"build": "once"`.
+- **`mutar`:** toma `mutaciones_blue_bundles.json`: B1 a B18 sobre `src/blue/BlueBundlesV1.sol`. Las B15 a B18
+  (el control de `maxLtv`: sin devengar, con la deuda o el máximo redondeados al revés, o estricto) solo se ven con
+  interés en Blue y con el borde de `maxLtv` exacto al wei, desde el 31-oct.
+- **El cazador:** [docs/CAZADOR_BLUE_BUNDLES.md](../../docs/CAZADOR_BLUE_BUNDLES.md).
+
+## Perfil de los Bundles de vaults (Morpho Bundles)
+
+`NEXUS_PERFIL=vault-bundles` comparte el mismo clon (lo desplegado son las etiquetas `2026-08-07` a `2026-08-24`;
+hasta `2ed954e` solo cambiaron comentarios):
+- **`armar`:** copia `VaultBundlesV1` y `VaultExitBundlesV1` con sus interfaces y `TokenLib`, y de los submódulos
+  `lib/vault-v2` (Vault V2, su fábrica, el `MorphoMarketV1AdapterV2` con su fábrica y la IRM adaptativa) y
+  `lib/metamorpho` (las interfaces de Vault V1). Hay tres compiladores: los bundles en 0.8.34, Vault V2 en 0.8.28
+  (`NexusVaultImport0828.sol`) y Blue y la IRM en 0.8.19 (`NexusBlueImport.sol` y `NexusVaultImport0819.sol`); todo
+  lo que no son los bundles se despliega con `deployCode`, de ahí `"build": "once"`.
+- **Un solo `Morpho.sol`:** `validate` compila el harness entero junto, y con dos copias de Blue
+  `deployCode("Morpho.sol")` sería ambiguo; por eso el perfil usa el `NexusBlueImport.sol` de los otros cazadores de
+  Bundles, y una prueba lo controla.
+- **`mutar`:** toma `mutaciones_vault_bundles.json`: W1 a W13 sobre `src/vault/VaultBundlesV1.sol` y X1 a X15 sobre
+  `src/vault-exit/VaultExitBundlesV1.sol`, todas detectadas el 31-oct. Las W9 a W13 y X9 a X15 se sumaron con las
+  mejoras del cazador: el precio por acción no redondo, el control de precio en su borde exacto (en las dos
+  direcciones), la cota de acciones del retiro forzado y la penalidad variable.
+- **El cazador:** [docs/CAZADOR_VAULT_BUNDLES.md](../../docs/CAZADOR_VAULT_BUNDLES.md).
