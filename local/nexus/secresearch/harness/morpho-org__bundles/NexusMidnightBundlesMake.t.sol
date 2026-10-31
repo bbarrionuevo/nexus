@@ -5,8 +5,8 @@ pragma solidity 0.8.34;
 // BlueBuyCallbackFactory, PriceRatifierV1 y Log reales, y las ventas de la fase 1 tomando esas ofertas, que pagan
 // desde Blue. Además de las leyes BU-... de la fase 1 en cada entrada de toma:
 //   MK-CANCEL  cada grupo cancelado queda con consumo máximo;
-//   MK-PARK    lo estacionado sale del usuario y entra exacto a la posición en Blue del BlueBuyCallback de ese usuario
-//              y esa sal (sin interés ni deuda incobrable en Blue, el precio de las acciones no cambia);
+//   MK-PARK    lo estacionado sale del usuario y entra exacto a Blue, y la posición del BlueBuyCallback de ese usuario
+//              y esa sal sube exactamente las acciones que redondea Blue (toSharesDown de lo estacionado);
 //   MK-RATIFY  con una raíz nueva, el ratifier queda autorizado por el usuario y la raíz ratificada para él;
 //   MK-COLL    el colateral aportado entra exacto a la posición del usuario en Midnight;
 //   MK-ISO     nada de los demás cambia: autorizaciones, raíces, consumos de sus grupos y posiciones en Blue de los
@@ -16,6 +16,9 @@ pragma solidity 0.8.34;
 //              nunca sube, y el callback no se queda con saldo. Algunas ofertas usan el callback de otro usuario: no
 //              tienen que poder cobrarle;
 //   BU-TAKE    una oferta creada solo la toma su allowedTaker (si tiene) y solo mientras su raíz está ratificada.
+// Blue devenga interés (una IRM de tasa fija) y cobra comisión en el mercado de estacionamiento: la relación entre
+// acciones y activos deja de ser la redonda de partida (1e6 acciones por activo). Por eso las posiciones de los
+// callbacks se comparan en acciones: el redondeo de una operación mueve en un wei el valor de las ajenas.
 
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {Test} from "forge-std/Test.sol";
@@ -28,12 +31,27 @@ import {Log} from "../../lib/midnight/src/periphery/log/Log.sol";
 import {IMorpho, MarketParams} from "../../lib/morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "../../lib/morpho-blue/src/libraries/MarketParamsLib.sol";
 import {MorphoBalancesLib} from "../../lib/morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
+import {SharesMathLib} from "../../lib/morpho-blue/src/libraries/SharesMathLib.sol";
+import {Market as BlueMarket} from "../../lib/morpho-blue/src/interfaces/IMorpho.sol";
 import {GroupCancellation, CollateralTransfer, OfferFill} from "../../src/midnight/interfaces/IMidnightBundlesV2.sol";
 import {NexusMidnightBundlesHandler} from "./NexusMidnightBundles.t.sol";
+
+/// @notice IRM de prueba: una tasa fija de alrededor de 20 % anual (por segundo, en WAD), para que Blue devengue.
+/// (`BlueMarket`: el `Market` de Blue, que no es el de Midnight.)
+contract NexusMBIrm {
+    function borrowRate(MarketParams memory, BlueMarket memory) external pure returns (uint256) {
+        return 6.3e9;
+    }
+
+    function borrowRateView(MarketParams memory, BlueMarket memory) external pure returns (uint256) {
+        return 6.3e9;
+    }
+}
 
 contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
     using MarketParamsLib for MarketParams;
     using MorphoBalancesLib for IMorpho;
+    using SharesMathLib for uint256;
 
     uint256 internal constant BLUE_LLTV = 0.86e18;
     uint256 internal constant NS = 2; // sales de callback por usuario
@@ -93,20 +111,23 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
         }
     }
 
-    /// @dev Blue real (0.8.19, por deployCode) sin interés, con un mercado del mismo activo prestado que Midnight; la
-    /// fábrica de BlueBuyCallback y el Log reales.
+    /// @dev Blue real (0.8.19, por deployCode) con interés (tasa fija) y comisión del 10 % a una cuenta que no es de los
+    /// actores, con un mercado del mismo activo prestado que Midnight; la fábrica de BlueBuyCallback y el Log reales.
     function _periphery() internal override returns (address, address, address) {
         blue = IMorpho(deployCode("Morpho.sol", abi.encode(address(this))));
-        blue.enableIrm(address(0));
+        address irm = address(new NexusMBIrm());
+        blue.enableIrm(irm);
         blue.enableLltv(BLUE_LLTV);
         bmp = MarketParams({
             loanToken: address(loan),
             collateralToken: address(coll[0]),
             oracle: address(oracle[0]),
-            irm: address(0),
+            irm: irm,
             lltv: BLUE_LLTV
         });
         blue.createMarket(bmp);
+        blue.setFeeRecipient(address(uint160(uint256(keccak256("nexus.mb.feeRecipient")))));
+        blue.setFee(bmp, 0.1e18);
         factory = new BlueBuyCallbackFactory(address(midnight), address(blue));
         return (address(blue), address(factory), address(new Log()));
     }
@@ -128,7 +149,9 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
     struct MakePre {
         uint256 userLoan;
         uint256 blueLoan;
-        uint256 cbSupply;
+        uint256 cbSupply; // acciones de oferta en Blue del callback de (usuario, sal)
+        uint256 tsa; // totales de oferta del mercado de Blue, devengados
+        uint256 tss;
         uint256 m0;
         uint256 m1;
         bool[4] authPr;
@@ -317,8 +340,10 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
         return vm.computeCreate2Address(bytes32(salt), keccak256(init), address(factory));
     }
 
+    /// @dev Las acciones de oferta en Blue de un callback: con interés, su valor en activos se mueve en un wei con el
+    /// redondeo de las operaciones de otros, y las acciones no.
     function _cbSupply(address cb) internal view returns (uint256) {
-        return blue.expectedSupplyAssets(bmp, cb);
+        return blue.position(bmp.id(), cb).supplyShares;
     }
 
     function _makePre(MakeIn memory x) internal view returns (MakePre memory pre) {
@@ -326,6 +351,7 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
         pre.userLoan = loan.balanceOf(user);
         pre.blueLoan = loan.balanceOf(address(blue));
         pre.cbSupply = _cbSupply(cbs[x.u * NS + x.salt]);
+        (pre.tsa, pre.tss,,) = blue.expectedMarketBalances(bmp);
         pre.m0 = midnight.collateral(id, user, 0);
         pre.m1 = midnight.collateral(id, user, 1);
         for (uint256 h; h < NH; ++h) {
@@ -363,7 +389,8 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
         if (x.park > 0) {
             _ok(factory.callbackOf(user, bytes32(x.salt)) == cb, L_FUNDS, "MK-PARK: el callback del usuario no es el de CREATE2 (sal, 0)", x.salt, 0);
         }
-        _ok(_cbSupply(cb) == pre.cbSupply + x.park, L_FUNDS, "MK-PARK: la posicion en Blue del callback no subio exactamente lo estacionado (esperado, real)", pre.cbSupply + x.park, _cbSupply(cb));
+        uint256 parkedShares = x.park.toSharesDown(pre.tsa, pre.tss);
+        _ok(_cbSupply(cb) == pre.cbSupply + parkedShares, L_FUNDS, "MK-PARK: las acciones en Blue del callback no subieron como redondea Blue lo estacionado (esperado, real)", pre.cbSupply + parkedShares, _cbSupply(cb));
         // ratificación
         if (x.root != bytes32(0)) {
             _ok(midnight.isAuthorized(user, address(pr)), L_LIMIT, "MK-RATIFY: el ratifier no quedo autorizado por el usuario (usuario, 0)", x.u, 0);
@@ -513,6 +540,12 @@ contract NexusMidnightBundlesMakeHandler is NexusMidnightBundlesHandler {
     function makeCoverage() external view returns (uint256[10] memory c) {
         c = [hMakes, hMakesOk, hCancels, hParks, hRoots, hCbTaken, hForeignCb, hBlueOps, hUnratified, hMadeTaken];
     }
+
+    /// @dev Lo que valen hoy 1e24 acciones de oferta del mercado de Blue (de partida, 1e18).
+    function bluePrice() external view returns (uint256) {
+        (uint256 tsa, uint256 tss,,) = blue.expectedMarketBalances(bmp);
+        return uint256(1e24).toAssetsDown(tsa, tss);
+    }
 }
 
 contract NexusMidnightBundlesMakeTest is Test {
@@ -567,6 +600,7 @@ contract NexusMidnightBundlesMakeTest is Test {
         emit log_named_uint("cobertura: operaciones directas en Blue", c[7]);
         emit log_named_uint("cobertura: raices des-ratificadas", c[8]);
         emit log_named_uint("cobertura: ofertas creadas tomadas", c[9]);
+        emit log_named_uint("cobertura: activo de 1e24 acciones de oferta de Blue (de partida 1e18)", handler.bluePrice());
         (uint256[10] memory r,,,,) = handler.revertCounts();
         emit log_named_uint("reversiones: OutOfOffers", r[0]);
         emit log_named_uint("reversiones: SellerAssetsTooLow", r[3]);

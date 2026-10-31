@@ -1,12 +1,14 @@
 # Cazador de MidnightBundlesV2 (Morpho Bundles)
 
-Estado (30-oct):
+Estado (31-oct; la fase 2 con interés en Blue desde el 31-oct):
 - **Fase 1, las cuatro entradas de quien toma ofertas: verificada con forge en la PC.** Las dos variantes pasan sin
   falsos positivos ni reversiones del handler, las 24 mutaciones de referencia se detectan y la campaña profunda
   (512×500, 256.000 llamadas por variante) pasó sin leyes rotas ni reversiones.
 - **Fase 2, crear y cancelar ofertas con `CancelAndMake` sobre Morpho Blue, `BlueBuyCallback` y `PriceRatifierV1`
   reales, y las ventas tomando esas ofertas: verificada con forge en la PC.** Las cuatro suites (dos de cada fase)
-  pasan sin falsos positivos ni reversiones del handler y las 34 mutaciones de referencia se detectan.
+  pasan sin falsos positivos ni reversiones del handler y las 36 mutaciones de referencia se detectan. Desde el
+  31-oct, Blue devenga interés en el mercado de estacionamiento (antes la relación de acciones quedaba en 1e6 por
+  activo) y dos mutaciones nuevas que solo se ven así (K7, C3) se detectan.
 
 **No hay hallazgos.**
 
@@ -70,8 +72,10 @@ En cada llamada que pasa, sin modelo del núcleo:
 Fase 2, en cada `CancelAndMake` y en cada toma:
 
 - **MK-CANCEL:** cada grupo cancelado queda con consumo máximo.
-- **MK-PARK:** lo estacionado sale del usuario y entra exacto a Blue y a la posición del `BlueBuyCallback` de ese
-  usuario y esa sal (sin interés ni deuda incobrable en Blue, el precio de las acciones no cambia y es exacto).
+- **MK-PARK:** lo estacionado sale del usuario y entra exacto a Blue, y la posición del `BlueBuyCallback` de ese
+  usuario y esa sal sube exactamente las acciones que redondea Blue (`toSharesDown` de lo estacionado, con los
+  totales devengados). Desde el 31-oct las posiciones de los callbacks se comparan en acciones: con interés, el
+  redondeo de una operación mueve en un wei el valor de las posiciones ajenas aunque sus acciones no cambien.
 - **MK-RATIFY:** con una raíz nueva, el ratifier queda autorizado por el usuario y la raíz ratificada para él.
 - **MK-COLL:** el colateral aportado entra exacto a la posición del usuario en Midnight.
 - **MK-ISO:** nada de los demás cambia: autorizaciones del ratifier, raíces, consumos de sus grupos y posiciones en
@@ -108,8 +112,11 @@ Fase 2, en cada `CancelAndMake` y en cada toma:
 
 Fase 2 (`NexusMidnightBundlesMake.t.sol`, que hereda todo lo anterior):
 
-- **Entorno:** Morpho Blue real (0.8.19, desplegado con `deployCode` desde `NexusBlueImport.sol`), sin interés, con
-  un mercado del mismo activo prestado que Midnight; `BlueBuyCallbackFactory`, `PriceRatifierV1` y `Log` reales.
+- **Entorno:** Morpho Blue real (0.8.19, desplegado con `deployCode` desde `NexusBlueImport.sol`) con un mercado
+  del mismo activo prestado que Midnight; `BlueBuyCallbackFactory`, `PriceRatifierV1` y `Log` reales. Desde el 31-oct
+  Blue devenga interés (una IRM de tasa fija, alrededor de 20 % anual) y cobra comisión del 10 % en ese mercado: hasta
+  entonces no tenía IRM, la relación quedaba en 1e6 acciones por activo y ningún redondeo de acciones se ejercitaba
+  (estacionar o pagar por acciones con la relación de partida pasaba inadvertido; K7 y C3).
 - **`make`:** `CancelAndMake` con 0 a 2 grupos a cancelar (de ofertas del usuario o nuevos, con `maxConsumed`
   máximo, igual o uno menos que el consumo), 0 o 1 aporte de colateral, estacionamiento en Blue con una de dos sales y
   0, 1 o 2 ofertas de compra nuevas en un árbol de Merkle de `PriceRatifierV1` (con su prueba). Las ofertas usan casi
@@ -133,6 +140,10 @@ Fase 2 (30-oct): con la fase 1 ya cambiada (ganchos, montos mezclados y el arreg
 suites pasan 32×120 con `0x2a` y `0x3`, sin falsos positivos ni reversiones del handler, con tomas pagadas desde Blue
 en casi todas las corridas finales.
 
+Fase 2 con interés en Blue (31-oct): las dos suites de la fase 2 pasan 32×120 con `0x2a` y `0x3`, sin falsos
+positivos ni reversiones del handler (en la última corrida de `0x3`, 4 y 6 tomas pagadas desde Blue), y se detectan
+las 12 mutaciones de la fase 2 (K1-K7, C1-C3, R1-R2). Las de la fase 1 no cambiaron.
+
 Campaña profunda de la fase 1 (30-oct, de las 14:23 a las 15:33, 512×500 con corpus, 256.000 llamadas por variante,
 semilla `0xefc007c341fac34b`): las dos variantes en verde, **ninguna ley violada y 0 reversiones del handler**. En la
 última corrida de cada suite pasaron 115 y 127 llamadas al bundle de 232 y 256, con 90 y 108 creadores tocados, 37 y
@@ -151,7 +162,7 @@ cuenta aparte.
 
 `tools/forge_v2/mutaciones_midnight_bundles.json`: U1-U24 sobre las entradas de toma de
 `src/midnight/MidnightBundlesV2.sol` (las ven las suites de la fase 1) y K, C y R sobre `CancelAndMake`,
-`BlueBuyCallback` y `PriceRatifierV1` (las ven las de la fase 2). **Las 34 se detectan.**
+`BlueBuyCallback` y `PriceRatifierV1` (las ven las de la fase 2). **Las 36 se detectan.**
 
 En la primera verificación de la fase 2 se escapó U16 (la venta no controla el mercado de la oferta): la oferta del
 mercado equivocado no se podía tomar porque quien vendía no tenía colateral en ese mercado, la toma fallaba, se
@@ -167,7 +178,9 @@ en ese mercado a quien se endeuda, y BU-LIVE la ve.
 | A quién va cada cosa: el taker, el colateral, lo cobrado, la comisión | U18-U22 | BU-CONS, BU-LIMIT, BU-FUNDS, BU-FEE |
 | Lo que el bundle se queda | U23-U24 | BU-FUNDS |
 | `CancelAndMake`: sin `maxConsumed`, cancelación incompleta, estacionamiento a nombre equivocado o con otra sal, sin autorizar al ratifier, sin plazo | K1-K6 | MK-LIVE, MK-CANCEL, MK-PARK, MK-RATIFY |
+| `CancelAndMake`: estaciona por acciones con la relación de partida de Blue (solo se ve con interés) | K7 | MK-LIVE |
 | `BlueBuyCallback`: paga compras de cualquiera; saca de Blue una unidad de más | C1-C2 | BU-CB |
+| `BlueBuyCallback`: retira por acciones con la relación de partida de Blue (solo se ve con interés) | C3 | BU-CB |
 | `PriceRatifierV1`: sin `allowedTaker`; sin controlar que la raíz esté ratificada | R1-R2 | BU-TAKE |
 
 Las leyes de la fase 2 se informan con el código de la familia de la fase 1 a la que pertenecen (`[leyes: ...]`):

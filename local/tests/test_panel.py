@@ -264,13 +264,16 @@ def test_el_corpus_de_las_campanas_se_acumula_por_version_del_harness(tmp_path, 
     el harness cambia (otras direcciones o selectores), el corpus es otro. Sin corpus, forge_v2 lo apaga."""
     harness = tmp_path / "harness" / "morpho-org__bundles"
     harness.mkdir(parents=True)
-    (harness / "A.t.sol").write_text("contract A {}", encoding="utf-8")
+    (harness / "NexusMidnightBundles.t.sol").write_text("contract A {}", encoding="utf-8")
     monkeypatch.setattr(panel, "HARNESS_DIR", tmp_path / "harness")
     home = tmp_path / "home"
     d1 = panel.corpus_dir("midnight-bundles", home)
     assert d1 == panel.corpus_dir("midnight-bundles", home)
     assert d1.parent == home / "secresearch" / "corpus" / "midnight-bundles"
-    (harness / "A.t.sol").write_text("contract A { uint x; }", encoding="utf-8")
+    # 31-oct: la carpeta la comparten tres perfiles; cambiar el cazador de otro no reinicia este corpus
+    (harness / "NexusVaultBundles.t.sol").write_text("contract V {}", encoding="utf-8")
+    assert panel.corpus_dir("midnight-bundles", home) == d1
+    (harness / "NexusMidnightBundles.t.sol").write_text("contract A { uint x; }", encoding="utf-8")
     assert panel.corpus_dir("midnight-bundles", home) != d1
     monkeypatch.setenv("FOUNDRY_INVARIANT_CORPUS_DIR", "cache/otro")
     rec = {"perfil": "midnight-bundles", "corpus": True, "corpus_dir": str(d1)}
