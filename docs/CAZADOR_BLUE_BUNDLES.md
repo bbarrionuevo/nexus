@@ -98,6 +98,12 @@ En el proyecto reducido de `tools/forge_v2` (`NEXUS_PERFIL=blue-bundles`), con e
 | B17: el control estricto (`<` en vez de `<=`) | BB-LIVE (revierte con el mínimo que pasa) |
 | B18: la deuda máxima redondeada hacia arriba | BB-LTV |
 
+Campaña profunda con interés (31-oct, de las 16:26 a las 17:04, 512×500 guiada por cobertura, 256.000 llamadas,
+semilla `0x056d7f1e26ca6776`, `20261031-162639_blue-bundles_512x500_0x056d7f1e26ca6776`): **ninguna ley violada y 0
+reversiones del handler**. En la última corrida pasaron 171 de 290 llamadas al bundle (30 préstamos, 41 repagos, 43
+depósitos, 34 retiros y 23 migraciones), con 46 controles de `maxLtv`, 34 de ellos en el borde exacto; 1e24
+acciones de deuda del mercado 3 terminaron valiendo 1,178e18 activos.
+
 ### Sin interés (30-oct, forge 1.8.6 en la PC)
 
 En el proyecto reducido de `tools/forge_v2` (`NEXUS_PERFIL=blue-bundles`, que compila en menos de un minuto), con el

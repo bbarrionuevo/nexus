@@ -89,8 +89,10 @@ M35, B3) con corpus y 1 de 6 sin él. `NEXUS_CORPUS=0` lo apaga; en el panel, la
 Las campañas del panel usan un corpus **acumulado**: `NEXUS_HOME/secresearch/corpus/<perfil>/<hash del harness>/`.
 Cada campaña arranca de las secuencias que abrieron caminos en las anteriores del mismo harness y las sigue mutando;
 si el harness cambia, el hash cambia y el corpus arranca de cero (las entradas llevan la dirección del handler y los
-selectores). forge guarda cada entrada con un UUID y por suite (`corpus/<suite>/worker<n>/`), así que dos campañas
-del mismo harness pueden compartirlo. `--resumen` dice cuántas secuencias tiene.
+selectores). El hash es de los `.sol` con el prefijo del perfil (`NexusVaultBundles*`, por ejemplo): en la carpeta de
+Bundles conviven tres perfiles, y cambiar el cazador de uno no reinicia el corpus de los otros. forge guarda cada
+entrada con un UUID y por suite (`corpus/<suite>/worker<n>/`), así que dos campañas del mismo harness pueden
+compartirlo. `--resumen` dice cuántas secuencias tiene.
 
 ## Modo simbólico de forge (evaluado el 30-oct)
 
@@ -147,8 +149,9 @@ corre forge a mano, agregar `.venv\Scripts` al PATH).
   ajustes del repo salvo `optimizer_runs` (200 en vez de 4294967295, para compilar rápido; no cambia la semántica).
 - **`mutar`:** toma `mutaciones_midnight_bundles.json`: U1 a U24 sobre las entradas de toma de
   `src/midnight/MidnightBundlesV2.sol` (comisiones de referido, garantías del usuario, exactitud del objetivo,
-  validaciones, destinatarios y saldos que se queda el bundle), K1 a K6 sobre `CancelAndMake`, C1 y C2 sobre
-  `BlueBuyCallback` y R1 y R2 sobre `PriceRatifierV1`. Las U las ven las suites de la fase 1
+  validaciones, destinatarios y saldos que se queda el bundle), K1 a K7 sobre `CancelAndMake`, C1 a C3 sobre
+  `BlueBuyCallback` y R1 y R2 sobre `PriceRatifierV1` (K7 y C3, por acciones con la relación de partida de Blue, solo
+  se ven con interés en Blue, desde el 31-oct). Las U las ven las suites de la fase 1
   (`NEXUS_MUT_MATCH='^NexusMidnightBundles(Fees)?Test$'`); las K, C y R, las de la fase 2
   (`NEXUS_MUT_MATCH='^NexusMidnightBundlesMake'`).
 - **Fase 2:** Blue (solc 0.8.19) se despliega con `deployCode` desde `NexusBlueImport.sol`, que solo lo importa para

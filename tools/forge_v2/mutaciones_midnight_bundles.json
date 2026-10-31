@@ -172,5 +172,16 @@
   "        require(ratification[offer.maker][root].isRootRatified, NotRatified());\n",
   "",
   "lib/midnight/src/ratifiers/PriceRatifierV1.sol"
+ ],
+ [
+  "K7 CancelAndMake: estaciona por acciones con la relacion de partida de Blue",
+  "IMorpho(BLUE).supply(blueMarket, assetsToPark, 0, blueBuyCallback, \"\");",
+  "IMorpho(BLUE).supply(blueMarket, 0, assetsToPark * 1e6, blueBuyCallback, \"\");"
+ ],
+ [
+  "C3 BlueBuyCallback: retira por acciones con la relacion de partida de Blue",
+  "IMorpho(BLUE).withdraw(marketParams, buyerAssets, 0, address(this), address(this));",
+  "IMorpho(BLUE).withdraw(marketParams, 0, buyerAssets * 1e6, address(this), address(this));",
+  "lib/midnight/src/periphery/blue-buy-callback/BlueBuyCallback.sol"
  ]
 ]

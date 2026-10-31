@@ -112,6 +112,12 @@ Las W9 a W13 y X9 a X15 se sumaron con las mejoras del 31-oct. Salvo X12 y X13, 
 versión del cazador: con el precio en 1, la penalidad fija, el control de precio sin borde exacto y sin la cota de
 acciones del retiro forzado.
 
+Campaña profunda (31-oct, de las 16:26 a las 16:58, 512×500 guiada por cobertura, 256.000 llamadas, semilla
+`0xca1f61fd5c57cbfe`, `20261031-162639_vault-bundles_512x500_0xca1f61fd5c57cbfe`): **ninguna ley violada y 0
+reversiones del handler**. En la última corrida pasaron 146 de 222 llamadas a los bundles (26 depósitos, 34 retiros,
+19 migraciones, 43 redenciones en especie y 24 retiros forzados, 15 con desasignación), y la acción de los dos vaults
+terminó valiendo 1,19 y 1,20 activos.
+
 ## 6. Qué NO cubre
 
 - Vault V1 (MetaMorpho): `InKindRedemptionVaultV1` y los vaults V1 en `VaultBundlesV1`. Es la variante siguiente.

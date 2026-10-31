@@ -118,9 +118,13 @@ def corpus_dir(perfil, home=None):
     """El corpus de forge acumulado entre campañas, por perfil y por versión del harness (hash de sus .sol): cada
     campaña guiada por cobertura arranca de las secuencias que abrieron caminos en las anteriores y las sigue mutando.
     Un harness distinto (otras direcciones o selectores) arranca de cero. forge nombra cada entrada con un UUID y la
-    guarda por suite (corpus/<suite>/worker<n>/), así que dos campañas del mismo harness pueden compartirlo."""
+    guarda por suite (corpus/<suite>/worker<n>/), así que dos campañas del mismo harness pueden compartirlo.
+    Solo cuentan los .sol con el prefijo del perfil: la carpeta de Bundles la comparten tres perfiles, y hasta el
+    31-oct cambiar el cazador de uno reiniciaba el corpus de los otros (en las carpetas de un solo perfil todos los
+    .sol llevan su prefijo, así que su hash no cambió)."""
     h = hashlib.sha256()
-    for f in sorted((HARNESS_DIR / PERFILES[perfil][0]).glob("*.sol")):
+    folder, prefix = PERFILES[perfil]
+    for f in sorted((HARNESS_DIR / folder).glob(f"{prefix}*.sol")):
         h.update(f.name.encode("utf-8") + b"\0" + f.read_bytes())
     return Path(home or paths.home()) / "secresearch" / "corpus" / perfil / h.hexdigest()[:12]
 
